@@ -6,14 +6,15 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Peach/Patch — Web Modular Studio",
-  description: "A flow-first modular synthesizer that gets from idea to sound in seconds.",
+  metadataBase: new URL("https://peach-patch-studio.amamiya-miu.chatgpt.site"),
+  title: "Web Rack — Browser Modular Synthesizer",
+  description: "A tactile browser-based virtual Eurorack with free module placement, patch cables, Web Audio, and patch files.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
   openGraph: {
-    title: "Peach/Patch — Web Modular Studio",
-    description: "Sound first. Patch deeper.",
+    title: "Web Rack — Browser Modular Synthesizer",
+    description: "Patch modules freely in your browser.",
     type: "website",
-    images: [{ url: "/og.png", width: 1731, height: 909, alt: "Peach/Patch modular synthesizer" }],
+    images: [{ url: "/og.png", width: 1536, height: 1024, alt: "Web Rack modular synthesizer" }],
   },
   twitter: { card: "summary_large_image", images: ["/og.png"] },
 };

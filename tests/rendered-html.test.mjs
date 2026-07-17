@@ -15,15 +15,15 @@ async function render() {
   );
 }
 
-test("server-renders the complete modular studio", async () => {
+test("server-renders the Web Rack template patch", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>Peach\/Patch — Web Modular Studio<\/title>/i);
-  assert.match(html, /PEACH\//);
-  assert.match(html, /STEP SEQUENCER/);
-  for (const moduleName of ["VCO", "Wavetable", "Sampler / Looper", "Noise Source", "VCF", "VCA", "Envelope Generator", "LFO", "Sequencer", "Mixer", "Attenuator", "Multiple", "Effects"]) {
+  assert.match(html, /<title>Web Rack — Browser Modular Synthesizer<\/title>/i);
+  assert.match(html, /VCV/);
+  assert.match(html, /Right-click or Enter/);
+  for (const moduleName of ["MIDI-CV", "VCO-1", "VCF", "VCA", "ADSR", "SCOPE", "AUDIO-2"]) {
     assert.match(html, new RegExp(moduleName.replace("/", "\\/"), "i"));
   }
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
@@ -35,7 +35,7 @@ test("ships product metadata and removes starter preview", async () => {
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("package.json", root), "utf8"),
   ]);
-  assert.match(layout, /Peach\/Patch — Web Modular Studio/);
+  assert.match(layout, /Web Rack — Browser Modular Synthesizer/);
   assert.match(layout, /\/og\.png/);
   assert.match(page, /<SynthStudio \/>/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
