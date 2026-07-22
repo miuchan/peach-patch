@@ -3,6 +3,8 @@ import { getSample } from "./sample-store";
 import { getWebPlugin } from "./runtime-plugin-registry";
 import { dataFromState } from "./patch-state";
 import { createWavBlob, floatPcm16Part } from "./wav-encoder";
+import { fetchVerifiedWasm } from "./peach-registry-client";
+import type { WebPluginModule } from "./web-plugin-registry";
 
 export type RackAudioStats = {
   activeModules: number;
@@ -180,13 +182,11 @@ export class RackAudioEngine {
     const activeIds = new Set(activeInstances.map((instance) => instance.id));
     const moduleById = new Map(patch.modules.map((module) => [module.id, module]));
     const artifactPromises = new Map<string, Promise<ArrayBuffer>>();
-    const artifact = (url: string) => {
+    const artifact = (definition: WebPluginModule) => {
+      const url = definition.wasmUrl;
       let promise = artifactPromises.get(url);
       if (!promise) {
-        promise = fetch(url).then((response) => {
-          if (!response.ok) throw new Error(`Unable to load ${url}`);
-          return response.arrayBuffer();
-        });
+        promise = fetchVerifiedWasm(definition);
         artifactPromises.set(url, promise);
       }
       return promise;
@@ -211,7 +211,7 @@ export class RackAudioEngine {
         return {
           id: instance.id,
           key: instance.key,
-          wasm: (await artifact(definition.wasmUrl)).slice(0),
+          wasm: (await artifact(definition)).slice(0),
           params: instance.params,
           state: instance.state ?? [],
           stateJson: JSON.stringify(

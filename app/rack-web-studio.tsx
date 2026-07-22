@@ -59,6 +59,10 @@ import {
   registerDynamicModule,
   registerDynamicModules,
 } from "../lib/runtime-plugin-registry";
+import {
+  fetchVerifiedWasm,
+  loadPeachRegistry,
+} from "../lib/peach-registry-client";
 
 const CABLES = [
   "#ef5265",
@@ -861,9 +865,13 @@ export function RackWebStudio() {
           return changed ? { ...current, modules: nextModules } : current;
         });
       },load=async()=>{
-        const bundled=await fetch("/dynamic-plugins/catalog.json"),
-          bundledModules=bundled.ok?await bundled.json() as WebPluginModule[]:[];
-        install(bundledModules);
+        try {
+          install(await loadPeachRegistry());
+        } catch {
+          const bundled=await fetch("/dynamic-plugins/catalog.json"),
+            bundledModules=bundled.ok?await bundled.json() as WebPluginModule[]:[];
+          install(bundledModules);
+        }
         try{
           const local=await fetch(`${LOCAL_PLUGIN_BUILDER}/catalog`);
           if(local.ok)install(await local.json() as WebPluginModule[]);
@@ -1253,9 +1261,7 @@ export function RackWebStudio() {
     try {
       let wasm = wasmRef.current.get(module.id);
       if (!wasm) {
-        const bytes = await fetch(definition.wasmUrl).then((response) =>
-            response.arrayBuffer(),
-          ),
+        const bytes = await fetchVerifiedWasm(definition),
           wasiHolder: { runtime?: WasmExports; randomState?: number } = {},
           result = await WebAssembly.instantiate(
             bytes,

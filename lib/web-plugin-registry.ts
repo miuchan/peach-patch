@@ -35,6 +35,10 @@ export type WebPluginModule = {
   libraryUrl: string;
   screenshotUrl: string;
   wasmUrl: string;
+  artifact?: {
+    sha256: string;
+    size: number;
+  };
   width: number;
   description: string;
   params: ParamSpec[];
