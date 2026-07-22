@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "key": "Venom/Octaver",
+  "libraryUrl": "https://library.vcvrack.com/Venom/Octaver",
+  "manifest": {
+    "slug": "Venom",
+    "name": "Venom",
+    "version": "2.15.0",
+    "license": "GPL-3.0-or-later",
+    "brand": "",
+    "sourceUrl": "https://github.com/DaveBenham/VenomModules",
+    "module": {
+      "slug": "Octaver",
+      "name": "Octaver",
+      "description": "An old school octave effect in the style of the Pearl OC-7 and Boss OC-2 analog pedals",
+      "manualUrl": "https://github.com/DaveBenham/VenomModules/blob/main/README.md#octaver",
+      "tags": [
+        "Effect",
+        "Polyphonic"
+      ]
+    }
+  },
+  "source": {
+    "directory": "/var/folders/qg/1b0blbsn5yv031r0gjb363400000gn/T/rack-web-source-Y1FftA/checkout",
+    "commit": "f0c7fd2af1da6e8232afd7fa84295a9d368631d4",
+    "file": "src/Octaver.cpp",
+    "registrationFile": "src/Octaver.cpp",
+    "moduleClass": "Venom::Octaver",
+    "widgetClass": "Venom::OctaverWidget"
+  },
+  "detected": {
+    "template": null,
+    "constants": {
+      "PORT_MAX_CHANNELS": 16
+    },
+    "namespace": [
+      "Venom"
+    ],
+    "prelude": false,
+    "defines": false,
+    "dependencyFiles": [
+      "src/Filter.hpp"
+    ],
+    "outOfLineDefinitions": 0,
+    "inheritance": {
+      "directBase": "VenomModule",
+      "secondaryBases": [],
+      "chain": [
+        {
+          "name": "VenomModule",
+          "base": "Module",
+          "missing": false
+        }
+      ]
+    },
+    "enums": {
+      "params": {
+        "name": "ParamId",
+        "raw": "UP1_PARAM,\n    DRY_PARAM,\n    DOWN1_PARAM,\n    DOWN2_PARAM,\n    DRIVE_PARAM,\n    UP1_CV_PARAM,\n    DRY_CV_PARAM,\n    DOWN1_CV_PARAM,\n    DOWN2_CV_PARAM,\n    DRIVE_CV_PARAM,\n    MODE_PARAM,\n    OVER_PARAM,\n    PARAMS_LEN",
+        "identifiers": [
+          "UP1_PARAM",
+          "DRY_PARAM",
+          "DOWN1_PARAM",
+          "DOWN2_PARAM",
+          "DRIVE_PARAM",
+          "UP1_CV_PARAM",
+          "DRY_CV_PARAM",
+          "DOWN1_CV_PARAM",
+          "DOWN2_CV_PARAM",
+          "DRIVE_CV_PARAM",
+          "MODE_PARAM",
+          "OVER_PARAM",
+          "PARAMS_LEN"
+        ]
+      },
+      "inputs": {
+        "name": "InputId",
+        "raw": "UP1_CV_INPUT,\n    DRY_CV_INPUT,\n    DOWN1_CV_INPUT,\n    DOWN2_CV_INPUT,\n    DRIVE_CV_INPUT,\n    SIGNAL_INPUT,\n    INPUTS_LEN",
+        "identifiers": [
+          "UP1_CV_INPUT",
+          "DRY_CV_INPUT",
+          "DOWN1_CV_INPUT",
+          "DOWN2_CV_INPUT",
+          "DRIVE_CV_INPUT",
+          "SIGNAL_INPUT",
+          "INPUTS_LEN"
+        ]
+      },
+      "outputs": {
+        "name": "OutputId",
+        "raw": "SIGNAL_OUTPUT,\n    OUTPUTS_LEN",
+        "identifiers": [
+          "SIGNAL_OUTPUT",
+          "OUTPUTS_LEN"
+        ]
+      },
+      "lights": {
+        "name": "LightId",
+        "raw": "LIGHTS_LEN",
+        "identifiers": [
+          "LIGHTS_LEN"
+        ]
+      }
+    },
+    "config": {
+      "params": [
+        "UP1_PARAM, 0.f, 1.f, 0.f, \"Octave +1 Mix\", \"%\", 0.f, 100.f",
+        "UP1_CV_PARAM, -0.1f, 0.1f, 0.f, \"Octave +1 Mix CV\", \"%\", 0.f, 1000.f",
+        "DRY_PARAM, 0.f, 1.f, 0.f, \"Dry Mix\", \"%\", 0.f, 100.f",
+        "DRY_CV_PARAM, -0.1f, 0.1f, 0.f, \"Dry Mix CV\", \"%\", 0.f, 1000.f",
+        "DOWN1_PARAM, 0.f, 1.f, 0.f, \"Octave -1 Mix\", \"%\", 0.f, 100.f",
+        "DOWN1_CV_PARAM, -0.1f, 0.1f, 0.f, \"Octave -1 Mix CV\", \"%\", 0.f, 1000.f",
+        "DOWN2_PARAM, 0.f, 1.f, 0.f, \"Octave -2 Mix\", \"%\", 0.f, 100.f",
+        "DOWN2_CV_PARAM, -0.1f, 0.1f, 0.f, \"Octave -2 Mix CV\", \"%\", 0.f, 1000.f",
+        "DRIVE_PARAM, 0.f, 5.f, 1.f, \"Drive\", \"\"",
+        "DRIVE_CV_PARAM, -1.f, 1.f, 0.f, \"Drive CV\", \"%\", 0.f, 100.f"
+      ],
+      "switches": [
+        "MODE_PARAM, 0.f, 1.f, 0.f, \"Sub-octave mode\", {\"Inversion (Pearl)\", \"Square (Boss)\"}",
+        "OVER_PARAM, 0.f, 2.f, 0.f, \"Oversample\", {\"x2\", \"x4\", \"x8\"}"
+      ],
+      "buttons": [],
+      "inputs": [
+        "UP1_CV_INPUT, \"Octave +1 Mix CV\"",
+        "DRY_CV_INPUT, \"Dry Mix CV\"",
+        "DOWN1_CV_INPUT, \"Octave -1 Mix CV\"",
+        "DOWN2_CV_INPUT, \"Octave -2 Mix CV\"",
+        "DRIVE_CV_INPUT, \"Drive CV\"",
+        "SIGNAL_INPUT, \"Signal\""
+      ],
+      "outputs": [
+        "SIGNAL_OUTPUT, \"Signal\""
+      ],
+      "bypass": [
+        "SIGNAL_INPUT, SIGNAL_OUTPUT"
+      ]
+    },
+    "features": [
+      "simd",
+      "rack-dsp",
+      "rack-app",
+      "json",
+      "bypass-routes"
+    ],
+    "stateKeys": [],
+    "includes": [
+      "Venom.hpp",
+      "Filter.hpp",
+      "math.hpp"
+    ],
+    "staticMemoryBytes": 0
+  },
+  "assessment": {
+    "strategy": "direct-rack-source-adapter",
+    "compileEligible": true,
+    "requiresReview": true,
+    "blockers": []
+  },
+  "runtimeDraft": {
+    "key": "Venom/Octaver",
+    "plugin": "Venom",
+    "model": "Octaver",
+    "name": "Octaver",
+    "brand": "",
+    "version": "2.15.0",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/DaveBenham/VenomModules",
+    "libraryUrl": "https://library.vcvrack.com/Venom/Octaver",
+    "screenshotUrl": "https://library.vcvrack.com/screenshots/400/Venom/Octaver.webp",
+    "wasmUrl": "./module.wasm",
+    "width": 180,
+    "description": "An old school octave effect in the style of the Pearl OC-7 and Boss OC-2 analog pedals",
+    "params": [
+      {
+        "id": 0,
+        "name": "Octave +1 Mix",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 1,
+        "name": "Dry Mix",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 2,
+        "name": "Octave -1 Mix",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 3,
+        "name": "Octave -2 Mix",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 4,
+        "name": "Drive",
+        "min": 0,
+        "max": 5,
+        "default": 1
+      },
+      {
+        "id": 5,
+        "name": "Octave +1 Mix CV",
+        "min": -0.1,
+        "max": 0.1,
+        "default": 0
+      },
+      {
+        "id": 6,
+        "name": "Dry Mix CV",
+        "min": -0.1,
+        "max": 0.1,
+        "default": 0
+      },
+      {
+        "id": 7,
+        "name": "Octave -1 Mix CV",
+        "min": -0.1,
+        "max": 0.1,
+        "default": 0
+      },
+      {
+        "id": 8,
+        "name": "Octave -2 Mix CV",
+        "min": -0.1,
+        "max": 0.1,
+        "default": 0
+      },
+      {
+        "id": 9,
+        "name": "Drive CV",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 10,
+        "name": "Sub-octave mode",
+        "min": 0,
+        "max": 1,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 11,
+        "name": "Oversample",
+        "min": 0,
+        "max": 2,
+        "default": 0,
+        "snap": true
+      }
+    ],
+    "inputs": [
+      {
+        "id": 0,
+        "name": "Octave +1 Mix CV",
+        "kind": "audio"
+      },
+      {
+        "id": 1,
+        "name": "Dry Mix CV",
+        "kind": "audio"
+      },
+      {
+        "id": 2,
+        "name": "Octave -1 Mix CV",
+        "kind": "audio"
+      },
+      {
+        "id": 3,
+        "name": "Octave -2 Mix CV",
+        "kind": "audio"
+      },
+      {
+        "id": 4,
+        "name": "Drive CV",
+        "kind": "cv"
+      },
+      {
+        "id": 5,
+        "name": "Signal",
+        "kind": "audio"
+      }
+    ],
+    "outputs": [
+      {
+        "id": 0,
+        "name": "Signal",
+        "kind": "audio"
+      }
+    ],
+    "lights": 0,
+    "bypassRoutes": [
+      [
+        5,
+        0
+      ]
+    ]
+  }
+}

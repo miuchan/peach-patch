@@ -1,5 +1,5 @@
-import SynthStudio from "./synth-studio";
+import { RackWebStudio } from "./rack-web-studio";
 
 export default function Home() {
-  return <SynthStudio />;
+  return <RackWebStudio />;
 }

@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 1,
+  "key": "Venom/WaveFolder",
+  "libraryUrl": "https://library.vcvrack.com/Venom/WaveFolder",
+  "manifest": {
+    "slug": "Venom",
+    "name": "Venom",
+    "version": "2.15.0",
+    "license": "GPL-3.0-or-later",
+    "brand": "",
+    "sourceUrl": "https://github.com/DaveBenham/VenomModules",
+    "module": {
+      "slug": "WaveFolder",
+      "name": "Wave Folder",
+      "description": "A polyphonic configurable wave folder",
+      "manualUrl": "https://github.com/DaveBenham/VenomModules/blob/main/README.md#wave-folder",
+      "tags": [
+        "Polyphonic",
+        "Ring modulator",
+        "Voltage-controlled amplifier",
+        "Waveshaper"
+      ]
+    }
+  },
+  "source": {
+    "directory": "/var/folders/qg/1b0blbsn5yv031r0gjb363400000gn/T/rack-web-source-9LJELn/checkout",
+    "commit": "f0c7fd2af1da6e8232afd7fa84295a9d368631d4",
+    "file": "src/WaveFolder.cpp",
+    "registrationFile": "src/WaveFolder.cpp",
+    "moduleClass": "Venom::WaveFolder",
+    "widgetClass": "Venom::WaveFolderWidget"
+  },
+  "detected": {
+    "template": null,
+    "constants": {
+      "PORT_MAX_CHANNELS": 16
+    },
+    "namespace": [
+      "Venom"
+    ],
+    "prelude": false,
+    "defines": false,
+    "dependencyFiles": [
+      "src/Filter.hpp"
+    ],
+    "outOfLineDefinitions": 0,
+    "inheritance": {
+      "directBase": "VenomModule",
+      "secondaryBases": [],
+      "chain": [
+        {
+          "name": "VenomModule",
+          "base": "Module",
+          "missing": false
+        }
+      ]
+    },
+    "enums": {
+      "params": {
+        "name": "ParamId",
+        "raw": "STAGES_PARAM,\n    OVER_PARAM,\n    PRE_PARAM,\n    STAGE_PARAM,\n    BIAS_PARAM,\n    PRE_AMT_PARAM,\n    STAGE_AMT_PARAM,\n    BIAS_AMT_PARAM,\n    PARAMS_LEN",
+        "identifiers": [
+          "STAGES_PARAM",
+          "OVER_PARAM",
+          "PRE_PARAM",
+          "STAGE_PARAM",
+          "BIAS_PARAM",
+          "PRE_AMT_PARAM",
+          "STAGE_AMT_PARAM",
+          "BIAS_AMT_PARAM",
+          "PARAMS_LEN"
+        ]
+      },
+      "inputs": {
+        "name": "InputId",
+        "raw": "PRE_INPUT,\n    STAGE_INPUT,\n    BIAS_INPUT,\n    POLY_INPUT,\n    INPUTS_LEN",
+        "identifiers": [
+          "PRE_INPUT",
+          "STAGE_INPUT",
+          "BIAS_INPUT",
+          "POLY_INPUT",
+          "INPUTS_LEN"
+        ]
+      },
+      "outputs": {
+        "name": "OutputId",
+        "raw": "POLY_OUTPUT,\n    OUTPUTS_LEN",
+        "identifiers": [
+          "POLY_OUTPUT",
+          "OUTPUTS_LEN"
+        ]
+      },
+      "lights": {
+        "name": "LightId",
+        "raw": "PRE_VCA_LIGHT,\n    STAGE_VCA_LIGHT,\n    ENUMS(PRE_OVER_LIGHT,2),\n    ENUMS(STAGE_OVER_LIGHT,2),\n    ENUMS(BIAS_OVER_LIGHT,2),\n    LIGHTS_LEN",
+        "identifiers": [
+          "PRE_VCA_LIGHT",
+          "STAGE_VCA_LIGHT",
+          {
+            "base": "PRE_OVER_LIGHT",
+            "count": "2"
+          },
+          {
+            "base": "STAGE_OVER_LIGHT",
+            "count": "2"
+          },
+          {
+            "base": "BIAS_OVER_LIGHT",
+            "count": "2"
+          },
+          "LIGHTS_LEN"
+        ]
+      }
+    },
+    "config": {
+      "params": [
+        "PRE_PARAM, 0.f, 10.f, 1.f, \"Pre-amp\"",
+        "STAGE_PARAM, -0.30103f, 1.f, 0.f, \"Stage amp\", \"\", 10, 1, 0",
+        "BIAS_PARAM, -5.f, 5.f, 0.f, \"Bias\", \"V\"",
+        "PRE_AMT_PARAM, -1.f, 1.f, 0.f, \"Pre-amp CV amount\", \"%\", 0, 100, 0",
+        "STAGE_AMT_PARAM, -1.f, 1.f, 0.f, \"Stage amp CV amount\", \"%\", 0, 100, 0",
+        "BIAS_AMT_PARAM, -1.f, 1.f, 0.f, \"Bias CV amount\", \"%\", 0, 100, 0"
+      ],
+      "switches": [
+        "STAGES_PARAM, 0.f, 4.f, 1.f, \"Stages\", {\"2\", \"3\", \"4\", \"5\", \"6\"}",
+        "OVER_PARAM, 0.f, 5.f, 2.f, \"Oversample\", {\"Off\", \"x2\", \"x4\", \"x8\", \"x16\", \"x32\"}"
+      ],
+      "buttons": [],
+      "inputs": [
+        "PRE_INPUT, \"Pre-amp CV\"",
+        "STAGE_INPUT, \"Stage amp CV\"",
+        "BIAS_INPUT, \"Bias CV\"",
+        "POLY_INPUT, \"Poly\""
+      ],
+      "outputs": [
+        "POLY_OUTPUT, \"Poly\""
+      ],
+      "bypass": [
+        "POLY_INPUT, POLY_OUTPUT"
+      ]
+    },
+    "features": [
+      "custom-state",
+      "simd",
+      "rack-dsp",
+      "rack-app",
+      "json",
+      "bypass-routes"
+    ],
+    "stateKeys": [
+      {
+        "key": "preAmpDisableOver",
+        "type": "boolean"
+      },
+      {
+        "key": "preAmpBipolar",
+        "type": "boolean"
+      },
+      {
+        "key": "stageAmpDisableOver",
+        "type": "boolean"
+      },
+      {
+        "key": "stageAmpBipolar",
+        "type": "boolean"
+      },
+      {
+        "key": "biasDisableOver",
+        "type": "boolean"
+      }
+    ],
+    "includes": [
+      "Venom.hpp",
+      "Filter.hpp",
+      "math.hpp"
+    ],
+    "staticMemoryBytes": 0
+  },
+  "assessment": {
+    "strategy": "direct-rack-source-adapter",
+    "compileEligible": true,
+    "requiresReview": true,
+    "blockers": []
+  },
+  "runtimeDraft": {
+    "key": "Venom/WaveFolder",
+    "plugin": "Venom",
+    "model": "WaveFolder",
+    "name": "Wave Folder",
+    "brand": "",
+    "version": "2.15.0",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/DaveBenham/VenomModules",
+    "libraryUrl": "https://library.vcvrack.com/Venom/WaveFolder",
+    "screenshotUrl": "https://library.vcvrack.com/screenshots/400/Venom/WaveFolder.webp",
+    "wasmUrl": "./module.wasm",
+    "width": 180,
+    "description": "A polyphonic configurable wave folder",
+    "params": [
+      {
+        "id": 0,
+        "name": "Stages",
+        "min": 0,
+        "max": 4,
+        "default": 1,
+        "snap": true
+      },
+      {
+        "id": 1,
+        "name": "Oversample",
+        "min": 0,
+        "max": 5,
+        "default": 2,
+        "snap": true
+      },
+      {
+        "id": 2,
+        "name": "Pre-amp",
+        "min": 0,
+        "max": 10,
+        "default": 1
+      },
+      {
+        "id": 3,
+        "name": "Stage amp",
+        "min": -0.30103,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 4,
+        "name": "Bias",
+        "min": -5,
+        "max": 5,
+        "default": 0
+      },
+      {
+        "id": 5,
+        "name": "Pre-amp CV amount",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 6,
+        "name": "Stage amp CV amount",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 7,
+        "name": "Bias CV amount",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      }
+    ],
+    "inputs": [
+      {
+        "id": 0,
+        "name": "Pre-amp CV",
+        "kind": "cv"
+      },
+      {
+        "id": 1,
+        "name": "Stage amp CV",
+        "kind": "cv"
+      },
+      {
+        "id": 2,
+        "name": "Bias CV",
+        "kind": "cv"
+      },
+      {
+        "id": 3,
+        "name": "Poly",
+        "kind": "cv"
+      }
+    ],
+    "outputs": [
+      {
+        "id": 0,
+        "name": "Poly",
+        "kind": "cv"
+      }
+    ],
+    "lights": 8,
+    "stateKeys": [
+      {
+        "key": "preAmpDisableOver",
+        "type": "boolean"
+      },
+      {
+        "key": "preAmpBipolar",
+        "type": "boolean"
+      },
+      {
+        "key": "stageAmpDisableOver",
+        "type": "boolean"
+      },
+      {
+        "key": "stageAmpBipolar",
+        "type": "boolean"
+      },
+      {
+        "key": "biasDisableOver",
+        "type": "boolean"
+      }
+    ],
+    "bypassRoutes": [
+      [
+        3,
+        0
+      ]
+    ]
+  }
+}

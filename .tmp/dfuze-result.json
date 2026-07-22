@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 1,
+  "key": "Bidoo/dFUZE",
+  "libraryUrl": "https://library.vcvrack.com/Bidoo/dFUZE",
+  "manifest": {
+    "slug": "Bidoo",
+    "name": "Bidoo",
+    "version": "2.1.1",
+    "license": "GPL-3.0-or-later",
+    "brand": "Bidoo",
+    "sourceUrl": "https://github.com/sebastien-bouffier/Bidoo",
+    "module": {
+      "slug": "dFUZE",
+      "name": "dFUZE",
+      "description": "Reverb",
+      "manualUrl": "https://github.com/sebastien-bouffier/Bidoo/wiki#dfuze",
+      "tags": [
+        "Reverb",
+        "Effect"
+      ]
+    }
+  },
+  "source": {
+    "directory": "/Users/miu/Code/peach-cat/.rack-web-cache/sources/Bidoo/85c00f2aefa22d72d2a7472a1a937a962be3b07d",
+    "commit": "85c00f2aefa22d72d2a7472a1a937a962be3b07d",
+    "file": "src/DFUZE.cpp",
+    "registrationFile": "src/DFUZE.cpp",
+    "moduleClass": "DFUZE",
+    "widgetClass": "DFUZEWidget"
+  },
+  "detected": {
+    "template": null,
+    "constants": {
+      "PORT_MAX_CHANNELS": 16
+    },
+    "counts": {},
+    "panelWidth": 105,
+    "namespace": [],
+    "expander": null,
+    "browserAsset": null,
+    "prelude": true,
+    "defines": false,
+    "dependencyFiles": [
+      "src/dep/gverb/include/gverb.h",
+      "src/dep/gverb/src/gverb.c",
+      "src/dep/gverb/src/gverbdsp.c",
+      "src/dep/gverb/include/gverbdsp.h",
+      "src/dep/gverb/include/ladspa-util.h"
+    ],
+    "outOfLineDefinitions": 1,
+    "inheritance": {
+      "directBase": "BidooModule",
+      "secondaryBases": [],
+      "chain": [
+        {
+          "name": "BidooModule",
+          "base": "Module",
+          "missing": false
+        }
+      ]
+    },
+    "enums": {
+      "params": {
+        "name": "ParamIds",
+        "raw": "SIZE_PARAM,\n\t\tREVTIME_PARAM,\n\t\tDAMP_PARAM,\n\t\tFREEZE_PARAM,\n\t\tBANDWIDTH_PARAM,\n\t\tEARLYLEVEL_PARAM,\n\t\tTAIL_PARAM,\n\t\tNUM_PARAMS",
+        "identifiers": [
+          "SIZE_PARAM",
+          "REVTIME_PARAM",
+          "DAMP_PARAM",
+          "FREEZE_PARAM",
+          "BANDWIDTH_PARAM",
+          "EARLYLEVEL_PARAM",
+          "TAIL_PARAM",
+          "NUM_PARAMS"
+        ]
+      },
+      "inputs": {
+        "name": "InputIds",
+        "raw": "IN_INPUT,\n\t\tSIZE_INPUT,\n\t\tREVTIME_INPUT,\n\t\tDAMP_INPUT,\n\t\tFREEZE_INPUT,\n\t\tBANDWIDTH_INPUT,\n\t\tEARLYLEVEL_INPUT,\n\t\tTAIL_INPUT,\n\t\tNUM_INPUTS",
+        "identifiers": [
+          "IN_INPUT",
+          "SIZE_INPUT",
+          "REVTIME_INPUT",
+          "DAMP_INPUT",
+          "FREEZE_INPUT",
+          "BANDWIDTH_INPUT",
+          "EARLYLEVEL_INPUT",
+          "TAIL_INPUT",
+          "NUM_INPUTS"
+        ]
+      },
+      "outputs": {
+        "name": "OutputIds",
+        "raw": "OUT_L_OUTPUT,\n\t\tOUT_R_OUTPUT,\n\t\tNUM_OUTPUTS",
+        "identifiers": [
+          "OUT_L_OUTPUT",
+          "OUT_R_OUTPUT",
+          "NUM_OUTPUTS"
+        ]
+      },
+      "lights": {
+        "name": "LightIds",
+        "raw": "NUM_LIGHTS",
+        "identifiers": [
+          "NUM_LIGHTS"
+        ]
+      }
+    },
+    "config": {
+      "params": [
+        "SIZE_PARAM, 0.0f, 300.0f, 0.5f, \"Size\"",
+        "REVTIME_PARAM, 0.0f, 50.0f, 0.5f, \"Reverb time\"",
+        "DAMP_PARAM, 0.0f, 0.9f, 0.5f, \"Damping\"",
+        "BANDWIDTH_PARAM, 0.0f, 1.0f, 0.5f, \"Bandwidth\"",
+        "EARLYLEVEL_PARAM, 0.0f, 10.0f, 5.0f, \"Early reflections level\"",
+        "TAIL_PARAM, 0.0f, 10.0f, 5.0f, \"Tail level\""
+      ],
+      "switches": [],
+      "buttons": [],
+      "inputs": [],
+      "outputs": [],
+      "bypass": []
+    },
+    "features": [
+      "custom-state",
+      "rack-app",
+      "json"
+    ],
+    "stateKeys": [
+      {
+        "key": "themeId",
+        "type": "integer"
+      }
+    ],
+    "includes": [
+      "plugin.hpp",
+      "BidooComponents.hpp",
+      "gverb.h",
+      "dep/gverb/src/gverb.c",
+      "dep/gverb/src/gverbdsp.c"
+    ],
+    "triggerParamBases": [],
+    "staticMemoryBytes": 0
+  },
+  "assessment": {
+    "strategy": "direct-rack-source-adapter",
+    "compileEligible": true,
+    "requiresReview": true,
+    "blockers": []
+  },
+  "runtimeDraft": {
+    "key": "Bidoo/dFUZE",
+    "plugin": "Bidoo",
+    "model": "dFUZE",
+    "name": "dFUZE",
+    "brand": "Bidoo",
+    "version": "2.1.1",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/sebastien-bouffier/Bidoo",
+    "libraryUrl": "https://library.vcvrack.com/Bidoo/dFUZE",
+    "screenshotUrl": "https://library.vcvrack.com/screenshots/400/Bidoo/dFUZE.webp",
+    "wasmUrl": "./module.wasm",
+    "width": 105,
+    "description": "Reverb",
+    "params": [
+      {
+        "id": 0,
+        "name": "Size",
+        "min": 0,
+        "max": 300,
+        "default": 0.5,
+        "position": {
+          "x": 13,
+          "y": 50
+        }
+      },
+      {
+        "id": 1,
+        "name": "Reverb time",
+        "min": 0,
+        "max": 50,
+        "default": 0.5,
+        "position": {
+          "x": 13,
+          "y": 95
+        }
+      },
+      {
+        "id": 2,
+        "name": "Damping",
+        "min": 0,
+        "max": 0.8999999761581421,
+        "default": 0.5,
+        "position": {
+          "x": 13,
+          "y": 140
+        }
+      },
+      {
+        "id": 3,
+        "name": "Param 4",
+        "min": 0,
+        "max": 1,
+        "default": 0,
+        "hidden": true
+      },
+      {
+        "id": 4,
+        "name": "Bandwidth",
+        "min": 0,
+        "max": 1,
+        "default": 0.5,
+        "position": {
+          "x": 13,
+          "y": 185
+        }
+      },
+      {
+        "id": 5,
+        "name": "Early reflections level",
+        "min": 0,
+        "max": 10,
+        "default": 5,
+        "position": {
+          "x": 13,
+          "y": 230
+        }
+      },
+      {
+        "id": 6,
+        "name": "Tail level",
+        "min": 0,
+        "max": 10,
+        "default": 5,
+        "position": {
+          "x": 13,
+          "y": 275
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "id": 0,
+        "name": "Input",
+        "kind": "cv",
+        "position": {
+          "x": 7,
+          "y": 330
+        }
+      },
+      {
+        "id": 1,
+        "name": "Size",
+        "kind": "cv",
+        "position": {
+          "x": 65,
+          "y": 52
+        }
+      },
+      {
+        "id": 2,
+        "name": "Revtime",
+        "kind": "cv",
+        "position": {
+          "x": 65,
+          "y": 97
+        }
+      },
+      {
+        "id": 3,
+        "name": "Damp",
+        "kind": "cv",
+        "position": {
+          "x": 65,
+          "y": 142
+        }
+      },
+      {
+        "id": 4,
+        "name": "Freeze",
+        "kind": "cv",
+        "hidden": true
+      },
+      {
+        "id": 5,
+        "name": "Bandwidth",
+        "kind": "cv",
+        "position": {
+          "x": 65,
+          "y": 187
+        }
+      },
+      {
+        "id": 6,
+        "name": "Earlylevel",
+        "kind": "cv",
+        "position": {
+          "x": 65,
+          "y": 232
+        }
+      },
+      {
+        "id": 7,
+        "name": "Tail",
+        "kind": "cv",
+        "position": {
+          "x": 65,
+          "y": 277
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "id": 0,
+        "name": "Output L",
+        "kind": "audio",
+        "position": {
+          "x": 60,
+          "y": 340
+        }
+      },
+      {
+        "id": 1,
+        "name": "Output R",
+        "kind": "audio",
+        "position": {
+          "x": 82,
+          "y": 340
+        }
+      }
+    ],
+    "lights": 0,
+    "stateKeys": [
+      {
+        "key": "themeId",
+        "type": "integer"
+      }
+    ],
+    "runtime": {
+      "initialMemory": 4194304
+    }
+  },
+  "output": "/Users/miu/Code/peach-cat/.rack-web-cache/Bidoo-dFUZE",
+  "artifact": "/Users/miu/Code/peach-cat/.rack-web-cache/Bidoo-dFUZE/module.wasm",
+  "temporarySource": false
+}

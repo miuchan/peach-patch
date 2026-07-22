@@ -1,0 +1,494 @@
+{
+  "schemaVersion": 1,
+  "key": "Venom/VCAMix4Stereo",
+  "libraryUrl": "https://library.vcvrack.com/Venom/VCAMix4Stereo",
+  "manifest": {
+    "slug": "Venom",
+    "name": "Venom",
+    "version": "2.15.0",
+    "license": "GPL-3.0-or-later",
+    "brand": "",
+    "sourceUrl": "https://github.com/DaveBenham/VenomModules",
+    "module": {
+      "slug": "VCAMix4Stereo",
+      "name": "VCA Mix 4 Stereo",
+      "description": "Stereo compact audio or CV VCA, mixer, attenuator, inverter, amplifier, and/or offset",
+      "manualUrl": "https://github.com/DaveBenham/VenomModules/blob/main/README.md#vca-mix-4-stereo",
+      "tags": [
+        "Attenuator",
+        "Mixer",
+        "Polyphonic",
+        "Ring modulator",
+        "Utility",
+        "Voltage-controlled amplifier"
+      ]
+    }
+  },
+  "source": {
+    "directory": "/var/folders/qg/1b0blbsn5yv031r0gjb363400000gn/T/rack-web-source-ifDcjJ/checkout",
+    "commit": "f0c7fd2af1da6e8232afd7fa84295a9d368631d4",
+    "file": "src/VCAMix4Stereo.cpp",
+    "registrationFile": "src/VCAMix4Stereo.cpp",
+    "moduleClass": "Venom::VCAMix4Stereo",
+    "widgetClass": "Venom::VCAMix4StereoWidget"
+  },
+  "detected": {
+    "template": null,
+    "constants": {
+      "PORT_MAX_CHANNELS": 16
+    },
+    "namespace": [
+      "Venom"
+    ],
+    "prelude": false,
+    "defines": false,
+    "dependencyFiles": [
+      "src/Filter.hpp"
+    ],
+    "outOfLineDefinitions": 0,
+    "inheritance": {
+      "directBase": "MixBaseModule",
+      "secondaryBases": [],
+      "chain": [
+        {
+          "name": "VenomModule",
+          "base": "Module",
+          "missing": false
+        },
+        {
+          "name": "MixModule",
+          "base": "VenomModule",
+          "missing": false
+        },
+        {
+          "name": "MixBaseModule",
+          "base": "MixModule",
+          "missing": false
+        }
+      ]
+    },
+    "enums": {
+      "params": {
+        "name": "ParamId",
+        "raw": "ENUMS(LEVEL_PARAMS, 4),\n    MIX_LEVEL_PARAM,\n    MODE_PARAM,\n    CLIP_PARAM,\n    DCBLOCK_PARAM,\n    VCAMODE_PARAM,\n    EXCLUDE_PARAM,\n    PARAMS_LEN",
+        "identifiers": [
+          {
+            "base": "LEVEL_PARAMS",
+            "count": "4"
+          },
+          "MIX_LEVEL_PARAM",
+          "MODE_PARAM",
+          "CLIP_PARAM",
+          "DCBLOCK_PARAM",
+          "VCAMODE_PARAM",
+          "EXCLUDE_PARAM",
+          "PARAMS_LEN"
+        ]
+      },
+      "inputs": {
+        "name": "InputId",
+        "raw": "ENUMS(LEFT_INPUTS, 4),\n    ENUMS(RIGHT_INPUTS, 4),\n    LEFT_CHAIN_INPUT,\n    RIGHT_CHAIN_INPUT,\n    ENUMS(CV_INPUTS, 4),\n    MIX_CV_INPUT,\n    INPUTS_LEN",
+        "identifiers": [
+          {
+            "base": "LEFT_INPUTS",
+            "count": "4"
+          },
+          {
+            "base": "RIGHT_INPUTS",
+            "count": "4"
+          },
+          "LEFT_CHAIN_INPUT",
+          "RIGHT_CHAIN_INPUT",
+          {
+            "base": "CV_INPUTS",
+            "count": "4"
+          },
+          "MIX_CV_INPUT",
+          "INPUTS_LEN"
+        ]
+      },
+      "outputs": {
+        "name": "OutputId",
+        "raw": "ENUMS(LEFT_OUTPUTS, 4),\n    ENUMS(RIGHT_OUTPUTS, 4),\n    LEFT_MIX_OUTPUT,\n    RIGHT_MIX_OUTPUT,\n    OUTPUTS_LEN",
+        "identifiers": [
+          {
+            "base": "LEFT_OUTPUTS",
+            "count": "4"
+          },
+          {
+            "base": "RIGHT_OUTPUTS",
+            "count": "4"
+          },
+          "LEFT_MIX_OUTPUT",
+          "RIGHT_MIX_OUTPUT",
+          "OUTPUTS_LEN"
+        ]
+      },
+      "lights": {
+        "name": "LightId",
+        "raw": "LIGHTS_LEN",
+        "identifiers": [
+          "LIGHTS_LEN"
+        ]
+      }
+    },
+    "config": {
+      "params": [
+        "LEVEL_PARAMS+0, 0.f, 2.f, 1.f, string::f(\"Channel %d level\", 0 + 1), \" dB\", -10.f, 20.f",
+        "LEVEL_PARAMS+1, 0.f, 2.f, 1.f, string::f(\"Channel %d level\", 1 + 1), \" dB\", -10.f, 20.f",
+        "LEVEL_PARAMS+2, 0.f, 2.f, 1.f, string::f(\"Channel %d level\", 2 + 1), \" dB\", -10.f, 20.f",
+        "LEVEL_PARAMS+3, 0.f, 2.f, 1.f, string::f(\"Channel %d level\", 3 + 1), \" dB\", -10.f, 20.f",
+        "MIX_LEVEL_PARAM, 0.f, 2.f, 1.f, \"Mix level\", \" dB\", -10.f, 20.f"
+      ],
+      "switches": [
+        "MODE_PARAM, 0.f, 4.f, 0.f, \"Level Mode\", { \"Unipolar dB (audio x2)\", \"Unipolar poly sum dB (audio x2)\", \"Bipolar % (CV)\", \"Bipolar x2 (CV)\", \"Bipolar x10 (CV)\" }",
+        "VCAMODE_PARAM, 0.f, 5.f, 0.f, \"VCA Mode\", { \"Unipolar linear - CV clamped 0-10V\", \"Unipolar exponential - CV clamped 0-10V\", \"Bipolar linear - CV unclamped\", \"Bipolar exponential - CV unclamped\", \"Bipolar linear band limited - CV unclamped\", \"Bipolar exponential band limited - CV unclamped\" }",
+        "DCBLOCK_PARAM, 0.f, 3.f, 0.f, \"Mix DC Block\", {\"Off\", \"Before clipping\", \"Before and after clipping\", \"After clipping\"}",
+        "CLIP_PARAM, 0.f, 7.f, 0.f, \"Mix Clipping\", {\"Off\", \"Hard post-level at 10V\", \"Soft post-level at 10V\", \"Soft oversampled post-levl at 10V\", \"Hard pre-level at 10V\", \"Soft pre-level at 10V\", \"Soft oversampled pre-level at 10V\", \"Saturate (Soft oversampled post-level at 6V)\"}",
+        "EXCLUDE_PARAM, 0.f, 1.f, 0.f, \"Exclude Patched Outs from Mix\", {\"Off\", \"On\"}"
+      ],
+      "buttons": [],
+      "inputs": [
+        "CV_INPUTS+0, string::f(\"Channel %d CV\", 0 + 1)",
+        "CV_INPUTS+1, string::f(\"Channel %d CV\", 1 + 1)",
+        "CV_INPUTS+2, string::f(\"Channel %d CV\", 2 + 1)",
+        "CV_INPUTS+3, string::f(\"Channel %d CV\", 3 + 1)",
+        "LEFT_INPUTS+0, string::f(\"Left channel %d\", 0 + 1)",
+        "LEFT_INPUTS+1, string::f(\"Left channel %d\", 1 + 1)",
+        "LEFT_INPUTS+2, string::f(\"Left channel %d\", 2 + 1)",
+        "LEFT_INPUTS+3, string::f(\"Left channel %d\", 3 + 1)",
+        "RIGHT_INPUTS+0, string::f(\"Right channel %d\", 0 + 1)",
+        "RIGHT_INPUTS+1, string::f(\"Right channel %d\", 1 + 1)",
+        "RIGHT_INPUTS+2, string::f(\"Right channel %d\", 2 + 1)",
+        "RIGHT_INPUTS+3, string::f(\"Right channel %d\", 3 + 1)",
+        "MIX_CV_INPUT, \"Mix CV\"",
+        "LEFT_CHAIN_INPUT, \"Left chain\"",
+        "RIGHT_CHAIN_INPUT, \"Right chain\""
+      ],
+      "outputs": [
+        "LEFT_OUTPUTS+0, string::f(\"Left channel %d\", 0 + 1)",
+        "LEFT_OUTPUTS+1, string::f(\"Left channel %d\", 1 + 1)",
+        "LEFT_OUTPUTS+2, string::f(\"Left channel %d\", 2 + 1)",
+        "LEFT_OUTPUTS+3, string::f(\"Left channel %d\", 3 + 1)",
+        "RIGHT_OUTPUTS+0, string::f(\"Right channel %d\", 0 + 1)",
+        "RIGHT_OUTPUTS+1, string::f(\"Right channel %d\", 1 + 1)",
+        "RIGHT_OUTPUTS+2, string::f(\"Right channel %d\", 2 + 1)",
+        "RIGHT_OUTPUTS+3, string::f(\"Right channel %d\", 3 + 1)",
+        "LEFT_MIX_OUTPUT, \"Left mix\"",
+        "RIGHT_MIX_OUTPUT, \"Right mix\""
+      ],
+      "bypass": [
+        "LEFT_INPUTS+0, LEFT_OUTPUTS+0",
+        "LEFT_INPUTS+1, LEFT_OUTPUTS+1",
+        "LEFT_INPUTS+2, LEFT_OUTPUTS+2",
+        "LEFT_INPUTS+3, LEFT_OUTPUTS+3",
+        "inputs[RIGHT_INPUTS+0].isConnected() ? RIGHT_INPUTS+0 : LEFT_INPUTS+0, RIGHT_OUTPUTS+0",
+        "inputs[RIGHT_INPUTS+1].isConnected() ? RIGHT_INPUTS+1 : LEFT_INPUTS+1, RIGHT_OUTPUTS+1",
+        "inputs[RIGHT_INPUTS+2].isConnected() ? RIGHT_INPUTS+2 : LEFT_INPUTS+2, RIGHT_OUTPUTS+2",
+        "inputs[RIGHT_INPUTS+3].isConnected() ? RIGHT_INPUTS+3 : LEFT_INPUTS+3, RIGHT_OUTPUTS+3"
+      ]
+    },
+    "features": [
+      "custom-state",
+      "expanders",
+      "simd",
+      "rack-dsp",
+      "rack-app",
+      "json",
+      "bypass-routes"
+    ],
+    "stateKeys": [
+      {
+        "key": "softMute",
+        "type": "boolean"
+      },
+      {
+        "key": "toggleMute",
+        "type": "boolean"
+      },
+      {
+        "key": "monoPanLaw",
+        "type": "integer"
+      },
+      {
+        "key": "stereoPanLaw",
+        "type": "integer"
+      }
+    ],
+    "includes": [
+      "Venom.hpp",
+      "MixModule.hpp",
+      "math.hpp",
+      "cfloat",
+      "Filter.hpp"
+    ],
+    "staticMemoryBytes": 0
+  },
+  "assessment": {
+    "strategy": "direct-rack-source-adapter",
+    "compileEligible": true,
+    "requiresReview": true,
+    "blockers": []
+  },
+  "runtimeDraft": {
+    "key": "Venom/VCAMix4Stereo",
+    "plugin": "Venom",
+    "model": "VCAMix4Stereo",
+    "name": "VCA Mix 4 Stereo",
+    "brand": "",
+    "version": "2.15.0",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/DaveBenham/VenomModules",
+    "libraryUrl": "https://library.vcvrack.com/Venom/VCAMix4Stereo",
+    "screenshotUrl": "https://library.vcvrack.com/screenshots/400/Venom/VCAMix4Stereo.webp",
+    "wasmUrl": "./module.wasm",
+    "width": 180,
+    "description": "Stereo compact audio or CV VCA, mixer, attenuator, inverter, amplifier, and/or offset",
+    "params": [
+      {
+        "id": 0,
+        "name": "Channel 1 level",
+        "min": 0,
+        "max": 2,
+        "default": 1
+      },
+      {
+        "id": 1,
+        "name": "Channel 2 level",
+        "min": 0,
+        "max": 2,
+        "default": 1
+      },
+      {
+        "id": 2,
+        "name": "Channel 3 level",
+        "min": 0,
+        "max": 2,
+        "default": 1
+      },
+      {
+        "id": 3,
+        "name": "Channel 4 level",
+        "min": 0,
+        "max": 2,
+        "default": 1
+      },
+      {
+        "id": 4,
+        "name": "Mix level",
+        "min": 0,
+        "max": 2,
+        "default": 1
+      },
+      {
+        "id": 5,
+        "name": "Level Mode",
+        "min": 0,
+        "max": 4,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 6,
+        "name": "Mix Clipping",
+        "min": 0,
+        "max": 7,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 7,
+        "name": "Mix DC Block",
+        "min": 0,
+        "max": 3,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 8,
+        "name": "VCA Mode",
+        "min": 0,
+        "max": 5,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 9,
+        "name": "Exclude Patched Outs from Mix",
+        "min": 0,
+        "max": 1,
+        "default": 0,
+        "snap": true
+      }
+    ],
+    "inputs": [
+      {
+        "id": 0,
+        "name": "Left channel 1",
+        "kind": "audio"
+      },
+      {
+        "id": 1,
+        "name": "Left channel 2",
+        "kind": "audio"
+      },
+      {
+        "id": 2,
+        "name": "Left channel 3",
+        "kind": "audio"
+      },
+      {
+        "id": 3,
+        "name": "Left channel 4",
+        "kind": "audio"
+      },
+      {
+        "id": 4,
+        "name": "Right channel 1",
+        "kind": "audio"
+      },
+      {
+        "id": 5,
+        "name": "Right channel 2",
+        "kind": "audio"
+      },
+      {
+        "id": 6,
+        "name": "Right channel 3",
+        "kind": "audio"
+      },
+      {
+        "id": 7,
+        "name": "Right channel 4",
+        "kind": "audio"
+      },
+      {
+        "id": 8,
+        "name": "Left chain",
+        "kind": "audio"
+      },
+      {
+        "id": 9,
+        "name": "Right chain",
+        "kind": "audio"
+      },
+      {
+        "id": 10,
+        "name": "Channel 1 CV",
+        "kind": "cv"
+      },
+      {
+        "id": 11,
+        "name": "Channel 2 CV",
+        "kind": "cv"
+      },
+      {
+        "id": 12,
+        "name": "Channel 3 CV",
+        "kind": "cv"
+      },
+      {
+        "id": 13,
+        "name": "Channel 4 CV",
+        "kind": "cv"
+      },
+      {
+        "id": 14,
+        "name": "Mix CV",
+        "kind": "audio"
+      }
+    ],
+    "outputs": [
+      {
+        "id": 0,
+        "name": "Left channel 1",
+        "kind": "audio"
+      },
+      {
+        "id": 1,
+        "name": "Left channel 2",
+        "kind": "audio"
+      },
+      {
+        "id": 2,
+        "name": "Left channel 3",
+        "kind": "audio"
+      },
+      {
+        "id": 3,
+        "name": "Left channel 4",
+        "kind": "audio"
+      },
+      {
+        "id": 4,
+        "name": "Right channel 1",
+        "kind": "audio"
+      },
+      {
+        "id": 5,
+        "name": "Right channel 2",
+        "kind": "audio"
+      },
+      {
+        "id": 6,
+        "name": "Right channel 3",
+        "kind": "audio"
+      },
+      {
+        "id": 7,
+        "name": "Right channel 4",
+        "kind": "audio"
+      },
+      {
+        "id": 8,
+        "name": "Left mix",
+        "kind": "audio"
+      },
+      {
+        "id": 9,
+        "name": "Right mix",
+        "kind": "audio"
+      }
+    ],
+    "lights": 0,
+    "stateKeys": [
+      {
+        "key": "softMute",
+        "type": "boolean"
+      },
+      {
+        "key": "toggleMute",
+        "type": "boolean"
+      },
+      {
+        "key": "monoPanLaw",
+        "type": "integer"
+      },
+      {
+        "key": "stereoPanLaw",
+        "type": "integer"
+      }
+    ],
+    "bypassRoutes": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ]
+    ],
+    "runtime": {
+      "expanderMode": "disconnected"
+    }
+  }
+}

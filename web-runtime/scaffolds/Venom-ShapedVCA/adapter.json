@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "key": "Venom/ShapedVCA",
+  "libraryUrl": "https://library.vcvrack.com/Venom/ShapedVCA",
+  "manifest": {
+    "slug": "Venom",
+    "name": "Venom",
+    "version": "2.15.0",
+    "license": "GPL-3.0-or-later",
+    "brand": "",
+    "sourceUrl": "https://github.com/DaveBenham/VenomModules",
+    "module": {
+      "slug": "ShapedVCA",
+      "name": "Shaped VCA",
+      "description": "Stereo VCA with a variable response curve, hard/soft clipping, ring modulation, and oversampling",
+      "manualUrl": "https://github.com/DaveBenham/VenomModules/blob/main/README.md#shaped-vca",
+      "tags": [
+        "Attenuator",
+        "Polyphonic",
+        "Ring modulator",
+        "Utility",
+        "Voltage-controlled amplifier",
+        "Waveshaper"
+      ]
+    }
+  },
+  "source": {
+    "directory": "/var/folders/qg/1b0blbsn5yv031r0gjb363400000gn/T/rack-web-source-cnCJLt/checkout",
+    "commit": "f0c7fd2af1da6e8232afd7fa84295a9d368631d4",
+    "file": "src/ShapedVCA.cpp",
+    "registrationFile": "src/ShapedVCA.cpp",
+    "moduleClass": "Venom::ShapedVCA",
+    "widgetClass": "Venom::ShapedVCAWidget"
+  },
+  "detected": {
+    "template": null,
+    "constants": {
+      "PORT_MAX_CHANNELS": 16
+    },
+    "namespace": [
+      "Venom"
+    ],
+    "prelude": false,
+    "defines": true,
+    "dependencyFiles": [
+      "src/Filter.hpp"
+    ],
+    "outOfLineDefinitions": 0,
+    "inheritance": {
+      "directBase": "VenomModule",
+      "secondaryBases": [],
+      "chain": [
+        {
+          "name": "VenomModule",
+          "base": "Module",
+          "missing": false
+        }
+      ]
+    },
+    "enums": {
+      "params": {
+        "name": "ParamId",
+        "raw": "RANGE_PARAM,\n    MODE_PARAM,\n    CLIP_PARAM,\n    OVER_PARAM,\n    OFFSET_PARAM,\n    LEVEL_PARAM,\n    BIAS_PARAM,\n    CURVE_PARAM,\n    PARAMS_LEN",
+        "identifiers": [
+          "RANGE_PARAM",
+          "MODE_PARAM",
+          "CLIP_PARAM",
+          "OVER_PARAM",
+          "OFFSET_PARAM",
+          "LEVEL_PARAM",
+          "BIAS_PARAM",
+          "CURVE_PARAM",
+          "PARAMS_LEN"
+        ]
+      },
+      "inputs": {
+        "name": "InputId",
+        "raw": "LEVEL_INPUT,\n    CURVE_INPUT,\n    LEFT_INPUT,\n    RIGHT_INPUT,\n    INPUTS_LEN",
+        "identifiers": [
+          "LEVEL_INPUT",
+          "CURVE_INPUT",
+          "LEFT_INPUT",
+          "RIGHT_INPUT",
+          "INPUTS_LEN"
+        ]
+      },
+      "outputs": {
+        "name": "OutputId",
+        "raw": "LEFT_OUTPUT,\n    RIGHT_OUTPUT,\n    OUTPUTS_LEN",
+        "identifiers": [
+          "LEFT_OUTPUT",
+          "RIGHT_OUTPUT",
+          "OUTPUTS_LEN"
+        ]
+      },
+      "lights": {
+        "name": "LightId",
+        "raw": "LIGHTS_LEN",
+        "identifiers": [
+          "LIGHTS_LEN"
+        ]
+      }
+    },
+    "config": {
+      "params": [
+        "LEVEL_PARAM, 0.f, 1.f, 1.f, \"Level\", \"x\", 0.f, 1.f, 0.f",
+        "BIAS_PARAM, -0.5f, 0.5f, 0.f, \"Level CV bias\", \" V\", 0.f, 10.f, 0.f",
+        "CURVE_PARAM, -1.f, 1.f, 0.f, \"Response curve\", \"%\", 0.f, 100.f"
+      ],
+      "switches": [
+        "RANGE_PARAM, 0.f, 5.f, 0.f, \"Level Range\", {\"0-1\", \"0-2\", \"0-10\", \"+/- 1\", \"+/- 2\", \"+/- 10\"}",
+        "MODE_PARAM, 0.f, 3.f, 0.f, \"VCA Mode\", { \"Unipolar 0-10V clipped CV (2 quadrant)\", \"Bipolar +/- 10V unclipped CV (4 quadrant)\", \"Unipolar 0-5V clipped CV (2 quadrant)\", \"Bipolar +/- 5V unclipped CV (4 quadrant)\" }",
+        "CLIP_PARAM, 0.f, 2.f, 0.f, \"Output Clipping\", {\"Off\", \"Hard clip\", \"Soft clip\"}",
+        "OVER_PARAM, 0.f, 4.f, 0.f, \"Oversample\", {\"Off\", \"x4\", \"x8\", \"x16\", \"x32\"}",
+        "OFFSET_PARAM, 0.f, 2.f, 0.f, \"Output offset\", {\"None\", \"-5 V\", \"+5 V\"}"
+      ],
+      "buttons": [],
+      "inputs": [
+        "LEVEL_INPUT, \"Level CV\"",
+        "CURVE_INPUT, \"Response curve\"",
+        "LEFT_INPUT, \"Left\"",
+        "RIGHT_INPUT, \"Right\""
+      ],
+      "outputs": [
+        "LEFT_OUTPUT, \"Left\"",
+        "RIGHT_OUTPUT, \"Right\""
+      ],
+      "bypass": [
+        "LEFT_INPUT, LEFT_OUTPUT",
+        "inputs[RIGHT_INPUT].isConnected() ? RIGHT_INPUT : LEFT_INPUT, RIGHT_OUTPUT"
+      ]
+    },
+    "features": [
+      "custom-state",
+      "simd",
+      "rack-dsp",
+      "rack-app",
+      "json",
+      "bypass-routes"
+    ],
+    "stateKeys": [
+      {
+        "key": "algo",
+        "type": "integer"
+      }
+    ],
+    "includes": [
+      "Venom.hpp",
+      "math.hpp",
+      "cfloat",
+      "Filter.hpp"
+    ],
+    "staticMemoryBytes": 0
+  },
+  "assessment": {
+    "strategy": "direct-rack-source-adapter",
+    "compileEligible": true,
+    "requiresReview": true,
+    "blockers": []
+  },
+  "runtimeDraft": {
+    "key": "Venom/ShapedVCA",
+    "plugin": "Venom",
+    "model": "ShapedVCA",
+    "name": "Shaped VCA",
+    "brand": "",
+    "version": "2.15.0",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/DaveBenham/VenomModules",
+    "libraryUrl": "https://library.vcvrack.com/Venom/ShapedVCA",
+    "screenshotUrl": "https://library.vcvrack.com/screenshots/400/Venom/ShapedVCA.webp",
+    "wasmUrl": "./module.wasm",
+    "width": 180,
+    "description": "Stereo VCA with a variable response curve, hard/soft clipping, ring modulation, and oversampling",
+    "params": [
+      {
+        "id": 0,
+        "name": "Level Range",
+        "min": 0,
+        "max": 5,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 1,
+        "name": "VCA Mode",
+        "min": 0,
+        "max": 3,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 2,
+        "name": "Output Clipping",
+        "min": 0,
+        "max": 2,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 3,
+        "name": "Oversample",
+        "min": 0,
+        "max": 4,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 4,
+        "name": "Output offset",
+        "min": 0,
+        "max": 2,
+        "default": 0,
+        "snap": true
+      },
+      {
+        "id": 5,
+        "name": "Level",
+        "min": 0,
+        "max": 1,
+        "default": 1
+      },
+      {
+        "id": 6,
+        "name": "Level CV bias",
+        "min": -0.5,
+        "max": 0.5,
+        "default": 0
+      },
+      {
+        "id": 7,
+        "name": "Response curve",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      }
+    ],
+    "inputs": [
+      {
+        "id": 0,
+        "name": "Level CV",
+        "kind": "cv"
+      },
+      {
+        "id": 1,
+        "name": "Response curve",
+        "kind": "cv"
+      },
+      {
+        "id": 2,
+        "name": "Left",
+        "kind": "audio"
+      },
+      {
+        "id": 3,
+        "name": "Right",
+        "kind": "audio"
+      }
+    ],
+    "outputs": [
+      {
+        "id": 0,
+        "name": "Left",
+        "kind": "audio"
+      },
+      {
+        "id": 1,
+        "name": "Right",
+        "kind": "audio"
+      }
+    ],
+    "lights": 0,
+    "stateKeys": [
+      {
+        "key": "algo",
+        "type": "integer"
+      }
+    ],
+    "bypassRoutes": [
+      [
+        2,
+        0
+      ]
+    ]
+  }
+}

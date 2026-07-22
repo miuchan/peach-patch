@@ -1,0 +1,567 @@
+{
+  "key": "SurgeXTRack/SurgeXTFXReverb",
+  "plugin": "SurgeXTRack",
+  "model": "SurgeXTFXReverb",
+  "name": "Reverb",
+  "brand": "Surge XT",
+  "version": "2.2.9.0",
+  "license": "GPL-3.0-or-later",
+  "sourceUrl": "https://github.com/surge-synthesizer/surge-rack/",
+  "libraryUrl": "https://library.vcvrack.com/SurgeXTRack/SurgeXTFXReverb",
+  "screenshotUrl": "https://library.vcvrack.com/screenshots/400/SurgeXTRack/SurgeXTFXReverb.webp",
+  "wasmUrl": "./module.wasm",
+  "width": 180,
+  "description": "The Surge XT Reverb",
+  "params": [
+    {
+      "id": 0,
+      "name": "FX_PARAM_0 + 0",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 1,
+      "name": "FX_PARAM_0 + 1",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 2,
+      "name": "FX_PARAM_0 + 2",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 3,
+      "name": "FX_PARAM_0 + 3",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 4,
+      "name": "FX_PARAM_0 + 4",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 5,
+      "name": "FX_PARAM_0 + 5",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 6,
+      "name": "FX_PARAM_0 + 6",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 7,
+      "name": "FX_PARAM_0 + 7",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 8,
+      "name": "FX_PARAM_0 + 8",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 9,
+      "name": "FX_PARAM_0 + 9",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 10,
+      "name": "FX_PARAM_0 + 10",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 11,
+      "name": "FX_PARAM_0 + 11",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 12,
+      "name": "FX_MOD_PARAM_0 + 0",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 13,
+      "name": "FX_MOD_PARAM_0 + 1",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 14,
+      "name": "FX_MOD_PARAM_0 + 2",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 15,
+      "name": "FX_MOD_PARAM_0 + 3",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 16,
+      "name": "FX_MOD_PARAM_0 + 4",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 17,
+      "name": "FX_MOD_PARAM_0 + 5",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 18,
+      "name": "FX_MOD_PARAM_0 + 6",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 19,
+      "name": "FX_MOD_PARAM_0 + 7",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 20,
+      "name": "FX_MOD_PARAM_0 + 8",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 21,
+      "name": "FX_MOD_PARAM_0 + 9",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 22,
+      "name": "FX_MOD_PARAM_0 + 10",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 23,
+      "name": "FX_MOD_PARAM_0 + 11",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 24,
+      "name": "FX_MOD_PARAM_0 + 12",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 25,
+      "name": "FX_MOD_PARAM_0 + 13",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 26,
+      "name": "FX_MOD_PARAM_0 + 14",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 27,
+      "name": "FX_MOD_PARAM_0 + 15",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 28,
+      "name": "FX_MOD_PARAM_0 + 16",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 29,
+      "name": "FX_MOD_PARAM_0 + 17",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 30,
+      "name": "FX_MOD_PARAM_0 + 18",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 31,
+      "name": "FX_MOD_PARAM_0 + 19",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 32,
+      "name": "FX_MOD_PARAM_0 + 20",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 33,
+      "name": "FX_MOD_PARAM_0 + 21",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 34,
+      "name": "FX_MOD_PARAM_0 + 22",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 35,
+      "name": "FX_MOD_PARAM_0 + 23",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 36,
+      "name": "FX_MOD_PARAM_0 + 24",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 37,
+      "name": "FX_MOD_PARAM_0 + 25",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 38,
+      "name": "FX_MOD_PARAM_0 + 26",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 39,
+      "name": "FX_MOD_PARAM_0 + 27",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 40,
+      "name": "FX_MOD_PARAM_0 + 28",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 41,
+      "name": "FX_MOD_PARAM_0 + 29",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 42,
+      "name": "FX_MOD_PARAM_0 + 30",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 43,
+      "name": "FX_MOD_PARAM_0 + 31",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 44,
+      "name": "FX_MOD_PARAM_0 + 32",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 45,
+      "name": "FX_MOD_PARAM_0 + 33",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 46,
+      "name": "FX_MOD_PARAM_0 + 34",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 47,
+      "name": "FX_MOD_PARAM_0 + 35",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 48,
+      "name": "FX_MOD_PARAM_0 + 36",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 49,
+      "name": "FX_MOD_PARAM_0 + 37",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 50,
+      "name": "FX_MOD_PARAM_0 + 38",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 51,
+      "name": "FX_MOD_PARAM_0 + 39",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 52,
+      "name": "FX_MOD_PARAM_0 + 40",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 53,
+      "name": "FX_MOD_PARAM_0 + 41",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 54,
+      "name": "FX_MOD_PARAM_0 + 42",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 55,
+      "name": "FX_MOD_PARAM_0 + 43",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 56,
+      "name": "FX_MOD_PARAM_0 + 44",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 57,
+      "name": "FX_MOD_PARAM_0 + 45",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 58,
+      "name": "FX_MOD_PARAM_0 + 46",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 59,
+      "name": "FX_MOD_PARAM_0 + 47",
+      "min": -1,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 60,
+      "name": "Param 61",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    },
+    {
+      "id": 61,
+      "name": "Param 62",
+      "min": 0,
+      "max": 1,
+      "default": 0
+    }
+  ],
+  "inputs": [
+    {
+      "id": 0,
+      "name": "Left",
+      "kind": "audio"
+    },
+    {
+      "id": 1,
+      "name": "Right",
+      "kind": "audio"
+    },
+    {
+      "id": 2,
+      "name": "Left Sideband",
+      "kind": "audio"
+    },
+    {
+      "id": 3,
+      "name": "Right Sideband",
+      "kind": "audio"
+    },
+    {
+      "id": 4,
+      "name": "Clock/Tempo CV",
+      "kind": "gate"
+    },
+    {
+      "id": 5,
+      "name": "MOD_INPUT_0 + 0",
+      "kind": "cv"
+    },
+    {
+      "id": 6,
+      "name": "MOD_INPUT_0 + 1",
+      "kind": "cv"
+    },
+    {
+      "id": 7,
+      "name": "MOD_INPUT_0 + 2",
+      "kind": "cv"
+    },
+    {
+      "id": 8,
+      "name": "MOD_INPUT_0 + 3",
+      "kind": "cv"
+    }
+  ],
+  "outputs": [
+    {
+      "id": 0,
+      "name": "Left (or Mono merged)",
+      "kind": "audio"
+    },
+    {
+      "id": 1,
+      "name": "Right",
+      "kind": "audio"
+    }
+  ],
+  "lights": 0,
+  "stateKeys": [
+    {
+      "key": "streamingVersion",
+      "type": "integer"
+    },
+    {
+      "key": "isCoupledToGlobalStyle",
+      "type": "boolean"
+    },
+    {
+      "key": "localStyle",
+      "type": "integer"
+    },
+    {
+      "key": "localDisplayRegionColor",
+      "type": "integer"
+    },
+    {
+      "key": "localModulationColor",
+      "type": "integer"
+    },
+    {
+      "key": "localControlValueColor",
+      "type": "integer"
+    },
+    {
+      "key": "localPowerButtonColor",
+      "type": "integer"
+    },
+    {
+      "key": "clockStyle",
+      "type": "integer"
+    },
+    {
+      "key": "loadedPreset",
+      "type": "integer"
+    },
+    {
+      "key": "presetIsDirty",
+      "type": "boolean"
+    },
+    {
+      "key": "polyphonicMode",
+      "type": "boolean"
+    }
+  ],
+  "bypassRoutes": [
+    [
+      0,
+      0
+    ],
+    [
+      1,
+      1
+    ]
+  ]
+}

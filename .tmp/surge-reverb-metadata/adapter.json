@@ -1,0 +1,923 @@
+{
+  "schemaVersion": 1,
+  "key": "SurgeXTRack/SurgeXTFXReverb",
+  "libraryUrl": "https://library.vcvrack.com/SurgeXTRack/SurgeXTFXReverb",
+  "manifest": {
+    "slug": "SurgeXTRack",
+    "name": "Surge XT",
+    "version": "2.2.9.0",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/surge-synthesizer/surge-rack/",
+    "module": {
+      "slug": "SurgeXTFXReverb",
+      "name": "Reverb",
+      "description": "The Surge XT Reverb",
+      "tags": [
+        "Effect",
+        "Polyphonic",
+        "Reverb"
+      ]
+    }
+  },
+  "source": {
+    "directory": "/Users/miu/Code/peach-cat/.cache/vcv-library-sources/SurgeXTRack/640153d4e70896a707bc3a7cbff1d375c44581b6",
+    "commit": "640153d4e70896a707bc3a7cbff1d375c44581b6",
+    "file": "src/FX.h",
+    "registrationFile": "src/FX.cpp",
+    "moduleClass": "sst::surgext_rack::fx::FX<fxt_reverb>",
+    "widgetClass": "fxui::FXWidget<fxt_reverb>"
+  },
+  "detected": {
+    "template": {
+      "declaration": "template <int fxType>",
+      "parameters": [
+        "fxType"
+      ],
+      "arguments": [
+        "fxt_reverb"
+      ],
+      "constants": {}
+    },
+    "constants": {
+      "PORT_MAX_CHANNELS": 16,
+      "n_mod_inputs": 4,
+      "n_arbitrary_switches": 4,
+      "n_fx_params": 12,
+      "FXConfig.extraInputs": 0,
+      "FXConfig.extraSchmidtTriggers": 1,
+      "FXConfig.extraOutputs": 0,
+      "FXConfig.specificParamCount": 2,
+      "FXConfig.panelWidthInScrews": 12,
+      "FXConfig.numParams": 11,
+      "FXConfig.rescaleInputFactor": 1
+    },
+    "counts": {},
+    "panelWidth": null,
+    "namespace": [
+      "sst",
+      "surgext_rack",
+      "fx"
+    ],
+    "expander": null,
+    "prelude": true,
+    "defines": true,
+    "dependencyFiles": [
+      "surge/src/common/dsp/Effect.h",
+      "src/XTModule.h",
+      "surge/src/common/DebugHelpers.h",
+      "surge/src/common/FxPresetAndClipboardManager.h",
+      "surge/src/common/dsp/effects/Reverb1Effect.h",
+      "surge/src/common/SurgeStorage.h",
+      "surge/src/common/dsp/vembertech/lipol.h",
+      "surge/libs/fmt/include/fmt/core.h",
+      "surge/libs/sst/sst-plugininfra/include/sst/plugininfra/cpufeatures.h",
+      "surge/src/common/version.h",
+      "src/XTModuleWidget.h",
+      "surge/src/common/dsp/effects/SurgeSSTFXAdapter.h",
+      "surge/libs/sst/sst-effects/include/sst/effects/Reverb1.h",
+      "surge/src/common/globals.h",
+      "surge/src/common/Parameter.h",
+      "surge/src/common/dsp/utilities/DSPUtils.h",
+      "surge/src/common/ModulationSource.h",
+      "surge/src/common/dsp/Wavetable.h",
+      "surge/libs/sst/sst-plugininfra/libs/tinyxml/include/tinyxml/tinyxml.h",
+      "surge/libs/tuning-library/include/Tunings.h",
+      "surge/src/common/PatchDB.h",
+      "surge/src/common/UserDefaults.h",
+      "surge/src/common/FilterConfiguration.h",
+      "surge/libs/sst/sst-basic-blocks/include/sst/basic-blocks/params/ParamMetadata.h",
+      "surge/libs/sst/sst-filters/include/sst/filters/BiquadFilter.h",
+      "surge/src/common/SkinModel.h",
+      "surge/src/common/dsp/vembertech/basic_dsp.h",
+      "surge/libs/eurorack/eurorack/plaits/dsp/physical_modelling/string.h",
+      "surge/libs/sst/sst-plugininfra/libs/tinyxml/include/tinyxml/tinystr.h",
+      "surge/libs/sst/sst-cpputils/include/sst/cpputils/algorithms.h",
+      "surge/libs/sst/sst-cpputils/include/sst/cpputils/ring_buffer.h",
+      "surge/libs/sst/sst-plugininfra/include/sst/plugininfra/userdefaults.h",
+      "surge/libs/simde/simde/x86/sse.h",
+      "surge/libs/simde/simde/x86/sse2.h",
+      "surge/libs/simde/simde/simde-f16.h",
+      "surge/libs/eurorack/eurorack/stmlib/dsp/filter.h",
+      "surge/libs/eurorack/eurorack/stmlib/utils/buffer_allocator.h",
+      "surge/libs/eurorack/eurorack/plaits/dsp/physical_modelling/delay_line.h",
+      "surge/libs/sst/sst-filters/include/sst/filters/DiodeLadder.h",
+      "surge/libs/sst/sst-filters/include/sst/filters/QuadFilterUnit_Impl.h",
+      "surge/libs/sst/sst-filters/include/sst/filters/FilterCoefficientMaker_Impl.h",
+      "surge/libs/simde/simde/x86/mmx.h",
+      "surge/libs/simde/simde/simde-common.h",
+      "surge/libs/eurorack/eurorack/stmlib/dsp/dsp.h",
+      "surge/libs/sst/sst-filters/include/sst/filters/QuadFilterUnit.h",
+      "surge/libs/sst/sst-filters/include/sst/filters/FilterCoefficientMaker.h",
+      "surge/libs/sst/sst-waveshapers/include/sst/waveshapers/Saturators.h",
+      "surge/libs/sst/sst-waveshapers/include/sst/waveshapers/Harmonics.h",
+      "surge/libs/sst/sst-waveshapers/include/sst/waveshapers/Wavefolders.h",
+      "surge/libs/simde/simde/simde-math.h",
+      "surge/libs/sst/sst-filters/include/sst/filters/TuningProvider.h",
+      "surge/libs/sst/sst-waveshapers/include/sst/waveshapers/WaveshaperTables.h",
+      "surge/libs/sst/sst-waveshapers/include/sst/waveshapers/WaveshaperLUT.h",
+      "surge/libs/simde/simde/mips/msa/types.h"
+    ],
+    "outOfLineDefinitions": 0,
+    "inheritance": {
+      "directBase": "modules::XTModule",
+      "secondaryBases": [
+        "sst::rackhelpers::module_connector::NeighborConnectable_V1"
+      ],
+      "chain": [
+        {
+          "name": "XTModule",
+          "base": "rack::Module",
+          "missing": false
+        }
+      ]
+    },
+    "enums": {
+      "params": {
+        "name": "ParamIds",
+        "raw": "FX_PARAM_0 = 0,\n        FX_MOD_PARAM_0 = FX_PARAM_0 + n_fx_params,\n        FX_SPECIFIC_PARAM_0 = FX_MOD_PARAM_0 + n_fx_params * n_mod_inputs,\n        NUM_PARAMS = FX_SPECIFIC_PARAM_0 + FXConfig<fxType>::specificParamCount()",
+        "identifiers": [
+          "FX_PARAM_0",
+          "FX_MOD_PARAM_0",
+          "FX_SPECIFIC_PARAM_0",
+          "NUM_PARAMS"
+        ],
+        "assignments": {
+          "FX_PARAM_0": "0",
+          "FX_MOD_PARAM_0": "FX_PARAM_0 + n_fx_params",
+          "FX_SPECIFIC_PARAM_0": "FX_MOD_PARAM_0 + n_fx_params * n_mod_inputs",
+          "NUM_PARAMS": "FX_SPECIFIC_PARAM_0 + FXConfig<fxType>::specificParamCount()"
+        }
+      },
+      "inputs": {
+        "name": "InputIds",
+        "raw": "INPUT_L,\n        INPUT_R,\n        SIDEBAND_L,\n        SIDEBAND_R,\n        INPUT_CLOCK,\n        MOD_INPUT_0,\n        INPUT_SPECIFIC_0 = MOD_INPUT_0 + n_mod_inputs,\n        NUM_INPUTS = INPUT_SPECIFIC_0 + FXConfig<fxType>::extraInputs()",
+        "identifiers": [
+          "INPUT_L",
+          "INPUT_R",
+          "SIDEBAND_L",
+          "SIDEBAND_R",
+          "INPUT_CLOCK",
+          "MOD_INPUT_0",
+          "INPUT_SPECIFIC_0",
+          "NUM_INPUTS"
+        ],
+        "assignments": {
+          "INPUT_SPECIFIC_0": "MOD_INPUT_0 + n_mod_inputs",
+          "NUM_INPUTS": "INPUT_SPECIFIC_0 + FXConfig<fxType>::extraInputs()"
+        }
+      },
+      "outputs": {
+        "name": "OutputIds",
+        "raw": "OUTPUT_L,\n        OUTPUT_R,\n        EXTRA_OUTPUT_0,\n        NUM_OUTPUTS = EXTRA_OUTPUT_0 + FXConfig<fxType>::extraOutputs()",
+        "identifiers": [
+          "OUTPUT_L",
+          "OUTPUT_R",
+          "EXTRA_OUTPUT_0",
+          "NUM_OUTPUTS"
+        ],
+        "assignments": {
+          "NUM_OUTPUTS": "EXTRA_OUTPUT_0 + FXConfig<fxType>::extraOutputs()"
+        }
+      },
+      "lights": {
+        "name": "LightIds",
+        "raw": "NUM_LIGHTS",
+        "identifiers": [
+          "NUM_LIGHTS"
+        ]
+      }
+    },
+    "config": {
+      "params": [
+        "FX_PARAM_0 + 0, 0, 1, fxstorage->p[0].get_value_f01()",
+        "FX_PARAM_0 + 1, 0, 1, fxstorage->p[1].get_value_f01()",
+        "FX_PARAM_0 + 2, 0, 1, fxstorage->p[2].get_value_f01()",
+        "FX_PARAM_0 + 3, 0, 1, fxstorage->p[3].get_value_f01()",
+        "FX_PARAM_0 + 4, 0, 1, fxstorage->p[4].get_value_f01()",
+        "FX_PARAM_0 + 5, 0, 1, fxstorage->p[5].get_value_f01()",
+        "FX_PARAM_0 + 6, 0, 1, fxstorage->p[6].get_value_f01()",
+        "FX_PARAM_0 + 7, 0, 1, fxstorage->p[7].get_value_f01()",
+        "FX_PARAM_0 + 8, 0, 1, fxstorage->p[8].get_value_f01()",
+        "FX_PARAM_0 + 9, 0, 1, fxstorage->p[9].get_value_f01()",
+        "FX_PARAM_0 + 10, 0, 1, fxstorage->p[10].get_value_f01()",
+        "FX_PARAM_0 + 11, 0, 1, fxstorage->p[11].get_value_f01()",
+        "FX_MOD_PARAM_0 + 0, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 1, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 2, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 3, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 4, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 5, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 6, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 7, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 8, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 9, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 10, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 11, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 12, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 13, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 14, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 15, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 16, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 17, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 18, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 19, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 20, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 21, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 22, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 23, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 24, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 25, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 26, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 27, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 28, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 29, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 30, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 31, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 32, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 33, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 34, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 35, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 36, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 37, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 38, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 39, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 40, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 41, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 42, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 43, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 44, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 45, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 46, -1, 1, 0, name",
+        "FX_MOD_PARAM_0 + 47, -1, 1, 0, name"
+      ],
+      "switches": [],
+      "buttons": [],
+      "inputs": [
+        "INPUT_L, \"Left\"",
+        "INPUT_R, \"Right\"",
+        "INPUT_CLOCK, \"Clock/Tempo CV\"",
+        "SIDEBAND_L, \"Left Sideband\"",
+        "SIDEBAND_R, \"Right Sideband\"",
+        "MOD_INPUT_0 + 0, s",
+        "MOD_INPUT_0 + 1, s",
+        "MOD_INPUT_0 + 2, s",
+        "MOD_INPUT_0 + 3, s"
+      ],
+      "outputs": [
+        "OUTPUT_L, \"Left (or Mono merged)\"",
+        "OUTPUT_R, \"Right\""
+      ],
+      "bypass": [
+        "INPUT_L, OUTPUT_L",
+        "INPUT_R, OUTPUT_R"
+      ]
+    },
+    "features": [
+      "custom-state",
+      "rack-dsp",
+      "assets",
+      "rack-app",
+      "json",
+      "sample-rate-event",
+      "bypass-routes"
+    ],
+    "stateKeys": [
+      {
+        "key": "streamingVersion",
+        "type": "integer"
+      },
+      {
+        "key": "isCoupledToGlobalStyle",
+        "type": "boolean"
+      },
+      {
+        "key": "localStyle",
+        "type": "integer"
+      },
+      {
+        "key": "localDisplayRegionColor",
+        "type": "integer"
+      },
+      {
+        "key": "localModulationColor",
+        "type": "integer"
+      },
+      {
+        "key": "localControlValueColor",
+        "type": "integer"
+      },
+      {
+        "key": "localPowerButtonColor",
+        "type": "integer"
+      },
+      {
+        "key": "clockStyle",
+        "type": "integer"
+      },
+      {
+        "key": "loadedPreset",
+        "type": "integer"
+      },
+      {
+        "key": "presetIsDirty",
+        "type": "boolean"
+      },
+      {
+        "key": "polyphonicMode",
+        "type": "boolean"
+      }
+    ],
+    "includes": [
+      "cmath",
+      "SurgeXT.h",
+      "dsp/Effect.h",
+      "XTModule.h",
+      "rack.hpp",
+      "cstring",
+      "DebugHelpers.h",
+      "FxPresetAndClipboardManager.h",
+      "LayoutEngine.h",
+      "sst/rackhelpers/neighbor_connectable.h",
+      "sst/filters/HalfRateFilter.h",
+      "FX.h",
+      "FXConfig.h",
+      "XTModuleWidget.h",
+      "XTWidgets.h"
+    ],
+    "triggerParamBases": [],
+    "staticMemoryBytes": 16777216
+  },
+  "assessment": {
+    "strategy": "direct-rack-source-adapter",
+    "compileEligible": true,
+    "requiresReview": true,
+    "blockers": []
+  },
+  "runtimeDraft": {
+    "key": "SurgeXTRack/SurgeXTFXReverb",
+    "plugin": "SurgeXTRack",
+    "model": "SurgeXTFXReverb",
+    "name": "Reverb",
+    "brand": "Surge XT",
+    "version": "2.2.9.0",
+    "license": "GPL-3.0-or-later",
+    "sourceUrl": "https://github.com/surge-synthesizer/surge-rack/",
+    "libraryUrl": "https://library.vcvrack.com/SurgeXTRack/SurgeXTFXReverb",
+    "screenshotUrl": "https://library.vcvrack.com/screenshots/400/SurgeXTRack/SurgeXTFXReverb.webp",
+    "wasmUrl": "./module.wasm",
+    "width": 180,
+    "description": "The Surge XT Reverb",
+    "params": [
+      {
+        "id": 0,
+        "name": "Pre-Delay",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 1,
+        "name": "Room Shape",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 2,
+        "name": "Size",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 3,
+        "name": "Decay Time",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 4,
+        "name": "HF Damping",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 5,
+        "name": "Low Cut",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 6,
+        "name": "Peak Freq",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 7,
+        "name": "Peak Gain",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 8,
+        "name": "High Cut",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 9,
+        "name": "Mix",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 10,
+        "name": "Width",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 11,
+        "name": "Unused Effect Slot 1",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 12,
+        "name": "Mod 1 to Pre-Delay",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 13,
+        "name": "Mod 2 to Pre-Delay",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 14,
+        "name": "Mod 3 to Pre-Delay",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 15,
+        "name": "Mod 4 to Pre-Delay",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 16,
+        "name": "Mod 1 to Room Shape",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 17,
+        "name": "Mod 2 to Room Shape",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 18,
+        "name": "Mod 3 to Room Shape",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 19,
+        "name": "Mod 4 to Room Shape",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 20,
+        "name": "Mod 1 to Size",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 21,
+        "name": "Mod 2 to Size",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 22,
+        "name": "Mod 3 to Size",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 23,
+        "name": "Mod 4 to Size",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 24,
+        "name": "Mod 1 to Decay Time",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 25,
+        "name": "Mod 2 to Decay Time",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 26,
+        "name": "Mod 3 to Decay Time",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 27,
+        "name": "Mod 4 to Decay Time",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 28,
+        "name": "Mod 1 to HF Damping",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 29,
+        "name": "Mod 2 to HF Damping",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 30,
+        "name": "Mod 3 to HF Damping",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 31,
+        "name": "Mod 4 to HF Damping",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 32,
+        "name": "Mod 1 to Low Cut",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 33,
+        "name": "Mod 2 to Low Cut",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 34,
+        "name": "Mod 3 to Low Cut",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 35,
+        "name": "Mod 4 to Low Cut",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 36,
+        "name": "Mod 1 to Peak Freq",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 37,
+        "name": "Mod 2 to Peak Freq",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 38,
+        "name": "Mod 3 to Peak Freq",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 39,
+        "name": "Mod 4 to Peak Freq",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 40,
+        "name": "Mod 1 to Peak Gain",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 41,
+        "name": "Mod 2 to Peak Gain",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 42,
+        "name": "Mod 3 to Peak Gain",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 43,
+        "name": "Mod 4 to Peak Gain",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 44,
+        "name": "Mod 1 to High Cut",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 45,
+        "name": "Mod 2 to High Cut",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 46,
+        "name": "Mod 3 to High Cut",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 47,
+        "name": "Mod 4 to High Cut",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 48,
+        "name": "Mod 1 to Mix",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 49,
+        "name": "Mod 2 to Mix",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 50,
+        "name": "Mod 3 to Mix",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 51,
+        "name": "Mod 4 to Mix",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 52,
+        "name": "Mod 1 to Width",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 53,
+        "name": "Mod 2 to Width",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 54,
+        "name": "Mod 3 to Width",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 55,
+        "name": "Mod 4 to Width",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 56,
+        "name": "Mod 1 to Unused Effect Slot",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 57,
+        "name": "Mod 2 to Unused Effect Slot",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 58,
+        "name": "Mod 3 to Unused Effect Slot",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 59,
+        "name": "Mod 4 to Unused Effect Slot",
+        "min": -1,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 60,
+        "name": "Enable Low Cut",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "id": 61,
+        "name": "Enable High Cut",
+        "min": 0,
+        "max": 1,
+        "default": 0
+      }
+    ],
+    "inputs": [
+      {
+        "id": 0,
+        "name": "Left",
+        "kind": "audio"
+      },
+      {
+        "id": 1,
+        "name": "Right",
+        "kind": "audio"
+      },
+      {
+        "id": 2,
+        "name": "Left Sideband",
+        "kind": "audio"
+      },
+      {
+        "id": 3,
+        "name": "Right Sideband",
+        "kind": "audio"
+      },
+      {
+        "id": 4,
+        "name": "Clock/Tempo CV",
+        "kind": "gate"
+      },
+      {
+        "id": 5,
+        "name": "Modulation Signal 1",
+        "kind": "cv"
+      },
+      {
+        "id": 6,
+        "name": "Modulation Signal 2",
+        "kind": "cv"
+      },
+      {
+        "id": 7,
+        "name": "Modulation Signal 3",
+        "kind": "cv"
+      },
+      {
+        "id": 8,
+        "name": "Modulation Signal 4",
+        "kind": "cv"
+      }
+    ],
+    "outputs": [
+      {
+        "id": 0,
+        "name": "Left (or Mono merged)",
+        "kind": "audio"
+      },
+      {
+        "id": 1,
+        "name": "Right",
+        "kind": "audio"
+      }
+    ],
+    "lights": 0,
+    "stateKeys": [
+      {
+        "key": "streamingVersion",
+        "type": "integer"
+      },
+      {
+        "key": "isCoupledToGlobalStyle",
+        "type": "boolean"
+      },
+      {
+        "key": "localStyle",
+        "type": "integer"
+      },
+      {
+        "key": "localDisplayRegionColor",
+        "type": "integer"
+      },
+      {
+        "key": "localModulationColor",
+        "type": "integer"
+      },
+      {
+        "key": "localControlValueColor",
+        "type": "integer"
+      },
+      {
+        "key": "localPowerButtonColor",
+        "type": "integer"
+      },
+      {
+        "key": "clockStyle",
+        "type": "integer"
+      },
+      {
+        "key": "loadedPreset",
+        "type": "integer"
+      },
+      {
+        "key": "presetIsDirty",
+        "type": "boolean"
+      },
+      {
+        "key": "polyphonicMode",
+        "type": "boolean"
+      }
+    ],
+    "bypassRoutes": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        1
+      ]
+    ]
+  }
+}
