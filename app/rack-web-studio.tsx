@@ -844,10 +844,9 @@ export function RackWebStudio() {
   }, []);
 
   useEffect(() => {
-    void fetch(`${LOCAL_PLUGIN_BUILDER}/catalog`)
-      .then((response) => (response.ok ? response.json() : []))
-      .then((modules: WebPluginModule[]) => {
-        if (!Array.isArray(modules) || !modules.length) return;
+    let cancelled=false;
+    const install=(modules:WebPluginModule[])=>{
+        if(cancelled||!Array.isArray(modules)||!modules.length)return;
         registerDynamicModules(modules);
         setRegistry(allWebPlugins());
         mutateHistory((current) => {
@@ -861,8 +860,21 @@ export function RackWebStudio() {
           });
           return changed ? { ...current, modules: nextModules } : current;
         });
-      })
+      },load=async()=>{
+        const bundled=await fetch("/dynamic-plugins/catalog.json"),
+          bundledModules=bundled.ok?await bundled.json() as WebPluginModule[]:[];
+        install(bundledModules);
+        try{
+          const local=await fetch(`${LOCAL_PLUGIN_BUILDER}/catalog`);
+          if(local.ok)install(await local.json() as WebPluginModule[]);
+        }catch{
+          // The bundled exact-source catalog is the offline runtime; the local
+          // compiler is only an optional development override.
+        }
+      };
+    void load()
       .catch(() => undefined);
+    return()=>{cancelled=true};
   }, [mutateHistory]);
 
   useEffect(() => {
@@ -3634,6 +3646,50 @@ export function RackWebStudio() {
             }}
           />
           <svg
+            className="pw-cable-hits"
+            viewBox={`${rackSurface.x} ${rackSurface.y} ${rackSurface.width} ${rackSurface.height}`}
+            style={{
+              left: rackSurface.x,
+              top: rackSurface.y,
+              width: rackSurface.width,
+              height: rackSurface.height,
+              display: cablesVisible ? undefined : "none",
+            }}
+          >
+            {cablePaths.map((path)=>path&&(
+              <path
+                key={path.id}
+                className="hit"
+                d={path.d}
+                role="button"
+                aria-label={`Cable ${path.id}`}
+                tabIndex={0}
+                onPointerDown={(event)=>selectCable(path.id,event)}
+                onContextMenu={(event)=>{
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const rack=rackRef.current;
+                  if(!rack)return;
+                  const rect=rack.getBoundingClientRect(),localX=event.clientX-rect.left,localY=event.clientY-rect.top;
+                  setSelectedIds(new Set());
+                  setSelectedCableIds(new Set([path.id]));
+                  setModuleMenu(null);
+                  setQuickAdd(null);
+                  setCableMenu({
+                    left:Math.max(8,Math.min(localX,rack.clientWidth-210)),
+                    top:Math.max(8,Math.min(localY,rack.clientHeight-178)),
+                    cableId:path.id,
+                  });
+                }}
+                onKeyDown={(event)=>{
+                  if(event.key!=="Enter"&&event.key!==" ")return;
+                  event.preventDefault();
+                  selectCable(path.id,event);
+                }}
+              />
+            ))}
+          </svg>
+          <svg
             className="pw-cables"
             viewBox={`${rackSurface.x} ${rackSurface.y} ${rackSurface.width} ${rackSurface.height}`}
             style={{
@@ -3653,44 +3709,6 @@ export function RackWebStudio() {
                     className={`${selectedCableIds.has(path.id) ? "selected" : ""} ${Math.abs(visualSignals.cables[path.id] ?? 0) > .01 ? "powered" : ""}`}
                   >
                     <path d={path.d} stroke={path.color} />
-                    <path
-                      className="hit"
-                      d={path.d}
-                      role="button"
-                      aria-label={`Cable ${path.id}`}
-                      tabIndex={0}
-                      onPointerDown={(event) => selectCable(path.id, event)}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        const rack = rackRef.current;
-                        if (!rack) return;
-                        const rect = rack.getBoundingClientRect(),
-                          localX = event.clientX - rect.left,
-                          localY = event.clientY - rect.top;
-                        setSelectedIds(new Set());
-                        setSelectedCableIds(new Set([path.id]));
-                        setModuleMenu(null);
-                        setQuickAdd(null);
-                        setCableMenu({
-                          left: Math.max(
-                            8,
-                            Math.min(localX, rack.clientWidth - 210),
-                          ),
-                          top: Math.max(
-                            8,
-                            Math.min(localY, rack.clientHeight - 178),
-                          ),
-                          cableId: path.id,
-                        });
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          selectCable(path.id, event);
-                        }
-                      }}
-                    />
                     <RackCablePlug
                       x={path.x1}
                       y={path.y1}

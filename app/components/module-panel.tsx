@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import type { ModuleInstance } from "../../lib/patch-types";
 import { resolvedModulePortPosition } from "../../lib/patch-operations";
-import type { ParamSpec, PortSpec, RackWidgetPosition, WebPluginModule } from "../../lib/web-plugin-registry";
+import type { ParamSpec, PortSpec, WebPluginModule } from "../../lib/web-plugin-registry";
 import { STROKE_SPECIAL_MODES, strokeSpecialModeLabel } from "../../lib/stroke-host";
 import { RackScopeDisplay } from "./rack-scope-display";
-import { RackParamVisual } from "./rack-param-visual";
+import { RackParamVisual, rackParamControlSize, rackParamInteraction, rackParamSwitchFrames } from "./rack-param-visual";
 import { RackSegmentDisplay } from "./rack-segment-display";
 import { RackLightVisual } from "./rack-light-visual";
 import { RackAudioDisplay } from "./rack-audio-display";
@@ -151,6 +151,7 @@ export function ModulePanel({
   audioRunning: boolean;
 }) {
   const [dropTarget, setDropTarget] = useState(false);
+  const paramDragRef=useRef<{pointerId:number;paramId:number;startCoordinate:number;startValue:number;min:number;max:number;snap:boolean;axis:"x"|"y"}|null>(null);
   const inputs: PortSpec[] =
     definition?.inputs.filter((port)=>!port.hidden) ??
     Array.from({ length: 2 }, (_, id) => ({
@@ -206,13 +207,12 @@ export function ModulePanel({
     assetSlotParam=assetSlots>1?definition?.params.find(param=>param.name.toLowerCase()==="channel"):undefined,
     assetSlot=Math.max(0,Math.min(assetSlots-1,Math.round(assetSlotParam?module.params[assetSlotParam.id]??0:0))),
     selectedAsset=module.assets?.[assetSlot]??(assetSlot===0?module.asset:undefined);
-  const rackWidgetStyle=(position?:RackWidgetPosition)=>position&&definition?{
-    left:`${position.x/module.width*100}%`,
-    top:`${position.y/380*100}%`,
-    ...(position.width?{width:`${position.width/definition.width*100}%`}:{}),
-    ...(position.height?{height:`${position.height/380*100}%`}:{}),
-    ...(position.centered?{transform:"translate(-50%, -50%)"}:{}),
-  } as CSSProperties:undefined;
+  const rackWidgetStyle=(param:ParamSpec)=>{
+    if(!param.position||!definition)return undefined;
+    const position=param.position,size=rackParamControlSize(param),scale=module.width/definition.width,
+      centerX=position.x+(position.centered?0:size.width/2),centerY=position.y+(position.centered?0:size.height/2);
+    return {left:`${centerX/definition.width*100}%`,top:`${centerY/380*100}%`,width:size.width*scale,height:size.height,transform:"translate(-50%, -50%)"} as CSSProperties;
+  };
   const rackPortStyle=(port:PortSpec,direction:"in"|"out")=>{
     const position=resolvedModulePortPosition(module,direction,port.id,direction==="in"?inputs:outputs,definition?.width??module.width);
     return {left:position.x-module.x,top:position.y-module.y,transform:"translate(-50%, -50%)"} as CSSProperties;
@@ -387,91 +387,93 @@ export function ModulePanel({
               onPointerDown={(event) => event.stopPropagation()}
               onChange={(event) => onData({ text: event.target.value })}
             />
-          ) : panelParams.map((param) => (
-            <label
+          ) : panelParams.map((param) => {
+            const interaction=rackParamInteraction(param),label=`${module.model} ${param.name}`;
+            return <label
               key={param.id}
-              className={param.position?.control === "selector" ? "rack-selector" : undefined}
+              className={`rack-control-${interaction} ${param.position?.control === "selector" ? "rack-selector" : ""}`}
               title={`${param.name}: ${module.params[param.id] ?? param.default}`}
-              style={hasParamSourceLayout?rackWidgetStyle(param.position):undefined}
+              style={hasParamSourceLayout?rackWidgetStyle(param):undefined}
             >
               <span>{param.name}</span>
-              {"button" in param && param.button ? (
-                <button
-                  type="button"
-                  className="pw-param-button"
-                  aria-label={`${module.model} ${param.name}`}
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    onParamHover(param.id);
-                    onMomentary(param.id, true);
-                  }}
-                  onPointerUp={(event) => {
-                    event.currentTarget.releasePointerCapture(event.pointerId);
-                    onMomentary(param.id, false);
-                  }}
-                  onPointerCancel={() => onMomentary(param.id, false)}
-                  onKeyDown={(event) => {
-                    if ((event.key === " " || event.key === "Enter") && !event.repeat) {
-                      event.preventDefault();
-                      onMomentary(param.id, true);
-                    }
-                  }}
-                  onKeyUp={(event) => {
-                    if (event.key === " " || event.key === "Enter") {
-                      event.preventDefault();
-                      onMomentary(param.id, false);
-                    }
-                  }}
-                  onBlur={() => {
-                    onParamHover(null);
-                    onMomentary(param.id, false);
-                  }}
-                >
-                  {param.name}
-                </button>
-              ) : (
-                <input
-                  aria-label={`${module.model} ${param.name}`}
-                  type="range"
-                  min={param.min}
-                  max={param.max}
-                  step={"snap" in param && param.snap ? 1 : "any"}
-                  value={module.params[param.id] ?? param.default}
-                  onPointerEnter={() => onParamHover(param.id)}
-                  onPointerLeave={() => onParamHover(null)}
-                  onFocus={() => onParamHover(param.id)}
-                  onBlur={() => onParamHover(null)}
-                  onKeyDown={(event) => {
-                    if ("snap" in param && param.snap) return;
-                    const current = module.params[param.id] ?? param.default;
-                    if (event.key === "Home" || event.key === "End") {
-                      event.preventDefault();
-                      onParam(param.id, event.key === "Home" ? param.min : param.max);
-                      return;
-                    }
-                    const direction =
-                      event.key === "ArrowLeft" || event.key === "ArrowDown"
-                        ? -1
-                        : event.key === "ArrowRight" || event.key === "ArrowUp"
-                          ? 1
-                          : 0;
-                    if (!direction) return;
-                    event.preventDefault();
-                    const increment =
-                      (param.max - param.min) / (event.shiftKey ? 1000 : 100);
-                    onParam(
-                      param.id,
-                      Math.min(param.max, Math.max(param.min, current + direction * increment)),
-                    );
-                  }}
-                  onChange={(event) =>
-                    onParam(param.id, Number(event.target.value))
-                  }
-                />
-              )}
-            </label>
-          ))}
+              {interaction==="button" ? <button
+                type="button"
+                className="pw-param-button"
+                aria-label={label}
+                onPointerDown={(event)=>{
+                  event.preventDefault();event.stopPropagation();
+                  event.currentTarget.setPointerCapture(event.pointerId);onParamHover(param.id);onMomentary(param.id,true);
+                }}
+                onPointerUp={(event)=>{
+                  if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
+                  onMomentary(param.id,false);
+                }}
+                onPointerCancel={()=>onMomentary(param.id,false)}
+                onKeyDown={(event)=>{if((event.key===" "||event.key==="Enter")&&!event.repeat){event.preventDefault();onMomentary(param.id,true);}}}
+                onKeyUp={(event)=>{if(event.key===" "||event.key==="Enter"){event.preventDefault();onMomentary(param.id,false);}}}
+                onBlur={()=>{onParamHover(null);onMomentary(param.id,false);}}
+              >{param.name}</button> : interaction==="switch" ? <button
+                type="button"
+                className="pw-param-switch"
+                aria-label={`${label}: ${module.params[param.id]??param.default}`}
+                onPointerDown={(event)=>event.stopPropagation()}
+                onDoubleClick={(event)=>{event.preventDefault();event.stopPropagation();onParam(param.id,param.default);}}
+                onClick={()=>{
+                  const frames=rackParamSwitchFrames(param),current=module.params[param.id]??param.default,
+                    normalized=param.max===param.min?0:(current-param.min)/(param.max-param.min),
+                    nextFrame=(Math.round(normalized*(frames-1))+1)%frames;
+                  onParam(param.id,param.min+nextFrame/(frames-1)*(param.max-param.min));
+                }}
+              >{param.name}</button> : <input
+                aria-label={label}
+                type="range"
+                min={param.min}
+                max={param.max}
+                step={param.snap?1:"any"}
+                value={module.params[param.id]??param.default}
+                onDoubleClick={(event)=>{
+                  event.preventDefault();event.stopPropagation();paramDragRef.current=null;onParam(param.id,param.default);
+                }}
+                onPointerDown={(event)=>{
+                  if(event.button!==0)return;
+                  event.preventDefault();event.stopPropagation();
+                  const axis=interaction==="selector"?"x":"y",startCoordinate=axis==="x"?event.clientX:event.clientY;
+                  paramDragRef.current={pointerId:event.pointerId,paramId:param.id,startCoordinate,startValue:module.params[param.id]??param.default,min:param.min,max:param.max,snap:Boolean(param.snap),axis};
+                  event.currentTarget.setPointerCapture(event.pointerId);onParamHover(param.id);
+                }}
+                onPointerMove={(event)=>{
+                  const drag=paramDragRef.current;
+                  if(!drag||drag.pointerId!==event.pointerId||drag.paramId!==param.id)return;
+                  event.preventDefault();
+                  const coordinate=drag.axis==="x"?event.clientX:event.clientY,direction=drag.axis==="x"?1:-1,sensitivity=event.shiftKey?600:140,
+                    raw=drag.startValue+(coordinate-drag.startCoordinate)*direction*(drag.max-drag.min)/sensitivity,
+                    next=Math.min(drag.max,Math.max(drag.min,drag.snap?Math.round(raw):raw));
+                  onParam(param.id,next);
+                }}
+                onPointerUp={(event)=>{
+                  const drag=paramDragRef.current;
+                  if(!drag||drag.pointerId!==event.pointerId||drag.paramId!==param.id)return;
+                  paramDragRef.current=null;
+                  if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
+                }}
+                onPointerCancel={()=>{paramDragRef.current=null;}}
+                onPointerEnter={()=>onParamHover(param.id)}
+                onPointerLeave={()=>onParamHover(null)}
+                onFocus={()=>onParamHover(param.id)}
+                onBlur={()=>onParamHover(null)}
+                onKeyDown={(event)=>{
+                  const current=module.params[param.id]??param.default;
+                  if(event.key==="Home"||event.key==="End"){event.preventDefault();onParam(param.id,event.key==="Home"?param.min:param.max);return;}
+                  const direction=event.key==="ArrowLeft"||event.key==="ArrowDown"?-1:event.key==="ArrowRight"||event.key==="ArrowUp"?1:0;
+                  if(!direction)return;
+                  event.preventDefault();
+                  const increment=param.snap?1:(param.max-param.min)/(event.shiftKey?1000:100);
+                  onParam(param.id,Math.min(param.max,Math.max(param.min,current+direction*increment)));
+                }}
+                onChange={(event)=>onParam(param.id,Number(event.target.value))}
+              />}
+            </label>;
+          })}
           {module.key === "Stoermelder-P1/Stroke" && (
             <div className="pw-stroke-map">
               {Array.from({ length: 10 }, (_, slot) => {

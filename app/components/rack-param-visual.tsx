@@ -34,18 +34,43 @@ const SWITCHES:Record<string,{name:string;size:[number,number];frames:number}>={
   CKSSThree:{name:"CKSSThree",size:[13.457,28.3477],frames:3},
   NKK:{name:"NKK",size:[31.9999,43.8825],frames:3},
 };
-function sourceName(widget:string){
+export function rackParamWidgetKind(param:ParamSpec){
+  const widget=param.position?.widget??"";
   const simple=widget.replace(/\b(?:rack::)?componentlibrary::/g,"").trim();
-  if(/VCVLightLatch|VCVLatch|VCVButton|LEDButton/.test(simple))return"VCVButton";
+  if(/VCVLightButton|VCVLightLatch|VCVLatch|VCVButton|LEDButton/.test(simple))return"VCVButton";
   if(/VCVLightBezel/.test(simple))return"VCVBezel";
   if(/VCVLightSlider|LEDLightSlider/.test(simple))return"VCVSlider";
   if(/BefacoSlidePot/.test(simple))return"BefacoSlidePot";
   return Object.keys({...KNOBS,...SWITCHES}).find(name=>new RegExp(`(?:^|[^A-Za-z0-9_])${name}(?:$|[^A-Za-z0-9_])`).test(simple))??"";
 }
+export type RackParamInteraction="knob"|"slider"|"switch"|"button"|"selector"|"unknown";
+export function rackParamInteraction(param:ParamSpec):RackParamInteraction{
+  if(param.button)return"button";
+  if(param.position?.control==="selector")return"selector";
+  const kind=rackParamWidgetKind(param);
+  if(kind in KNOBS)return"knob";
+  if(kind==="VCVSlider"||kind==="BefacoSlidePot")return"slider";
+  if(kind==="VCVBezel"||kind in SWITCHES)return"switch";
+  return"unknown";
+}
+export function rackParamControlSize(param:ParamSpec){
+  const position=param.position,kind=rackParamWidgetKind(param),knob=KNOBS[kind];
+  if(position?.control==="selector")return{width:position.width??38,height:position.height??18};
+  if(knob)return{width:knob.size,height:knob.size};
+  if(kind==="VCVSlider")return{width:19.8426,height:76.5352};
+  if(kind==="BefacoSlidePot")return{width:15.5913,height:111};
+  if(kind==="VCVBezel")return{width:21.2603,height:21.2599};
+  const control=SWITCHES[kind];
+  return control?{width:control.size[0],height:control.size[1]}:{width:position?.width??38,height:position?.height??40};
+}
+export function rackParamSwitchFrames(param:ParamSpec){
+  const kind=rackParamWidgetKind(param);
+  return kind==="VCVBezel"?2:SWITCHES[kind]?.frames??Math.max(2,Math.round(param.max-param.min)+1);
+}
 function asset(name:string){return`/api/rack-component?name=${encodeURIComponent(name)}`}
 
 export function RackParamVisual({param,value,moduleWidth,sourceWidth}:{param:ParamSpec;value:number;moduleWidth:number;sourceWidth:number}){
-  const position=param.position,kind=position?.widget?sourceName(position.widget):"";
+  const position=param.position,kind=rackParamWidgetKind(param);
   if(!position||!kind)return null;
   const scale=moduleWidth/sourceWidth,normalized=param.max===param.min?0:Math.max(0,Math.min(1,(value-param.min)/(param.max-param.min))),placementStyle=(width:number,height:number)=>({left:`${(position.x+(position.centered?0:width/2))/sourceWidth*100}%`,top:`${(position.y+(position.centered?0:height/2))/380*100}%`,transform:"translate(-50%, -50%)"}) as CSSProperties,knob=KNOBS[kind];
   if(knob){

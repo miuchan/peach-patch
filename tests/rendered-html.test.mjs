@@ -63,6 +63,11 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.doesNotMatch(panel, /naturalWidth\s*\/\s*image\.naturalHeight/);
   assert.match(panel, /resolvedModulePortPosition\(module,direction,port\.id/);
   assert.match(panel, /pw-ports inputs aligned-layout/);
+  assert.match(panel, /paramDragRef/);
+  assert.match(panel, /setPointerCapture/);
+  assert.match(panel, /rackParamInteraction/);
+  assert.match(panel, /pw-param-switch/);
+  assert.match(panel, /onDoubleClick=\{\(event\)=>\{event\.preventDefault\(\);event\.stopPropagation\(\);onParam\(param\.id,param\.default\);\}\}/);
   assert.match(panel, /data-port-direction="in"/);
   assert.match(panel, /data-port-direction="out"/);
   assert.match(studio, /module\.width !== definition\.width/);
@@ -76,5 +81,7 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(studio, /import \{ Maximize2, Play, Square \} from "lucide-react"/);
   assert.match(studio, /className="pw-zoom"[\s\S]*className="pw-zoom-fit"/);
   assert.match(studio, /className="pw-rack-surface"/);
+  assert.match(studio, /className="pw-cable-hits"/);
+  assert.match(studio, /fetch\("\/dynamic-plugins\/catalog\.json"\)/);
   assert.match(studio, /rackSurfaceBounds\(/);
 });
