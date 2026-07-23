@@ -4,6 +4,8 @@ A browser-native VCV Rack module registry. It stores versioned WebAssembly artif
 
 The root `index.json` is the searchable formula index. Every immutable package lives at `packages/<plugin>/<model>/<version>/` with its own `manifest.json` and `module.wasm`.
 
+`build-status.json` tracks every open-source module discovered from the pinned VCV Library revision as `compiled`, `failed`, or `pending`. `coverage.json` is the compact summary. Failed records contain only structured adapter assessments; local paths and raw build logs are never published.
+
 ## CLI
 
 ```sh

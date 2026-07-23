@@ -1,0 +1,17 @@
+"use client";
+
+import {useEffect,useRef} from "react";
+
+const finite=(samples:number[]|undefined)=>(samples??[]).map(value=>Number.isFinite(value)?value:0);
+
+export function RackMultiMeterDisplay({samples,mode,channelsMode,refs,x,y,width,height}:{samples?:number[][];mode:number;channelsMode:number;refs:number[];x:number;y:number;width:number;height:number}){
+  const canvasRef=useRef<HTMLCanvasElement>(null),peaksRef=useRef(Array(16).fill(-96));
+  useEffect(()=>{
+    const canvas=canvasRef.current;if(!canvas)return;const scale=Math.max(1,Math.min(3,window.devicePixelRatio||1));canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);const context=canvas.getContext("2d");if(!context)return;context.setTransform(scale,0,0,scale,0,0);context.fillStyle="#000";context.fillRect(0,0,width,height);
+    const channels=(mode>.5?2:[16,8,4][Math.max(0,Math.min(2,Math.round(channelsMode)))]),levels=Array.from({length:channels},(_,channel)=>{const values=finite(samples?.[channel]),peak=values.reduce((value,sample)=>Math.max(value,Math.abs(sample)),0),db=20*Math.log10(Math.max(1e-6,peak));peaksRef.current[channel]=Math.max(db,peaksRef.current[channel]-.9);return {db,peak:peaksRef.current[channel]}});
+    const meterWidth=width*.05*(channels===4?4:channels===8?2:1)+(channels===4?width*.03:channels===8?width*.01:0),spacing=width*.01,meterTop=height*.03,meterHeight=height*.87;
+    for(let channel=0;channel<channels;channel++){const left=width*.025+channel*(meterWidth+spacing),ref=Number.isFinite(refs[channel])?refs[channel]:0,normalize=(db:number)=>Math.max(0,Math.min(1,(db+96)/120)),levelY=meterTop+meterHeight*(1-normalize(levels[channel].db-ref)),peakY=meterTop+meterHeight*(1-normalize(levels[channel].peak-ref));context.fillStyle="#303030";context.fillRect(left,meterTop,meterWidth,meterHeight);context.fillStyle="#00e000";context.fillRect(left,levelY,meterWidth,meterTop+meterHeight-levelY);context.fillStyle="#e00000";context.fillRect(left,peakY,meterWidth,2);context.strokeStyle="#777";context.lineWidth=.65;context.strokeRect(left+.5,meterTop+.5,meterWidth-1,meterHeight-1);context.fillStyle="#e0e0e0";context.font="8px ui-monospace, monospace";context.textAlign="center";context.fillText(String(Math.round(levels[channel].db)),left+meterWidth/2,height*.965);}
+    if(mode>.5){const half=width*.35,cx=width*.55,cy=height*.5;context.strokeStyle="#009999";context.lineWidth=1;context.strokeRect(cx-half,cy-half,half*2,half*2);context.beginPath();context.moveTo(cx,cy-half);context.lineTo(cx,cy+half);context.moveTo(cx-half,cy);context.lineTo(cx+half,cy);context.moveTo(cx-half,cy-half);context.lineTo(cx+half,cy+half);context.moveTo(cx-half,cy+half);context.lineTo(cx+half,cy-half);context.stroke();const xs=finite(samples?.[0]),ys=finite(samples?.[1]),count=Math.min(xs.length,ys.length);if(count){context.beginPath();for(let index=0;index<count;index++){const px=cx+xs[index]*half,py=cy-ys[index]*half;index?context.lineTo(px,py):context.moveTo(px,py)}context.strokeStyle="#00ffff";context.lineWidth=1.5;context.shadowColor="#00ffff";context.shadowBlur=3;context.stroke();context.shadowBlur=0;}}
+  },[channelsMode,height,mode,refs,samples,width]);
+  return <canvas ref={canvasRef} className="pw-rack-multi-meter" style={{left:x,top:y,width,height}} aria-label="Live multichannel level and XY meter"/>;
+}

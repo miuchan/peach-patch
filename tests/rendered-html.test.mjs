@@ -67,7 +67,8 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(panel, /setPointerCapture/);
   assert.match(panel, /rackParamInteraction/);
   assert.match(panel, /pw-param-switch/);
-  assert.match(panel, /onDoubleClick=\{\(event\)=>\{event\.preventDefault\(\);event\.stopPropagation\(\);onParam\(param\.id,param\.default\);\}\}/);
+  assert.match(panel, /registerRackParamPress\(lastParamPressRef\.current,param\.id,event\.pointerType,event\.timeStamp\)/);
+  assert.match(panel, /if\(press\.doubleClick\)\{/);
   assert.match(panel, /data-port-direction="in"/);
   assert.match(panel, /data-port-direction="out"/);
   assert.match(studio, /module\.width !== definition\.width/);

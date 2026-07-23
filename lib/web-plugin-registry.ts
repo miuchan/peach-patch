@@ -20,6 +20,7 @@ export type MessageExpanderContract = {
 export type ExpanderContract = ObjectExpanderContract | MessageExpanderContract;
 export type RuntimeVisual =
   | { kind:"scope"; inputs:[number,number]; width:number; height:number; x:number; y:number }
+  | { kind:"multi-meter"; inputs:[number,number,number]; modeParam:number; channelsParam:number; width:number; height:number; x:number; y:number }
   | { kind:"segment"; param:number; values:string[]; width:number; height:number; x:number; y:number }
   | { kind:"audio-display"; channels:2|8|16; width:number; height:number; x:number; y:number };
 
@@ -35,6 +36,8 @@ export type WebPluginModule = {
   libraryUrl: string;
   screenshotUrl: string;
   wasmUrl: string;
+  manifestUrl?: string;
+  sourceCommit?: string;
   artifact?: {
     sha256: string;
     size: number;

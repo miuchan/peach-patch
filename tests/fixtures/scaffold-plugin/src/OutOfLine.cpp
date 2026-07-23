@@ -32,9 +32,23 @@ struct OutOfLineModule : Module {
   void process(const ProcessArgs&) override;
 };
 
+static const float fixtureOutOfLineScale = 2.f;
+
+/*
+int OutOfLineModule::removedMethod() {
+  int values = 7;
+  json_righteal(values);
+  return values;
+}
+*/
+
+static float fixtureOutOfLineHelper(float value) {
+  return value * fixtureOutOfLineScale;
+}
+
 void OutOfLineModule::process(const ProcessArgs&) {
   outputs[VALUE_OUTPUT].setChannels(1);
-  outputs[VALUE_OUTPUT].setVoltage(inputs[VALUE_INPUT].getVoltage() + values[0] + values[39]);
+  outputs[VALUE_OUTPUT].setVoltage(fixtureOutOfLineHelper(inputs[VALUE_INPUT].getVoltage() + values[0] + values[39]));
   lights[VALUE_LIGHT + 3].value = 0.5f;
 }
 

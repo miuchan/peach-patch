@@ -1,6 +1,7 @@
 import type { WebPluginModule } from "./web-plugin-registry.ts";
 
 export const DEFAULT_PEACH_REGISTRY_URL =
+  process.env.NEXT_PUBLIC_PEACH_PATCH_REGISTRY_URL ||
   "https://raw.githubusercontent.com/miuchan/peach-patch-registry/main/index.json";
 
 type RegistryPackage = Omit<WebPluginModule, "wasmUrl"> & {
@@ -46,6 +47,9 @@ export function modulesFromRegistryIndex(
     return {
       ...item,
       wasmUrl: new URL(item.wasmUrl, indexUrl).href,
+      ...(item.manifestUrl
+        ? { manifestUrl: new URL(item.manifestUrl, indexUrl).href }
+        : {}),
     } as WebPluginModule;
   });
 }

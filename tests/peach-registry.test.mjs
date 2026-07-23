@@ -18,6 +18,7 @@ const moduleRecord = {
   libraryUrl: "https://example.com/library",
   screenshotUrl: "https://example.com/screenshot.webp",
   wasmUrl: "packages/Test/Osc/1.0.0/module.wasm",
+  manifestUrl: "packages/Test/Osc/1.0.0/manifest.json",
   artifact: { sha256: "a".repeat(64), size: 8 },
   width: 45,
   description: "test",
@@ -35,6 +36,10 @@ test("registry index resolves immutable artifact URLs", () => {
   assert.equal(
     module.wasmUrl,
     "https://raw.example/registry/packages/Test/Osc/1.0.0/module.wasm",
+  );
+  assert.equal(
+    module.manifestUrl,
+    "https://raw.example/registry/packages/Test/Osc/1.0.0/manifest.json",
   );
 });
 

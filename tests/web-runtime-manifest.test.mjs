@@ -21,7 +21,7 @@ test("the Web ABI manifest and runtime registry stay in lockstep",()=>{
     const wasm=fs.readFileSync(path.join(root,"public","wasm",`${item.artifact}.wasm`));
     assert.deepEqual([...wasm.subarray(0,4)],[0,97,115,109],`${item.key} artifact has WASM magic`);
     const exports=new Set(WebAssembly.Module.exports(new WebAssembly.Module(wasm)).map(entry=>entry.name));
-    for(const name of ["rack_web_asset_capacity","rack_web_asset_buffer","rack_web_commit_asset","rack_web_capture_capacity","rack_web_capture_buffer","rack_web_capture_frames","rack_web_capture_channels","rack_web_capture_active","rack_web_consume_capture","rack_web_set_capture_enabled","rack_web_midi_push","rack_web_midi_output_available","rack_web_midi_output_buffer","rack_web_consume_midi_output","rack_web_max_channels","rack_web_set_input_channels","rack_web_get_output_channels","rack_web_set_polyphony"])assert.ok(exports.has(name),`${item.key} exports ABI 0.3`);
+    for(const name of ["rack_web_asset_capacity","rack_web_asset_buffer","rack_web_commit_asset","rack_web_capture_capacity","rack_web_capture_buffer","rack_web_capture_frames","rack_web_capture_channels","rack_web_capture_active","rack_web_consume_capture","rack_web_set_capture_enabled","rack_web_midi_push","rack_web_midi_output_available","rack_web_midi_output_buffer","rack_web_consume_midi_output","rack_web_midi_packet_output_available","rack_web_midi_packet_output_buffer","rack_web_consume_midi_packet_output","rack_web_max_channels","rack_web_set_input_channels","rack_web_get_output_channels","rack_web_set_polyphony"])assert.ok(exports.has(name),`${item.key} exports ABI 0.3`);
   }
 });
 

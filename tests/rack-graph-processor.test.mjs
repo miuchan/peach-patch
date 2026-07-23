@@ -25,7 +25,7 @@ function output(){return [[new Float32Array(128),new Float32Array(128)]]}
 
 function mattixGraph(){
   const patch=parseVcvArchive(fs.readFileSync(path.join(root,"tests","fixtures","Mattix.vcv"))),definitions=new Map([...Object.values(WEB_PLUGIN_BY_KEY),...dynamicCatalog].map(definition=>[definition.key,definition])),moduleByRackId=new Map(patch.modules.map(item=>[item.id,item])),outgoing=new Set(patch.cables.map(cable=>`${cable.outputModuleId}:${cable.outputId}`)),wasmByUrl=new Map();
-  const definitionFor=(item)=>definitions.get(`${item.plugin}/${item.model}`),active=patch.modules.filter(item=>{const definition=definitionFor(item);return definition&&!definition.runtime?.audio&&(definition.outputs.length>0||definition.runtime?.expander||definition.runtime?.capture||definition.runtime?.midi?.input||definition.runtime?.midi?.output)}),activeIds=new Set(active.map(item=>item.id)),artifact=(url)=>{let bytes=wasmByUrl.get(url);if(!bytes){const source=fs.readFileSync(path.join(root,"public",url.replace(/^\/+/,"")));bytes=source.buffer.slice(source.byteOffset,source.byteOffset+source.byteLength);wasmByUrl.set(url,bytes)}return bytes};
+  const definitionFor=(item)=>definitions.get(`${item.plugin}/${item.model}`),active=patch.modules.filter(item=>{const definition=definitionFor(item);return definition&&!definition.runtime?.audio&&(definition.outputs.length>0||definition.runtime?.expander||definition.runtime?.capture||definition.runtime?.midi?.input||definition.runtime?.midi?.output||definition.runtime?.visuals?.length)}),activeIds=new Set(active.map(item=>item.id)),artifact=(url)=>{let bytes=wasmByUrl.get(url);if(!bytes){const source=fs.readFileSync(path.join(root,"public",url.replace(/^\/+/,"")));bytes=source.buffer.slice(source.byteOffset,source.byteOffset+source.byteLength);wasmByUrl.set(url,bytes)}return bytes};
   const modules=active.map(item=>{const definition=definitionFor(item),params=definition.params.map(param=>param.default),state=stateFromData(definition.key,item.data,definition.stateKeys);for(const param of item.params??[])params[param.id]=param.value;return {id:`vcv-${item.id}`,key:definition.key,wasm:artifact(definition.wasmUrl),params,state,stateJson:JSON.stringify(dataFromState(definition.key,item.data,state,definition.stateKeys)??{}),seed:item.id>>>0,polyphony:1,bypassed:item.bypass===true||item.disabled===true,bypassRoutes:definition.bypassRoutes??[],x:item.pos[0]*15,y:item.pos[1]*400,width:definition.width,rackId:item.id,snapParams:definition.params.map(param=>Boolean(param.snap)),expander:definition.runtime?.expander,visuals:definition.runtime?.visuals??[],outputConnections:definition.outputs.map(port=>outgoing.has(`${item.id}:${port.id}`))}}),audioBoundaries=patch.modules.flatMap(item=>{const definition=definitionFor(item);return definition?.runtime?.audio?[{id:`vcv-${item.id}`,key:definition.key,params:(item.params??[]).reduce((values,param)=>(values[param.id]=param.value,values),definition.params.map(param=>param.default))}]:[]}),cables=patch.cables.flatMap(cable=>{if(!activeIds.has(cable.outputModuleId))return[];const target=moduleByRackId.get(cable.inputModuleId),definition=target?definitionFor(target):undefined;if(definition?.runtime?.audio)return cable.inputId<2?[{fromModule:`vcv-${cable.outputModuleId}`,fromPort:cable.outputId,toModule:`vcv-${cable.inputModuleId}`,toPort:cable.inputId,toAudio:true,audioModuleId:`vcv-${cable.inputModuleId}`}]:[];return activeIds.has(cable.inputModuleId)?[{fromModule:`vcv-${cable.outputModuleId}`,fromPort:cable.outputId,toModule:`vcv-${cable.inputModuleId}`,toPort:cable.inputId,toAudio:false}]:[]});
   return {modules,audioBoundaries,cables};
 }
@@ -61,6 +61,13 @@ test("dynamic display telemetry follows the module visual contract instead of a 
   for(let block=0;block<8;block++)processor.process([],output());
   const visual=processor.messages.find(message=>message.type==="visual-signals");
   assert.ok(visual);assert.equal(visual.scopes.display.length,2);assert.ok(visual.scopes.display[0].some(value=>Math.abs(value)>.01));assert.ok(visual.scopes.display[1].every(value=>value===0));assert.equal(visual.plugs.signal.channels,1);assert.ok(Number.isFinite(visual.plugs.signal.voltage));assert.ok(visual.plugs.signal.rms>.01);assert.equal(visual.plugs.signal.rgb.length,3);assert.ok(visual.plugs.signal.rgb.some(value=>value>.01));assert.equal(visual.lights.vco.length,5);assert.ok(visual.lights.vco.every(Number.isFinite));
+});
+
+test("multichannel meter telemetry combines its discrete stereo and 16-channel inputs",async()=>{
+  const processor=new ProcessorClass();
+  await processor.loadGraph({modules:[module("vco","fundamental-vco",[0,1,0,0,0,.5,0,0]),module("meter","fundamental-vca",[1,1],1,{key:"Fixture/MultiMeter",visuals:[{kind:"multi-meter",inputs:[2,5,0],modeParam:0,channelsParam:1,x:0,y:0,width:75,height:100}]})],cables:[{fromModule:"vco",fromPort:0,toModule:"meter",toPort:2,toAudio:false},{fromModule:"vco",fromPort:0,toModule:"meter",toPort:0,toAudio:false}]});
+  for(let block=0;block<8;block++)processor.process([],output());const visual=processor.messages.find(message=>message.type==="visual-signals");
+  assert.equal(visual.scopes.meter.length,16);assert.ok(visual.scopes.meter[0].some(value=>Math.abs(value)>.01));assert.ok(visual.scopes.meter.slice(1).every(channel=>channel.every(value=>value===0)));assert.ok(visual.scopes.meter.flat().every(value=>Number.isFinite(value)&&value>=-1&&value<=1));
 });
 
 test("the graph worklet supplies the browser WASI clock used by HetrickCV chaos DSP",async()=>{
@@ -137,6 +144,13 @@ test("the graph worklet routes Web MIDI into Core CV and drains Core MIDI output
   processor.port.onmessage({data:{type:"midi-input",moduleIds:["midi-in"],bytes:[0x90,72,110]}});processor.process([],output());
   const outbound=processor.messages.find(message=>message.type==="midi-output"&&message.moduleId==="midi-out");assert.ok(outbound);const records=[...outbound.records];assert.ok(Array.from({length:records.length/4},(_,index)=>records.slice(index*4,index*4+4)).some(record=>record[1]===0x90&&record[2]===72&&record[3]===100));
   assert.equal(processor.modules.get("midi-in").outputs[0],1);assert.equal(processor.modules.get("midi-in").outputs[128],10);
+});
+
+test("the graph worklet drains complete variable-length SysEx packets",async()=>{
+  const definition=dynamicCatalog.find(item=>item.key==="Befaco/MidiThingV2");assert.ok(definition);const processor=new ProcessorClass();
+  await processor.loadGraph({modules:[module("vco","fundamental-vco",[0,1,0,0,0,.5,0,0]),{id:"midi-thing",key:definition.key,wasm:dynamicWasm("Befaco","MidiThingV2"),params:[0],state:[],seed:42,polyphony:1,outputConnections:[],x:0,y:0,width:definition.width}],cables:[{fromModule:"vco",fromPort:0,toModule:"midi-thing",toPort:0,toAudio:false}]});
+  processor.process([],output());processor.port.onmessage({data:{type:"param",moduleId:"midi-thing",id:0,value:1}});processor.process([],output());
+  const outbound=processor.messages.find(message=>message.type==="midi-output"&&message.moduleId==="midi-thing"&&message.packets.length);assert.ok(outbound);const packets=[...outbound.packets];assert.deepEqual(packets.slice(0,11),[9,0,0xf0,0x7d,0x17,0,0,2,0,3,0xf7]);assert.equal(packets.length,154);
 });
 
 test("Rack Core MIDI-Map controls a target WASM parameter by original Rack module id",async()=>{

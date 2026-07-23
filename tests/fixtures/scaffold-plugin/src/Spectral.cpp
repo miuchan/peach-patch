@@ -20,6 +20,9 @@ struct Spectral : Module {
     configOutput(IIR_OUTPUT, "IIR response");
     configOutput(BLEP_OUTPUT, "MinBLEP correction");
     configOutput(SRC_OUTPUT, "Sample-rate conversion");
+    auto* aligned = static_cast<float*>(pffft_aligned_malloc(32 * sizeof(float)));
+    aligned[0] = 1.f;
+    pffft_aligned_free(aligned);
     float time[32]{};
     float frequency[64]{};
     time[1] = 1.f;

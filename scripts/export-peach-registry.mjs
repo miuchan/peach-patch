@@ -14,6 +14,8 @@ const outputDir = path.resolve(argument("--output", path.join(projectDir, "..", 
 const marker = path.join(outputDir, ".peach-registry");
 const packagesDir = path.join(outputDir, "packages");
 const dynamicCatalogPath = path.join(projectDir, "public", "dynamic-plugins", "catalog.json");
+const discoveryPath = path.join(projectDir, ".rack-web-cache", "open-source-modules.json");
+const buildStatePath = path.join(projectDir, ".rack-web-cache", "open-source-build-state.json");
 
 function safeSegment(value, label) {
   if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(value))
@@ -59,9 +61,12 @@ for (const source of modules) {
   const digest = sha256(artifactPath);
   totalBytes += size;
   const relativeArtifact = `packages/${plugin}/${model}/${version}/module.wasm`;
+  const relativeManifest = `packages/${plugin}/${model}/${version}/manifest.json`;
   const module = {
     ...source,
     wasmUrl: relativeArtifact,
+    manifestUrl: relativeManifest,
+    ...(source.localBuild?.sourceCommit ? { sourceCommit: source.localBuild.sourceCommit } : {}),
     artifact: { sha256: digest, size },
   };
   delete module.localBuild;
@@ -79,7 +84,7 @@ for (const source of modules) {
       builtAt: source.localBuild?.builtAt ?? null,
     },
   };
-  writeJson(path.join(packageDir, "manifest.json"), manifest);
+  writeJson(path.join(outputDir, relativeManifest), manifest);
   packages.push(module);
 }
 
@@ -92,11 +97,56 @@ const index = {
   packages,
 };
 writeJson(path.join(outputDir, "index.json"), index);
+const discovery = fs.existsSync(discoveryPath)
+  ? JSON.parse(fs.readFileSync(discoveryPath, "utf8"))
+  : null;
+const buildState = fs.existsSync(buildStatePath)
+  ? JSON.parse(fs.readFileSync(buildStatePath, "utf8"))
+  : { modules: {} };
+const packageKeys = new Set(packages.map((item) => item.key));
+const buildRecords = discovery?.moduleRecords?.map((item) => {
+  const state = buildState.modules?.[item.key];
+  const status = packageKeys.has(item.key)
+    ? "compiled"
+    : state?.status === "failed"
+      ? "failed"
+      : "pending";
+  return {
+    key: item.key,
+    plugin: item.plugin,
+    model: item.model,
+    name: item.name,
+    version: item.version,
+    license: item.license,
+    sourceUrl: item.sourceUrl,
+    libraryUrl: item.libraryUrl,
+    status,
+    ...(state?.sourceCommit ? { sourceCommit: state.sourceCommit } : {}),
+    ...(status === "failed" && state?.assessment
+      ? { assessment: state.assessment }
+      : {}),
+  };
+}) ?? [];
+const statusCounts = Object.fromEntries(
+  Object.entries(Object.groupBy(buildRecords, (item) => item.status))
+    .map(([key, values]) => [key, values.length]),
+);
+writeJson(path.join(outputDir, "build-status.json"), {
+  schemaVersion: 1,
+  generatedAt: index.generatedAt,
+  sourceRevision: discovery?.sourceRevision ?? null,
+  packages: discovery?.packages ?? null,
+  modules: buildRecords.length,
+  status: statusCounts,
+  records: buildRecords,
+});
 writeJson(path.join(outputDir, "coverage.json"), {
   schemaVersion: 1,
   generatedAt: index.generatedAt,
   compiledModules: packages.length,
   plugins: [...new Set(packages.map((item) => item.plugin))].length,
+  openSourceCandidates: buildRecords.length,
+  openSourceStatus: statusCounts,
   strategies: Object.fromEntries(
     Object.entries(Object.groupBy(packages, (item) => item.runtime?.strategy ?? "ordered-translation"))
       .map(([key, values]) => [key, values.length]),
@@ -115,8 +165,10 @@ const packageJson = {
 writeJson(path.join(outputDir, "package.json"), packageJson);
 fs.mkdirSync(path.join(outputDir, "bin"), { recursive: true });
 fs.mkdirSync(path.join(outputDir, "scripts"), { recursive: true });
+fs.mkdirSync(path.join(outputDir, ".github", "workflows"), { recursive: true });
 fs.copyFileSync(path.join(projectDir, "scripts", "registry", "peach.mjs"), path.join(outputDir, "bin", "peach.mjs"));
 fs.copyFileSync(path.join(projectDir, "scripts", "registry", "verify-registry.mjs"), path.join(outputDir, "scripts", "verify-registry.mjs"));
 fs.copyFileSync(path.join(projectDir, "scripts", "registry", "README.md"), path.join(outputDir, "README.md"));
+fs.copyFileSync(path.join(projectDir, "scripts", "registry", "verify.yml"), path.join(outputDir, ".github", "workflows", "verify.yml"));
 fs.writeFileSync(path.join(outputDir, ".gitignore"), ".DS_Store\n");
 console.log(JSON.stringify({ outputDir, modules: packages.length, totalBytes }, null, 2));

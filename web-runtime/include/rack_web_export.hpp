@@ -1,6 +1,24 @@
 #pragma once
 
+#include <type_traits>
+
 #include "rack_web.hpp"
+
+template <typename ModuleType, typename = void>
+struct RackWebModuleTraits {
+  static constexpr int paramCount = ModuleType::NUM_PARAMS;
+  static constexpr int inputCount = ModuleType::NUM_INPUTS;
+  static constexpr int outputCount = ModuleType::NUM_OUTPUTS;
+  static constexpr int lightCount = ModuleType::NUM_LIGHTS;
+};
+
+template <typename ModuleType>
+struct RackWebModuleTraits<ModuleType, std::void_t<decltype(ModuleType::rackWebParamCount)>> {
+  static constexpr int paramCount = ModuleType::rackWebParamCount;
+  static constexpr int inputCount = ModuleType::rackWebInputCount;
+  static constexpr int outputCount = ModuleType::rackWebOutputCount;
+  static constexpr int lightCount = ModuleType::rackWebLightCount;
+};
 
 // Each plugin is compiled as its own WASM module, so this deliberately exports
 // one fixed symbol table per translation unit. Buffers are port-major blocks.
@@ -11,47 +29,51 @@
   static constexpr int rackWebMaxExpanderPorts = 16; \
   static float* rackWebExpanderInputBuffer = rackWebModule.rackWebExpanderCapacity() ? new float[rackWebModule.rackWebExpanderCapacity() * rackWebMaxExpanderPorts * rackWebMaxChannels * rackWebBlockSize]{} : nullptr; \
   static float* rackWebExpanderOutputBuffer = rackWebModule.rackWebExpanderCapacity() ? new float[rackWebModule.rackWebExpanderCapacity() * rackWebMaxExpanderPorts * rackWebMaxChannels * rackWebBlockSize]{} : nullptr; \
-  static int rackWebInputChannels[(ModuleType::NUM_INPUTS ? ModuleType::NUM_INPUTS : 1)]{}; \
-  static float rackWebInputBuffer[(ModuleType::NUM_INPUTS ? ModuleType::NUM_INPUTS : 1) * rackWebMaxChannels * rackWebBlockSize]{}; \
-  static float rackWebOutputBuffer[(ModuleType::NUM_OUTPUTS ? ModuleType::NUM_OUTPUTS : 1) * rackWebMaxChannels * rackWebBlockSize]{}; \
-  static float rackWebLightBuffer[(ModuleType::NUM_LIGHTS ? ModuleType::NUM_LIGHTS : 1)]{}; \
+  static int rackWebInputChannels[(RackWebModuleTraits<ModuleType>::inputCount ? RackWebModuleTraits<ModuleType>::inputCount : 1)]{}; \
+  static float rackWebInputBuffer[(RackWebModuleTraits<ModuleType>::inputCount ? RackWebModuleTraits<ModuleType>::inputCount : 1) * rackWebMaxChannels * rackWebBlockSize]{}; \
+  static float rackWebOutputBuffer[(RackWebModuleTraits<ModuleType>::outputCount ? RackWebModuleTraits<ModuleType>::outputCount : 1) * rackWebMaxChannels * rackWebBlockSize]{}; \
+  static float rackWebLightBuffer[(RackWebModuleTraits<ModuleType>::lightCount ? RackWebModuleTraits<ModuleType>::lightCount : 1)]{}; \
   static float rackWebSampleRate = 0.f; \
+  static bool rackWebAdded = false; \
   static int64_t rackWebFrameCounter = 0; \
   static void rackWebProcessFrameAt(int frame, float sampleRate) { \
     if (frame < 0 || frame >= rackWebBlockSize) return; \
     rack::rackWebEngine.sampleRate = sampleRate; \
+    if (!rackWebAdded) { rackWebAdded = true; rack::rackWebEngine.rackWebAttachModule(&rackWebModule); AddEvent event{}; static_cast<rack::Module&>(rackWebModule).onAdd(event); } \
     if (rackWebSampleRate != sampleRate) { rackWebSampleRate = sampleRate; SampleRateChangeEvent event{sampleRate, 1.f / sampleRate}; static_cast<rack::Module&>(rackWebModule).onSampleRateChange(event); rackWebModule.rackWebNotifyNeighborSampleRateChange(event); } \
     ProcessArgs args{sampleRate, 1.f / sampleRate, rackWebFrameCounter++}; \
-    for (int port = 0; port < ModuleType::NUM_INPUTS; port++) { \
+    rack::rackWebEngine.frame = args.frame; \
+    for (int port = 0; port < RackWebModuleTraits<ModuleType>::inputCount; port++) { \
       rackWebModule.inputs[port].setChannels(rackWebInputChannels[port]); \
-      for (int channel = 0; channel < rackWebInputChannels[port]; channel++) rackWebModule.inputs[port].setVoltage(rackWebInputBuffer[(channel * ModuleType::NUM_INPUTS + port) * rackWebBlockSize + frame], channel); \
+      for (int channel = 0; channel < rackWebInputChannels[port]; channel++) rackWebModule.inputs[port].setVoltage(rackWebInputBuffer[(channel * RackWebModuleTraits<ModuleType>::inputCount + port) * rackWebBlockSize + frame], channel); \
     } \
     if (rackWebExpanderInputBuffer) rackWebModule.rackWebSyncExpanderFrame(frame, rackWebExpanderInputBuffer, rackWebBlockSize); \
     rackWebModule.rackWebProcessNeighbors(args); \
+    rack::midi::rackWebActivateModule(&rackWebModule); \
     rackWebModule.process(args); \
     if (rackWebExpanderOutputBuffer) rackWebModule.rackWebCopyExpanderOutputFrame(frame, rackWebExpanderOutputBuffer, rackWebBlockSize); \
-    for (int port = 0; port < ModuleType::NUM_OUTPUTS; port++) for (int channel = 0; channel < rackWebMaxChannels; channel++) rackWebOutputBuffer[(channel * ModuleType::NUM_OUTPUTS + port) * rackWebBlockSize + frame] = channel < rackWebModule.outputs[port].getChannels() ? rackWebModule.outputs[port].getVoltage(channel) : 0.f; \
-    for (int id = 0; id < ModuleType::NUM_LIGHTS; id++) rackWebLightBuffer[id] = rackWebModule.lights[id].getBrightness(); \
+    for (int port = 0; port < RackWebModuleTraits<ModuleType>::outputCount; port++) for (int channel = 0; channel < rackWebMaxChannels; channel++) rackWebOutputBuffer[(channel * RackWebModuleTraits<ModuleType>::outputCount + port) * rackWebBlockSize + frame] = channel < rackWebModule.outputs[port].getChannels() ? rackWebModule.outputs[port].getVoltage(channel) : 0.f; \
+    for (int id = 0; id < RackWebModuleTraits<ModuleType>::lightCount; id++) rackWebLightBuffer[id] = rackWebModule.lights[id].getBrightness(); \
   } \
   extern "C" { \
-  __attribute__((used)) int rack_web_param_count() { return ModuleType::NUM_PARAMS; } \
-  __attribute__((used)) int rack_web_input_count() { return ModuleType::NUM_INPUTS; } \
-  __attribute__((used)) int rack_web_output_count() { return ModuleType::NUM_OUTPUTS; } \
-  __attribute__((used)) int rack_web_light_count() { return ModuleType::NUM_LIGHTS; } \
+  __attribute__((used)) int rack_web_param_count() { return RackWebModuleTraits<ModuleType>::paramCount; } \
+  __attribute__((used)) int rack_web_input_count() { return RackWebModuleTraits<ModuleType>::inputCount; } \
+  __attribute__((used)) int rack_web_output_count() { return RackWebModuleTraits<ModuleType>::outputCount; } \
+  __attribute__((used)) int rack_web_light_count() { return RackWebModuleTraits<ModuleType>::lightCount; } \
   __attribute__((used)) int rack_web_max_channels() { return rackWebMaxChannels; } \
   __attribute__((used)) float* rack_web_input_buffer() { return rackWebInputBuffer; } \
   __attribute__((used)) float* rack_web_output_buffer() { return rackWebOutputBuffer; } \
   __attribute__((used)) float* rack_web_light_buffer() { return rackWebLightBuffer; } \
-  __attribute__((used)) void rack_web_set_param(int id, float value) { if (id >= 0 && id < ModuleType::NUM_PARAMS) rackWebModule.params[id].setValue(value); } \
-  __attribute__((used)) float rack_web_get_param(int id) { return id >= 0 && id < ModuleType::NUM_PARAMS ? rackWebModule.params[id].getValue() : 0.f; } \
+  __attribute__((used)) void rack_web_set_param(int id, float value) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::paramCount) rackWebModule.params[id].setValue(value); } \
+  __attribute__((used)) float rack_web_get_param(int id) { return id >= 0 && id < RackWebModuleTraits<ModuleType>::paramCount ? rackWebModule.params[id].getValue() : 0.f; } \
   __attribute__((used)) float rack_web_get_param_min(int id) { auto* quantity = rackWebModule.getParamQuantity(id); return quantity ? quantity->getMinValue() : 0.f; } \
   __attribute__((used)) float rack_web_get_param_max(int id) { auto* quantity = rackWebModule.getParamQuantity(id); return quantity ? quantity->getMaxValue() : 1.f; } \
-  __attribute__((used)) void rack_web_set_input_connected(int id, int connected) { if (id >= 0 && id < ModuleType::NUM_INPUTS) { bool next = connected != 0; bool changed = rackWebModule.inputs[id].connected != next; rackWebModule.inputs[id].connected = next; if (next && rackWebInputChannels[id] == 0) rackWebInputChannels[id] = 1; if (changed) rackWebModule.onPortChange(typename ModuleType::PortChangeEvent{next, rack::Port::INPUT, id}); } } \
-  __attribute__((used)) void rack_web_set_output_connected(int id, int connected) { if (id >= 0 && id < ModuleType::NUM_OUTPUTS) { bool next = connected != 0; bool changed = rackWebModule.outputs[id].connected != next; rackWebModule.outputs[id].connected = next; if (changed) rackWebModule.onPortChange(typename ModuleType::PortChangeEvent{next, rack::Port::OUTPUT, id}); } } \
-  __attribute__((used)) void rack_web_set_input_channels(int id, int channels) { if (id >= 0 && id < ModuleType::NUM_INPUTS) rackWebInputChannels[id] = channels < 0 ? 0 : (channels > rackWebMaxChannels ? rackWebMaxChannels : channels); } \
-  __attribute__((used)) int rack_web_get_output_channels(int id) { return id >= 0 && id < ModuleType::NUM_OUTPUTS ? rackWebModule.outputs[id].getChannels() : 0; } \
+  __attribute__((used)) void rack_web_set_input_connected(int id, int connected) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::inputCount) { bool next = connected != 0; bool changed = rackWebModule.inputs[id].connected != next; rackWebModule.inputs[id].connected = next; if (next && rackWebInputChannels[id] == 0) rackWebInputChannels[id] = 1; if (changed) rackWebModule.onPortChange(typename ModuleType::PortChangeEvent{next, rack::Port::INPUT, id}); } } \
+  __attribute__((used)) void rack_web_set_output_connected(int id, int connected) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::outputCount) { bool next = connected != 0; bool changed = rackWebModule.outputs[id].connected != next; rackWebModule.outputs[id].connected = next; if (changed) rackWebModule.onPortChange(typename ModuleType::PortChangeEvent{next, rack::Port::OUTPUT, id}); } } \
+  __attribute__((used)) void rack_web_set_input_channels(int id, int channels) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::inputCount) rackWebInputChannels[id] = channels < 0 ? 0 : (channels > rackWebMaxChannels ? rackWebMaxChannels : channels); } \
+  __attribute__((used)) int rack_web_get_output_channels(int id) { return id >= 0 && id < RackWebModuleTraits<ModuleType>::outputCount ? rackWebModule.outputs[id].getChannels() : 0; } \
   __attribute__((used)) void rack_web_set_polyphony(int channels) { rackWebModule.polyphony = channels < 1 ? 1 : (channels > rackWebMaxChannels ? rackWebMaxChannels : channels); } \
-  __attribute__((used)) void rack_web_set_state(int id, float value) { rackWebModule.setState(id, value); } \
+  __attribute__((used)) void rack_web_set_state(int id, float value) { static_cast<rack::Module&>(rackWebModule).setState(id, value); } \
   __attribute__((used)) uint8_t* rack_web_state_buffer(int bytes) { return rackWebModule.rackWebStateBuffer(bytes); } \
   __attribute__((used)) int rack_web_commit_state_json(int bytes) { return rackWebModule.rackWebCommitStateJson(bytes); } \
   __attribute__((used)) int rack_web_snapshot_state_json() { return rackWebModule.rackWebSnapshotStateJson(); } \
@@ -61,6 +83,9 @@
   __attribute__((used)) int rack_web_midi_output_available() { return rackWebModule.rackWebMidiOutputAvailable(); } \
   __attribute__((used)) uint8_t* rack_web_midi_output_buffer() { return rackWebModule.rackWebMidiOutputBuffer(); } \
   __attribute__((used)) void rack_web_consume_midi_output(int count) { rackWebModule.rackWebConsumeMidiOutput(count); } \
+  __attribute__((used)) int rack_web_midi_packet_output_available() { return rackWebModule.rackWebMidiPacketOutputAvailable(); } \
+  __attribute__((used)) uint8_t* rack_web_midi_packet_output_buffer() { return rackWebModule.rackWebMidiPacketOutputBuffer(); } \
+  __attribute__((used)) void rack_web_consume_midi_packet_output(int bytes) { rackWebModule.rackWebConsumeMidiPacketOutput(bytes); } \
   __attribute__((used)) int rack_web_asset_capacity() { return rackWebModule.assetCapacity(); } \
   __attribute__((used)) float* rack_web_asset_buffer() { return rackWebModule.assetBuffer(); } \
   __attribute__((used)) void rack_web_commit_asset(int frames, int channels, float sampleRate) { rackWebModule.commitAsset(frames, channels, sampleRate); } \

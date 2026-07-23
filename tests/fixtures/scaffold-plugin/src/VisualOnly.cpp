@@ -1,8 +1,17 @@
 #include "rack.hpp"
+#include "VisualBase.hpp"
 
-struct VisualOnlyModule : Module {
+enum class FixtureTheme { LIGHT, DARK };
+struct FixtureChoice : LedDisplayChoice {};
+struct FixtureQuantity : ParamQuantity {
+  float getMinValue() const override { return -1.f; }
+  float getMaxValue() const override { return 1.f; }
+};
+
+struct VisualOnlyModule : fixture::VisualBase {
   NVGcolor foreground = nvgRGBf(0.1f, 0.2f, 0.3f);
   std::string text = "Fixture";
+  FixtureTheme panelTheme = loadDefaultTheme();
 
   VisualOnlyModule() {
     config(0, 0, 0, 2);

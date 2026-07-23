@@ -1146,14 +1146,31 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         ),
         pointer = available
           ? Number(runtime.rack_web_midi_output_buffer?.()) || 0
+          : 0,
+        packetBytes = Math.min(
+          64 * 1024,
+          Math.max(
+            0,
+            Number(runtime.rack_web_midi_packet_output_available?.()) || 0,
+          ),
+        ),
+        packetPointer = packetBytes
+          ? Number(runtime.rack_web_midi_packet_output_buffer?.()) || 0
           : 0;
-      if (!pointer) continue;
-      const records = new Uint8Array(available * 4);
-      records.set(new Uint8Array(runtime.memory.buffer, pointer, available * 4));
-      runtime.rack_web_consume_midi_output?.(available);
+      if (!pointer && !packetPointer) continue;
+      const records = new Uint8Array(pointer ? available * 4 : 0),
+        packets = new Uint8Array(packetPointer ? packetBytes : 0);
+      if (pointer) {
+        records.set(new Uint8Array(runtime.memory.buffer, pointer, available * 4));
+        runtime.rack_web_consume_midi_output?.(available);
+      }
+      if (packetPointer) {
+        packets.set(new Uint8Array(runtime.memory.buffer, packetPointer, packetBytes));
+        runtime.rack_web_consume_midi_packet_output?.(packetBytes);
+      }
       this.port.postMessage(
-        { type: "midi-output", moduleId: rackModule.id, records },
-        [records.buffer],
+        { type: "midi-output", moduleId: rackModule.id, records, packets },
+        [records.buffer, packets.buffer],
       );
     }
   }
@@ -1268,7 +1285,17 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       }
     const scopes = {}, lights = {};
     for (const rackModule of this.modules.values()) for(const visual of rackModule.visuals||[]) {
-      if(visual.kind!=="scope"||scopes[rackModule.id])continue;
+      if(scopes[rackModule.id])continue;
+      if(visual.kind==="multi-meter") {
+        const [leftPort,rightPort,multiPort]=visual.inputs||[0,1,2],multiChannels=rackModule.inputChannels[multiPort]||0;
+        scopes[rackModule.id]=Array.from({length:16},(_,channel)=>Array.from({length:64},(_,index)=>{
+          const frame=Math.min(frames-1,index*2),multi=channel<multiChannels?rackModule.inputs[(channel*rackModule.inputCount+multiPort)*128+frame]||0:0,
+            discrete=channel===0&&rackModule.inputChannels[leftPort]?rackModule.inputs[leftPort*128+frame]||0:channel===1&&rackModule.inputChannels[rightPort]?rackModule.inputs[rightPort*128+frame]||0:0;
+          return Math.max(-1,Math.min(1,(multi+discrete)*.1));
+        }));
+        continue;
+      }
+      if(visual.kind!=="scope")continue;
       scopes[rackModule.id] = (visual.inputs||[]).map((port) =>
         Array.from({ length: 64 }, (_, index) => {
           if (port >= rackModule.inputCount || !rackModule.inputChannels[port]) return 0;

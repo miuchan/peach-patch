@@ -1,3 +1,8 @@
+struct FixtureCenteredLabel : Widget {
+  void updateText();
+};
+inline void FixtureCenteredLabel::updateText() {}
+
 struct STRUCT_NAME : Module {
   enum ParamIds { SELECT_PARAM, NUM_PARAMS };
   enum InputIds {
@@ -18,6 +23,7 @@ struct STRUCT_NAME : Module {
   };
   enum LightIds { ENUMS(ROUTE_LIGHTS, ROUTE_COUNT), NUM_LIGHTS };
 
+  #include "MacroSwitchMacros.hpp"
   #include "MacroSwitchMembers.hpp"
 
   STRUCT_NAME() {

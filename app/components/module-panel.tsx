@@ -3,6 +3,7 @@
 import { useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import type { ModuleInstance } from "../../lib/patch-types";
 import { resolvedModulePortPosition } from "../../lib/patch-operations";
+import { registerRackParamPress, type RackParamPress } from "../../lib/rack-param-interaction";
 import type { ParamSpec, PortSpec, WebPluginModule } from "../../lib/web-plugin-registry";
 import { STROKE_SPECIAL_MODES, strokeSpecialModeLabel } from "../../lib/stroke-host";
 import { RackScopeDisplay } from "./rack-scope-display";
@@ -10,6 +11,7 @@ import { RackParamVisual, rackParamControlSize, rackParamInteraction, rackParamS
 import { RackSegmentDisplay } from "./rack-segment-display";
 import { RackLightVisual } from "./rack-light-visual";
 import { RackAudioDisplay } from "./rack-audio-display";
+import { RackMultiMeterDisplay } from "./rack-multi-meter-display";
 
 type PortClick = { moduleId: string; direction: "in" | "out"; portId: number };
 
@@ -152,6 +154,7 @@ export function ModulePanel({
 }) {
   const [dropTarget, setDropTarget] = useState(false);
   const paramDragRef=useRef<{pointerId:number;paramId:number;startCoordinate:number;startValue:number;min:number;max:number;snap:boolean;axis:"x"|"y"}|null>(null);
+  const lastParamPressRef=useRef<RackParamPress|null>(null);
   const inputs: PortSpec[] =
     definition?.inputs.filter((port)=>!port.hidden) ??
     Array.from({ length: 2 }, (_, id) => ({
@@ -357,6 +360,7 @@ export function ModulePanel({
           top={visual.y}
         />
       ))}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="multi-meter").map((visual,index)=><RackMultiMeterDisplay key={`multi-meter-${index}`} samples={scopeSamples} mode={module.params[visual.modeParam]??0} channelsMode={module.params[visual.channelsParam]??0} refs={module.params.slice(2,18)} x={visual.x*module.width/definition.width} y={visual.y} width={visual.width*module.width/definition.width} height={visual.height}/>)}
       {definition?.runtime?.visuals?.filter(visual=>visual.kind==="segment").map((visual,index)=><RackSegmentDisplay key={`segment-${index}`} value={module.params[visual.param]??0} values={visual.values} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
       {definition?.runtime?.visuals?.filter(visual=>visual.kind==="audio-display").map((visual,index)=><RackAudioDisplay key={`audio-display-${index}`} audio={audioData} running={audioRunning} channels={visual.channels} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
       {definition?.lightWidgets?.map((light)=><RackLightVisual key={`light-${light.id}`} light={light} values={renderedLightValues} moduleWidth={module.width} sourceWidth={module.width} param={light.paramId===undefined?undefined:definition.params.find(param=>param.id===light.paramId)} paramValue={light.paramId===undefined?undefined:module.params[light.paramId]}/>)}
@@ -417,7 +421,6 @@ export function ModulePanel({
                 className="pw-param-switch"
                 aria-label={`${label}: ${module.params[param.id]??param.default}`}
                 onPointerDown={(event)=>event.stopPropagation()}
-                onDoubleClick={(event)=>{event.preventDefault();event.stopPropagation();onParam(param.id,param.default);}}
                 onClick={()=>{
                   const frames=rackParamSwitchFrames(param),current=module.params[param.id]??param.default,
                     normalized=param.max===param.min?0:(current-param.min)/(param.max-param.min),
@@ -431,12 +434,16 @@ export function ModulePanel({
                 max={param.max}
                 step={param.snap?1:"any"}
                 value={module.params[param.id]??param.default}
-                onDoubleClick={(event)=>{
-                  event.preventDefault();event.stopPropagation();paramDragRef.current=null;onParam(param.id,param.default);
-                }}
                 onPointerDown={(event)=>{
                   if(event.button!==0)return;
                   event.preventDefault();event.stopPropagation();
+                  const press=registerRackParamPress(lastParamPressRef.current,param.id,event.pointerType,event.timeStamp);
+                  lastParamPressRef.current=press.next;
+                  if(press.doubleClick){
+                    paramDragRef.current=null;
+                    onParam(param.id,param.default);
+                    return;
+                  }
                   const axis=interaction==="selector"?"x":"y",startCoordinate=axis==="x"?event.clientX:event.clientY;
                   paramDragRef.current={pointerId:event.pointerId,paramId:param.id,startCoordinate,startValue:module.params[param.id]??param.default,min:param.min,max:param.max,snap:Boolean(param.snap),axis};
                   event.currentTarget.setPointerCapture(event.pointerId);onParamHover(param.id);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import segmentFontUrl from "../../.rack-web-cache/sources/AudibleInstruments/a15554e33721c2f8f65bb6b0f59588307fb6e625/res/hdad-segment14-1.002/Segment14.ttf?url";
+import segmentFontUrl from "../assets/fonts/braids-segment14/Segment14.ttf?url";
 
 export function RackSegmentDisplay({value,values,x,y,width,height,scaleX=1}:{value:number;values:string[];x:number;y:number;width:number;height:number;scaleX?:number}){
   const ref=useRef<HTMLCanvasElement>(null);
