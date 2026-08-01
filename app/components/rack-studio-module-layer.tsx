@@ -48,6 +48,8 @@ export type RackStudioModuleLayerProps = {
   onPortDragStart: (port: RackStudioPortClick) => void;
   onPortDrop: (from: RackStudioPortClick, to: RackStudioPortClick) => void;
   onPortDragEnd: () => void;
+  onPortPointerDown: (port: RackStudioPortClick, event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPortPointerUp: (port: RackStudioPortClick, event: React.PointerEvent<HTMLButtonElement>) => void;
   onClock: (module: ModuleInstance) => void;
   onSample: (module: ModuleInstance, file: File, slot?: number) => void;
   onCapture: (module: ModuleInstance) => void;
@@ -88,6 +90,8 @@ export function RackStudioModuleLayer({
   onPortDragStart,
   onPortDrop,
   onPortDragEnd,
+  onPortPointerDown,
+  onPortPointerUp,
   onClock,
   onSample,
   onCapture,
@@ -159,6 +163,8 @@ export function RackStudioModuleLayer({
         onPortDragStart={onPortDragStart}
         onPortDrop={onPortDrop}
         onPortDragEnd={onPortDragEnd}
+        onPortPointerDown={onPortPointerDown}
+        onPortPointerUp={onPortPointerUp}
         onClock={() => onClock(module)}
         onSample={(file, slot) => onSample(module, file, slot)}
         recording={recordingIds.has(module.id)}

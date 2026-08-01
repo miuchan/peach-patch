@@ -1,4 +1,5 @@
 import { decompress } from "fzstd";
+import { isFiniteNumber, isRecord, parseJson } from "./runtime-type-guards.ts";
 
 export type VcvModule = {
   id: number;
@@ -30,6 +31,20 @@ export type VcvPatch = {
   [key:string]:unknown;
 };
 
+function isVcvPatch(value: unknown): value is VcvPatch {
+  if (!isRecord(value) || !Array.isArray(value.modules) || !Array.isArray(value.cables)) return false;
+  return value.modules.every((module) => {
+    if (!isRecord(module) || !isFiniteNumber(module.id) || typeof module.plugin !== "string" ||
+      typeof module.model !== "string" || !Array.isArray(module.pos) || module.pos.length !== 2 ||
+      !module.pos.every(isFiniteNumber)) return false;
+    if (module.params !== undefined && (!Array.isArray(module.params) || !module.params.every((param) =>
+      isRecord(param) && isFiniteNumber(param.id) && isFiniteNumber(param.value)))) return false;
+    return module.data === undefined || isRecord(module.data);
+  }) && value.cables.every((cable) => isRecord(cable) && isFiniteNumber(cable.id) &&
+    isFiniteNumber(cable.outputModuleId) && isFiniteNumber(cable.outputId) &&
+    isFiniteNumber(cable.inputModuleId) && isFiniteNumber(cable.inputId));
+}
+
 function decodeTarEntry(bytes: Uint8Array, wanted: string): string {
   const decoder = new TextDecoder();
   for (let offset = 0; offset + 512 <= bytes.length;) {
@@ -51,9 +66,9 @@ export function parseVcvArchive(source: ArrayBuffer | Uint8Array): VcvPatch {
   const compressed = source instanceof Uint8Array ? source : new Uint8Array(source);
   const first=compressed.find(byte=>byte!==9&&byte!==10&&byte!==13&&byte!==32);
   const patch = first===123
-    ? JSON.parse(new TextDecoder().decode(compressed)) as VcvPatch
-    : JSON.parse(decodeTarEntry(decompress(compressed), "patch.json")) as VcvPatch;
-  if (!Array.isArray(patch.modules) || !Array.isArray(patch.cables)) {
+    ? parseJson(new TextDecoder().decode(compressed))
+    : parseJson(decodeTarEntry(decompress(compressed), "patch.json"));
+  if (!isVcvPatch(patch)) {
     throw new Error("The VCV patch has no module graph");
   }
   return patch;

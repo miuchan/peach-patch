@@ -52,7 +52,7 @@ async function loadImage(file: File, contract: BrowserAssetContract): Promise<Lo
   }
 }
 
-function validateBinary(file: File, bytes: Uint8Array, contract: BrowserAssetContract) {
+function validateBinary(bytes: Uint8Array, contract: BrowserAssetContract) {
   if (contract.type === "binary" && (bytes.length < 16 || bytes[0] !== 0x4e || bytes[1] !== 0x45 || bytes[2] !== 0x53 || bytes[3] !== 0x1a))
     throw new Error("The selected file is not an iNES .nes ROM");
   if (contract.type === "midi" && (bytes.length < 14 || bytes[0] !== 0x4d || bytes[1] !== 0x54 || bytes[2] !== 0x68 || bytes[3] !== 0x64))
@@ -68,7 +68,7 @@ function validateBinary(file: File, bytes: Uint8Array, contract: BrowserAssetCon
 
 async function loadBinary(file: File, contract: BrowserAssetContract): Promise<LoadedBrowserAsset> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  validateBinary(file, bytes, contract);
+  validateBinary(bytes, contract);
   const samples = new Float32Array(bytes.length);
   for (let index = 0; index < bytes.length; index++) samples[index] = bytes[index];
   return { ref: assetRef(file, 1, 1, bytes.length), samples, detail: `${bytes.length.toLocaleString()} bytes` };

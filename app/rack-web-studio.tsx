@@ -46,6 +46,7 @@ import {
   applyRackModulePreset,
   anchoredViewportPan,
   connectPatchCable,
+  reconnectPatchCableEndpoint,
   disconnectModuleCables,
   duplicatePatchModules,
   fittedPatchViewport,
@@ -96,6 +97,7 @@ const CABLES = [
   "#f28a49",
 ];
 type PortClick = { moduleId: string; direction: "in" | "out"; portId: number };
+type CableDrag = { cableId: string; side: "input" | "output"; port: PortClick };
 type ResolveResult = {
   key: string;
   plugin: string;
@@ -159,7 +161,8 @@ export function RackWebStudio() {
     [selectedCableIds, setSelectedCableIds] = useState<Set<string>>(
       () => new Set(),
     ),
-    [pending, setPending] = useState<PortClick | null>(null);
+    [pending, setPending] = useState<PortClick | null>(null),
+    [cableDrag, setCableDrag] = useState<CableDrag | null>(null);
   const [manualHelpHover,setManualHelpHover]=useState<{
     moduleId:string;
     type:"module"|"param"|"in"|"out";
@@ -788,6 +791,53 @@ export function RackWebStudio() {
     setSelectedCableIds(new Set());
     setStatus("Cable dragged into place · existing input cable replaced · undo is available");
   };
+
+  const startCableDrag = useCallback((path: ReturnType<typeof layoutPatchCables>[number], side: "input" | "output", event: React.PointerEvent<Element>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (modulesLocked) {
+      setStatus("Exit Perform mode before changing cables");
+      return;
+    }
+    const port = side === "input"
+      ? { moduleId: path.fromModule, direction: "out" as const, portId: path.fromPort }
+      : { moduleId: path.toModule, direction: "in" as const, portId: path.toPort };
+    setCableDrag({ cableId: path.id, side, port });
+    setPending(port);
+    setSelectedCableIds(new Set([path.id]));
+    setStatus("Dragging cable end · release on another compatible port to reconnect, or empty rack to disconnect");
+  }, [modulesLocked]);
+
+  const startCableDragFromPort = useCallback((port: PortClick, event: React.PointerEvent<HTMLButtonElement>) => {
+    if (modulesLocked) return;
+    const path = layoutPatchCables(patch, registry, cableTension).find((candidate) =>
+      port.direction === "in"
+        ? candidate.toModule === port.moduleId && candidate.toPort === port.portId
+        : candidate.fromModule === port.moduleId && candidate.fromPort === port.portId,
+    );
+    if (!path) return;
+    startCableDrag(path, port.direction === "in" ? "input" : "output", event);
+  }, [cableTension, modulesLocked, patch, registry, startCableDrag]);
+
+  const finishCableDragOnPort = useCallback((target: PortClick, event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!cableDrag) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    if (cableDrag.port.direction === target.direction || cableDrag.port.moduleId === target.moduleId) {
+      setStatus("Cable end needs the opposite port on another module");
+      setCableDrag(null);
+      setPending(null);
+      return true;
+    }
+    const next = reconnectPatchCableEndpoint(patch, cableDrag.cableId, cableDrag.side, target);
+    if (next) {
+      commitHistory(next);
+      setStatus("Cable reconnected · existing competing cable replaced · undo is available");
+    }
+    setCableDrag(null);
+    setPending(null);
+    return true;
+  }, [cableDrag, commitHistory, patch]);
 
   const cablePaths = useMemo(
     () => layoutPatchCables(patch, registry, cableTension),
@@ -1603,6 +1653,7 @@ export function RackWebStudio() {
       const id = selectedIds.values().next().value;
       return patch.modules.find((module) => module.id === id);
     }
+    return undefined;
   };
 
   const saveStrokePreset = (module: ModuleInstance, asDefault: boolean) => {
@@ -2285,8 +2336,24 @@ export function RackWebStudio() {
         className={`pw-rack ${modulesLocked ? "modules-locked" : ""}`}
         aria-label="Peach Patch modular rack"
         onPointerMove={pointerMove}
-        onPointerUp={pointerUp}
-        onPointerLeave={pointerUp}
+        onPointerUp={(event) => {
+          if (cableDrag) {
+            if ((event.target as Element).closest(".pw-ports button")) return;
+            commitHistory((current) => ({
+              ...current,
+              cables: current.cables.filter((cable) => cable.id !== cableDrag.cableId),
+            }));
+            setCableDrag(null);
+            setPending(null);
+            setStatus("Cable disconnected · undo is available");
+            return;
+          }
+          pointerUp(event);
+        }}
+        onPointerLeave={(event) => {
+          if (cableDrag) return;
+          pointerUp(event);
+        }}
         onPointerDown={(event) => {
           const target = event.target as Element,
             background =
@@ -2454,6 +2521,7 @@ export function RackWebStudio() {
             selectedIds={selectedCableIds}
             signalLevels={visualSignals.cables}
             plugSignals={visualSignals.plugs}
+            onPlugPointerDown={startCableDrag}
             onSelect={selectCable}
             onContextMenu={(id, event) => {
               event.preventDefault();
@@ -2584,6 +2652,8 @@ export function RackWebStudio() {
             }}
             onPortDrop={connectDraggedPorts}
             onPortDragEnd={() => setPending(null)}
+            onPortPointerDown={startCableDragFromPort}
+            onPortPointerUp={finishCableDragOnPort}
             onClock={(module) => void runClock(module)}
             onSample={(module, file, slot) => void loadSample(module, file, slot)}
             onCapture={(module) => void toggleCapture(module)}

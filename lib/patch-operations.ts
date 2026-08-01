@@ -205,6 +205,29 @@ export function connectPatchCable(
   };
 }
 
+export function reconnectPatchCableEndpoint(
+  patch: PatchDocument,
+  cableId: string,
+  side: "input" | "output",
+  port: { moduleId: string; portId: number },
+) {
+  const cable = patch.cables.find((candidate) => candidate.id === cableId);
+  if (!cable) return null;
+  if (side === "input" && cable.fromModule === port.moduleId) return null;
+  if (side === "output" && cable.toModule === port.moduleId) return null;
+  const nextCable = side === "input"
+    ? { ...cable, toModule: port.moduleId, toPort: port.portId }
+    : { ...cable, fromModule: port.moduleId, fromPort: port.portId };
+  return {
+    ...patch,
+    cables: patch.cables
+      .filter((candidate) => candidate.id === cableId || !(side === "input"
+        ? candidate.toModule === port.moduleId && candidate.toPort === port.portId
+        : false))
+      .map((candidate) => candidate.id === cableId ? nextCable : candidate),
+  };
+}
+
 export function applyRackModulePreset(
   patch: PatchDocument,
   moduleId: string,

@@ -4,6 +4,7 @@ import {
   applyRackModulePreset,
   anchoredViewportPan,
   connectPatchCable,
+  reconnectPatchCableEndpoint,
   disconnectModuleCables,
   duplicatePatchModules,
   fittedPatchViewport,
@@ -340,6 +341,22 @@ test("connecting a port replaces the existing cable on that input", () => {
     toModule: "target",
     toPort: 2,
     color: "green",
+  });
+});
+
+test("reconnecting a cable endpoint preserves its color and replaces the competing endpoint", () => {
+  const patch = {
+    modules: [source, target, { ...target, id: "other" }],
+    cables: [
+      { id: "move", fromModule: "source", fromPort: 0, toModule: "target", toPort: 2, color: "red" },
+      { id: "old", fromModule: "source", fromPort: 1, toModule: "other", toPort: 4, color: "blue" },
+    ],
+  };
+  assert.deepEqual(reconnectPatchCableEndpoint(patch, "move", "input", { moduleId: "other", portId: 4 }).cables, [
+    { id: "move", fromModule: "source", fromPort: 0, toModule: "other", toPort: 4, color: "red" },
+  ]);
+  assert.deepEqual(reconnectPatchCableEndpoint(patch, "move", "output", { moduleId: "other", portId: 1 }).cables.find((cable) => cable.id === "move"), {
+    id: "move", fromModule: "other", fromPort: 1, toModule: "target", toPort: 2, color: "red",
   });
 });
 

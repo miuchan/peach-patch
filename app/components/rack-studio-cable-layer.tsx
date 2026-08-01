@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import type { RackCableLayout } from "../../lib/rack-cable-layout";
 import type { RackPlugSignal } from "../../lib/rack-audio-engine";
 import { RackCablePlug } from "./rack-cable-plug";
@@ -22,6 +22,7 @@ export type RackStudioCableLayerProps = {
   plugSignals: Readonly<Record<string, RackPlugSignal>>;
   onSelect: (id: string, event: CableSelectionEvent) => void;
   onContextMenu: (id: string, event: MouseEvent<SVGPathElement>) => void;
+  onPlugPointerDown: (path: RackCableLayout, side: "input" | "output", event: PointerEvent<Element>) => void;
 };
 
 export type CableSelectionEvent = {
@@ -41,6 +42,7 @@ export function RackStudioCableLayer({
   plugSignals,
   onSelect,
   onContextMenu,
+  onPlugPointerDown,
 }: RackStudioCableLayerProps) {
   const viewBox = `${surface.x} ${surface.y} ${surface.width} ${surface.height}`;
   return <>
@@ -87,6 +89,7 @@ export function RackStudioCableLayer({
           moduleId={path.fromModule}
           direction="out"
           portId={path.fromPort}
+          onPointerDown={(event) => onPlugPointerDown(path, "output", event)}
         />
         <RackCablePlug
           x={path.x2}
@@ -100,6 +103,7 @@ export function RackStudioCableLayer({
           moduleId={path.toModule}
           direction="in"
           portId={path.toPort}
+          onPointerDown={(event) => onPlugPointerDown(path, "input", event)}
         />
       </g>)}
     </svg>

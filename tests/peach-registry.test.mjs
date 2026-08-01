@@ -65,6 +65,53 @@ test("registry index resolves immutable artifact URLs", () => {
   );
 });
 
+test("registry geometry repairs panels whose declared width clips their controls", () => {
+  const [module] = modulesFromRegistryIndex(
+    {
+      schemaVersion: 1,
+      packages: [{
+        ...moduleRecord,
+        width: 5,
+        params: [{
+          id: 0,
+          name: "Program",
+          min: 0,
+          max: 127,
+          default: 0,
+          position: { x: 31, y: 208, widget: "KnobDark26" },
+        }],
+        inputs: [{ id: 0, name: "CV", kind: "cv", position: { x: 34, y: 212 } }],
+      }],
+    },
+    "https://raw.example/registry/index.json",
+  );
+  assert.equal(module.width, 75);
+});
+
+test("registry geometry brings clipped positions back into the fixed Rack panel", () => {
+  const [module] = modulesFromRegistryIndex(
+    {
+      schemaVersion: 1,
+      packages: [{
+        ...moduleRecord,
+        params: [{
+          id: 0,
+          name: "Edge",
+          min: 0,
+          max: 1,
+          default: 0,
+          position: { x: -5, y: -10, centered: true },
+        }],
+        inputs: [{ id: 0, name: "Late", kind: "cv", position: { x: 20, y: 500 } }],
+      }],
+    },
+    "https://raw.example/registry/index.json",
+  );
+  assert.equal(module.params[0].position?.x, 15);
+  assert.equal(module.params[0].position?.y, 36);
+  assert.equal(module.inputs[0].position?.y, 344);
+});
+
 test("registry index requests revalidate the mutable main index", async () => {
   const previousFetch=globalThis.fetch;
   let options;

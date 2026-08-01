@@ -156,6 +156,8 @@ export function ModulePanel({
   onPortDragStart,
   onPortDrop,
   onPortDragEnd,
+  onPortPointerDown,
+  onPortPointerUp,
   onClock,
   onSample,
   recording,
@@ -194,6 +196,8 @@ export function ModulePanel({
   onPortDragStart: (port: PortClick) => void;
   onPortDrop: (from: PortClick, to: PortClick) => void;
   onPortDragEnd: () => void;
+  onPortPointerDown: (port: PortClick, event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPortPointerUp: (port: PortClick, event: React.PointerEvent<HTMLButtonElement>) => void;
   onClock: () => void;
   onSample: (file: File, slot?: number) => void;
   recording: boolean;
@@ -884,6 +888,8 @@ export function ModulePanel({
               })
             }
             onDragEnd={onPortDragEnd}
+            onPointerDown={(event) => onPortPointerDown({ moduleId: module.id, direction: "in", portId: port.id }, event)}
+            onPointerUp={(event) => onPortPointerUp({ moduleId: module.id, direction: "in", portId: port.id }, event)}
             onPointerEnter={()=>onPortHover("in",port.id)}
             onPointerLeave={()=>onPortHover("in",null)}
           >
@@ -935,6 +941,8 @@ export function ModulePanel({
               })
             }
             onDragEnd={onPortDragEnd}
+            onPointerDown={(event) => onPortPointerDown({ moduleId: module.id, direction: "out", portId: port.id }, event)}
+            onPointerUp={(event) => onPortPointerUp({ moduleId: module.id, direction: "out", portId: port.id }, event)}
             onPointerEnter={()=>onPortHover("out",port.id)}
             onPointerLeave={()=>onPortHover("out",null)}
           >
