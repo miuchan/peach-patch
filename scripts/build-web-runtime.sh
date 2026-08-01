@@ -3,7 +3,7 @@ set -euo pipefail
 
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$project_dir/public/wasm"
-node "$project_dir/scripts/generate-web-runtime-manifest.mjs" >/dev/null
+node --experimental-strip-types "$project_dir/scripts/generate-web-runtime-manifest.ts" >/dev/null
 
 build_plugin(){
   local source="$1" output="$2" initial_memory="${3:-1048576}"
@@ -18,5 +18,5 @@ while IFS=$'\t' read -r source output initial_memory key; do
   echo "Building $key"
   build_plugin "$source" "$output" "$initial_memory"
   count=$((count+1))
-done < <(node "$project_dir/scripts/read-web-runtime-manifest.mjs" "$@")
+done < <(node --experimental-strip-types "$project_dir/scripts/read-web-runtime-manifest.ts" "$@")
 echo "Built $count Rack Web plugin module(s)"
