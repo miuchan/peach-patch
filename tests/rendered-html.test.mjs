@@ -48,7 +48,7 @@ test("ships product metadata and removes starter preview", async () => {
 });
 
 test("official source widths stay canonical across image loads and autosave restore", async () => {
-  const [panel, studio, cableLayer, styles, manual, arpeggiator, corrupter, tapestry, paramVisual, openSourceBuild] = await Promise.all([
+  const [panel, studio, cableLayer, styles, manual, arpeggiator, corrupter, tapestry, paramVisual] = await Promise.all([
     readFile(new URL("app/components/module-panel.tsx", root), "utf8"),
     readFile(new URL("app/rack-web-studio.tsx", root), "utf8"),
     readFile(new URL("app/components/rack-studio-cable-layer.tsx", root), "utf8"),
@@ -58,7 +58,6 @@ test("official source widths stay canonical across image loads and autosave rest
     readFile(new URL("app/components/rack-corrupter-display.tsx", root), "utf8"),
     readFile(new URL("app/components/rack-tapestry-display.tsx", root), "utf8"),
     readFile(new URL("app/components/rack-param-visual.tsx", root), "utf8"),
-    readFile(new URL("scripts/build-open-source-modules.mjs", root), "utf8"),
   ]);
   assert.doesNotMatch(panel, /naturalWidth\s*\/\s*image\.naturalHeight/);
   assert.match(panel, /resolvedModulePortPosition\(module,direction,port\.id/);
@@ -97,12 +96,10 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(paramVisual, /RedLargeToggleKnob:\{name:"msm\/Knobs\/RedLargeKnob\.svg",size:47,angle:\.78\}/);
   assert.match(paramVisual, /GreenToggleKnobSmall:\{name:"msm\/Knobs\/GreenSmallKnob\.svg",size:32,angle:\.78\}/);
   assert.match(paramVisual, /VioM2Switch:\{name:"",size:\[14,20\.641106\],frames:2/);
-  assert.match(openSourceBuild, /item\.plugin === "MSM"/);
   assert.match(paramVisual, /FMSM/);
   assert.match(paramVisual, /msm\/Switch\/FMSM_3\.svg/);
   assert.match(paramVisual, /OSCiXEGG/);
   assert.match(paramVisual, /msm\/Button\/Easteregg_1\.svg/);
-  assert.match(openSourceBuild, /\["Knobs", "Switch", "Button", "Slider", "Port"\]/);
   assert.equal(
     panel.match(/registerRackParamPress\(lastParamPressRef\.current,param\.id,event\.pointerType,performance\.now\(\)\)/g)?.length,
     3,

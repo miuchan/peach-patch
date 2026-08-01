@@ -96,6 +96,7 @@ npm run wasm:build -- Fundamental/VCA
 See [docs/WEB_RUNTIME.md](docs/WEB_RUNTIME.md) for the ABI, plugin pipeline, compatibility definition, and remaining Rack subsystems.
 See [docs/UX_COMPARISON.md](docs/UX_COMPARISON.md) for the same-patch VCV Rack evidence, official Bitwig Grid workflow comparison, and remaining interaction gaps.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the UI, patch-domain, browser-adapter, and AudioWorklet dependency boundaries.
+Source discovery, official-source adaptation, Emscripten builds, artifact publication, and registry governance live in the companion [peach-patch-registry](https://github.com/miuchan/peach-patch-registry) repository.
 
 ## Licenses
 
