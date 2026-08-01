@@ -18,11 +18,34 @@ import {
   resetModuleControls,
   snapRackPosition,
   spliceModuleIntoCable,
+  mergeModuleData,
+  updateModuleParam,
+  updateModuleState,
 } from "../lib/patch-operations.ts";
 
 const source = { id: "source", x: 0, y: 0, width: 90 };
 const target = { id: "target", x: 300, y: 0, width: 90 };
 const inserted = { id: "inserted", x: 150, y: 0, width: 90 };
+
+test("patch field updates stay immutable and target only the requested module", () => {
+  const patch = {
+    modules: [
+      { ...source, params: [1, 2], state: [0], rack: { data: { mode: "old", keep: true } } },
+      { ...target, params: [3], state: [1] },
+    ],
+    cables: [],
+  };
+  const withParam = updateModuleParam(patch, "source", 1, 9);
+  const withState = updateModuleState(withParam, "source", [[0, 1], [2, 4]]);
+  const merged = mergeModuleData(withState, "source", { mode: "new" });
+  assert.deepEqual(merged.patch.modules[0].params, [1, 9]);
+  assert.equal(merged.patch.modules[0].state[0], 1);
+  assert.equal(merged.patch.modules[0].state[1], undefined);
+  assert.equal(merged.patch.modules[0].state[2], 4);
+  assert.deepEqual(merged.data, { mode: "new", keep: true });
+  assert.deepEqual(patch.modules[0].params, [1, 2]);
+  assert.deepEqual(patch.modules[1].state, [1]);
+});
 
 test("inserting a module on a cable preserves both endpoints and color", () => {
   const patch = {

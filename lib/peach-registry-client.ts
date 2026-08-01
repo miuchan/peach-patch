@@ -1,7 +1,6 @@
 import type { WebPluginModule } from "./web-plugin-registry.ts";
 
 export const DEFAULT_PEACH_REGISTRY_URL =
-  process.env.NEXT_PUBLIC_PEACH_PATCH_REGISTRY_URL ||
   "https://raw.githubusercontent.com/miuchan/peach-patch-registry/main/index.json";
 
 type RegistryPackage = Omit<WebPluginModule, "wasmUrl"> & {
@@ -59,10 +58,11 @@ export async function loadPeachRegistry(
   signal?: AbortSignal,
 ): Promise<WebPluginModule[]> {
   const parsed = new URL(indexUrl);
-  if (parsed.protocol !== "https:" && parsed.hostname !== "localhost")
+  if (parsed.protocol !== "https:")
     throw new Error("Peach Patch registry must use HTTPS");
   const response = await fetch(parsed, {
     signal,
+    cache: "no-cache",
     headers: { accept: "application/json" },
   });
   if (!response.ok)
@@ -79,7 +79,10 @@ function hex(bytes: ArrayBuffer): string {
 export async function fetchVerifiedWasm(
   definition: Pick<WebPluginModule, "key" | "wasmUrl" | "artifact">,
 ): Promise<ArrayBuffer> {
-  const response = await fetch(definition.wasmUrl);
+  const artifactUrl = new URL(definition.wasmUrl);
+  if (artifactUrl.protocol !== "https:")
+    throw new Error(`WASM for ${definition.key} must use HTTPS`);
+  const response = await fetch(artifactUrl);
   if (!response.ok) throw new Error(`Unable to load ${definition.wasmUrl}`);
   const bytes = await response.arrayBuffer();
   if (definition.artifact) {

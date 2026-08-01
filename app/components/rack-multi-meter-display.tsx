@@ -1,5 +1,3 @@
-"use client";
-
 import {useEffect,useRef} from "react";
 
 const finite=(samples:number[]|undefined)=>(samples??[]).map(value=>Number.isFinite(value)?value:0);

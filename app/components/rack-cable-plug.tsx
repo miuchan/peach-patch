@@ -1,5 +1,3 @@
-"use client";
-
 import type { RackPlugSignal } from "../../lib/rack-audio-engine";
 
 const PLUG_SIZE=33,PORT_SIZE=15.8003,LIGHT_RADIUS=4.5,HALO_RADIUS=19.5,

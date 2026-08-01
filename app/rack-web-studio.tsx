@@ -1,5 +1,3 @@
-"use client";
-
 import {
   useCallback,
   useEffect,
@@ -8,20 +6,34 @@ import {
   useState,
   type PointerEvent,
 } from "react";
-import { Maximize2, Play, Square } from "lucide-react";
-import { ModulePanel } from "./components/module-panel";
-import { PortScope } from "./components/port-scope";
-import { RackCablePlug } from "./components/rack-cable-plug";
+import { Maximize2 } from "lucide-react";
+import type { MadzineManualTarget } from "./components/rack-madzine-manual";
+import { RackStudioCableLayer } from "./components/rack-studio-cable-layer";
 import { parseVcvArchive } from "../lib/vcv-patch";
 import type {
   ModuleInstance,
   PatchDocument,
-  SampleAssetRef,
 } from "../lib/patch-types";
 import { usePatchHistory } from "../lib/use-patch-history";
-import { RackAudioEngine, type RackPlugSignal } from "../lib/rack-audio-engine";
-import { dataFromState, stateFromData } from "../lib/patch-state";
-import { hydrateModuleWithDefinition } from "../lib/patch-hydrate";
+import { RackAudioEngine, type RackHostControl, type RackPlugSignal } from "../lib/rack-audio-engine";
+import { dataFromState } from "../lib/patch-state";
+import { createRackAudioEngine } from "../lib/rack-audio-controller";
+import { syncRackAudioModules } from "../lib/rack-audio-patch-sync";
+import { applyRackHostViewportControl } from "../lib/rack-viewport-control";
+import {
+  normalizeRestoredPatch,
+  parseAutosavedPatch,
+  serializeAutosavePatch,
+} from "../lib/patch-autosave";
+import { cableSignalLevels, layoutPatchCables } from "../lib/rack-cable-layout";
+import { loadBrowserAsset } from "../lib/browser-asset-loader";
+import { importVcvPatch } from "../lib/vcv-patch-import";
+import * as studioHelpers from "../lib/rack-studio-helpers";
+import * as wasmHost from "../lib/rack-wasm-host";
+import {
+  hydrateModuleWithDefinition,
+  hydrateModulesWithDefinitions,
+} from "../lib/patch-hydrate";
 import { putSample } from "../lib/sample-store";
 import { serializeVcvPatch } from "../lib/vcv-patch-serialize";
 import {
@@ -37,16 +49,15 @@ import {
   disconnectModuleCables,
   duplicatePatchModules,
   fittedPatchViewport,
-  moveRackModulesWithoutOverlap,
-  modulesIntersectingViewportRect,
-  resolvedModulePortPosition,
   randomizeModuleControls,
   rackSurfaceBounds,
   removeModuleAndHealCable,
   replaceModuleKeepingCompatibleCables,
   resetModuleControls,
-  snapRackPosition,
   spliceModuleIntoCable,
+  mergeModuleData,
+  updateModuleParam,
+  updateModuleState,
 } from "../lib/patch-operations";
 import { type WebPluginModule } from "../lib/web-plugin-registry";
 import {
@@ -56,13 +67,25 @@ import {
 import {
   allWebPlugins,
   getWebPlugin,
-  registerDynamicModule,
-  registerDynamicModules,
+  replaceRegistryModules,
 } from "../lib/runtime-plugin-registry";
 import {
   fetchVerifiedWasm,
   loadPeachRegistry,
 } from "../lib/peach-registry-client";
+import { RackStudioLibrary } from "./components/rack-studio-library";
+import { RackStudioTopbar } from "./components/rack-studio-topbar";
+import { RackStudioInspector } from "./components/rack-studio-inspector";
+import { RackStudioContextMenus } from "./components/rack-studio-context-menus";
+import { RackStudioModuleLayer } from "./components/rack-studio-module-layer";
+import { RackStudioQuickAdd, type RackStudioQuickAddState } from "./components/rack-studio-quick-add";
+import {
+  useRackCanvasGestures,
+  type RackDragState,
+  type RackMarqueeState,
+  type RackPanGestureState,
+  type RackPinchState,
+} from "../lib/use-rack-canvas-gestures";
 
 const CABLES = [
   "#ef5265",
@@ -98,358 +121,8 @@ type BrowserFileHandle = {
 type FilePickerWindow = Window & {
   showSaveFilePicker?: (options: Record<string, unknown>) => Promise<BrowserFileHandle>;
 };
-type WasmExports = {
-  memory: WebAssembly.Memory;
-  _initialize: () => void;
-  rack_web_input_buffer: () => number;
-  rack_web_output_buffer: () => number;
-  rack_web_light_buffer: () => number;
-  rack_web_set_param: (id: number, value: number) => void;
-  rack_web_set_input_connected: (id: number, connected: number) => void;
-  rack_web_set_input_channels: (id: number, channels: number) => void;
-  rack_web_set_output_connected: (id: number, connected: number) => void;
-  rack_web_set_polyphony: (channels: number) => void;
-  rack_web_set_state: (id: number, value: number) => void;
-  rack_web_state_buffer?: (bytes: number) => number;
-  rack_web_commit_state_json?: (bytes: number) => number;
-  rack_web_seed: (seed: number) => void;
-  rack_web_process: (frames: number, sampleRate: number) => void;
-};
-
-function loadWasmStateJson(wasm: WasmExports, value: unknown) {
-  if (!wasm.rack_web_state_buffer || !wasm.rack_web_commit_state_json) return;
-  const bytes = new TextEncoder().encode(JSON.stringify(value ?? {})),
-    pointer = wasm.rack_web_state_buffer(bytes.length);
-  if (!pointer) return;
-  new Uint8Array(wasm.memory.buffer, pointer, bytes.length).set(bytes);
-  wasm.rack_web_commit_state_json(bytes.length);
-}
-
-function browserWasiImports(holder: {
-  runtime?: WasmExports;
-  randomState?: number;
-  clockNanoseconds?: bigint;
-}) {
-  const missing = () => -2;
-  const unsupported = () => -52;
-  return {
-    env: {
-      __syscall_faccessat: missing,
-      __syscall_fchmod: unsupported,
-      __syscall_chmod: unsupported,
-      __syscall_fchown32: unsupported,
-      __syscall_ftruncate64: unsupported,
-      __syscall_getdents64: missing,
-      __syscall_getcwd(buffer: number, size: number) {
-        if (!holder.runtime || size < 2) return -34;
-        new Uint8Array(holder.runtime.memory.buffer, buffer, 2).set([47, 0]);
-        return 2;
-      },
-      __syscall_readlinkat: missing,
-      __syscall_rmdir: missing,
-      __syscall_unlinkat: missing,
-      __syscall_utimensat: unsupported,
-    },
-    wasi_snapshot_preview1: {
-      fd_write(
-        _fd: number,
-        iovecs: number,
-        iovecCount: number,
-        written: number,
-      ) {
-        if (!holder.runtime) return 0;
-        const view = new DataView(holder.runtime.memory.buffer);
-        let bytes = 0;
-        for (let index = 0; index < iovecCount; index++)
-          bytes += view.getUint32(iovecs + index * 8 + 4, true);
-        view.setUint32(written, bytes, true);
-        return 0;
-      },
-      fd_read(_fd: number, _iovecs: number, _count: number, read: number) {
-        if (holder.runtime)
-          new DataView(holder.runtime.memory.buffer).setUint32(read, 0, true);
-        return 0;
-      },
-      fd_sync() {
-        return 0;
-      },
-      fd_seek(
-        _fd: number,
-        _offset: bigint,
-        _whence: number,
-        newOffset: number,
-      ) {
-        if (holder.runtime)
-          new DataView(holder.runtime.memory.buffer).setBigUint64(
-            newOffset,
-            0n,
-            true,
-          );
-        return 0;
-      },
-      fd_fdstat_get(_fd: number, status: number) {
-        if (holder.runtime)
-          new Uint8Array(holder.runtime.memory.buffer, status, 24).fill(0);
-        return 0;
-      },
-      clock_time_get(_clockId: number, _precision: bigint, time: number) {
-        if (!holder.runtime) return 0;
-        holder.clockNanoseconds =
-          (holder.clockNanoseconds ?? 1_000_000_000n) + 1_000_000n;
-        new DataView(holder.runtime.memory.buffer).setBigUint64(
-          time,
-          holder.clockNanoseconds,
-          true,
-        );
-        return 0;
-      },
-      random_get(buffer: number, length: number) {
-        if (!holder.runtime) return 0;
-        const bytes = new Uint8Array(
-          holder.runtime.memory.buffer,
-          buffer,
-          length,
-        );
-        let state = holder.randomState ?? 0x9e3779b9;
-        for (let index = 0; index < length; index++) {
-          state ^= state << 13;
-          state ^= state >>> 17;
-          state ^= state << 5;
-          bytes[index] = state & 255;
-        }
-        holder.randomState = state >>> 0;
-        return 0;
-      },
-      environ_sizes_get(count: number, size: number) {
-        if (!holder.runtime) return 0;
-        const view = new DataView(holder.runtime.memory.buffer);
-        view.setUint32(count, 0, true);
-        view.setUint32(size, 0, true);
-        return 0;
-      },
-      environ_get() {
-        return 0;
-      },
-      fd_close() {
-        return 0;
-      },
-    },
-  };
-}
-
-const emptyPatch: PatchDocument = { modules: [], cables: [] };
-const AUTOSAVE_KEY = "patchwork-web.autosave.v1";
-const LOCAL_PLUGIN_BUILDER = "http://127.0.0.1:4179";
-
-function newModuleId() {
-  return `module-${crypto.randomUUID()}`;
-}
-
-function repairDuplicateModuleIds(patch: PatchDocument) {
-  const seen = new Set<string>();
-  let repaired = 0;
-  const modules = patch.modules.map((module) => {
-    if (!seen.has(module.id)) {
-      seen.add(module.id);
-      return module;
-    }
-    repaired++;
-    const id = newModuleId();
-    seen.add(id);
-    return { ...module, id };
-  });
-  return { patch: repaired ? { ...patch, modules } : patch, repaired };
-}
-
-function moduleFromDefinition(
-  definition: WebPluginModule,
-  x: number,
-  y: number,
-): ModuleInstance {
-  return {
-    id: newModuleId(),
-    key: definition.key,
-    plugin: definition.plugin,
-    model: definition.model,
-    version: definition.version,
-    x,
-    y,
-    width: definition.width,
-    params: definition.params.map((param) => param.default),
-    state:
-      definition.key === "Stoermelder-P1/Stroke"
-        ? [0, ...Array.from({ length: 10 }, () => [-1, -1, 0, 1, 0]).flat()]
-        : undefined,
-    stateKeys: definition.stateKeys,
-    polyphony: definition.polyphonic ? 1 : undefined,
-    bypassed: false,
-    status: "ready",
-    description: definition.description,
-    screenshotUrl: definition.screenshotUrl,
-    sourceUrl: definition.sourceUrl,
-    license: definition.license,
-  };
-}
-
-function findOpenPosition(
-  modules: ModuleInstance[],
-  width: number,
-  origin: { x: number; y: number },
-) {
-  const start = snapRackPosition({
-    x: origin.x,
-    y: origin.y,
-  });
-  for (let row = 0; row < 24; row++)
-    for (let column = 0; column < 240; column++) {
-      const candidate = { x: start.x + column * 15, y: start.y + row * 380 };
-      const clear = modules.every(
-        (module) =>
-          candidate.x + width <= module.x ||
-          module.x + module.width <= candidate.x ||
-          candidate.y + 380 <= module.y ||
-          module.y + 380 <= candidate.y,
-      );
-      if (clear) return candidate;
-    }
-  return { x: start.x, y: start.y + modules.length * 380 };
-}
-
-async function runWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  task: (item: T) => Promise<void>,
-) {
-  let next = 0;
-  await Promise.all(
-    Array.from(
-      { length: Math.min(Math.max(1, limit), items.length) },
-      async () => {
-        while (next < items.length) {
-          const index = next++;
-          await task(items[index]);
-        }
-      },
-    ),
-  );
-}
-
-function withoutRackId(rack: Record<string, unknown> | undefined) {
-  if (!rack) return undefined;
-  const copy = { ...rack };
-  delete copy.id;
-  return copy;
-}
-
-function sampleAssetFromData(
-  data: Record<string, unknown> | undefined,
-): SampleAssetRef | undefined {
-  const value = data?.patchworkWebAsset;
-  if (!value || typeof value !== "object") return undefined;
-  const asset = value as Record<string, unknown>;
-  return typeof asset.storageKey === "string" &&
-    typeof asset.name === "string" &&
-    typeof asset.sampleRate === "number" &&
-    typeof asset.channels === "number" &&
-    typeof asset.frames === "number"
-    ? (asset as SampleAssetRef)
-    : undefined;
-}
-function sampleAssetsFromData(
-  data: Record<string, unknown> | undefined,
-): Array<SampleAssetRef | undefined> | undefined {
-  const values = data?.patchworkWebAssets;
-  if (!Array.isArray(values)) return undefined;
-  const assets = values.map((value) => {
-    if (!value || typeof value !== "object") return undefined;
-    const asset = value as Record<string, unknown>;
-    return typeof asset.storageKey === "string" &&
-      typeof asset.name === "string" &&
-      typeof asset.sampleRate === "number" &&
-      typeof asset.channels === "number" &&
-      typeof asset.frames === "number"
-      ? (asset as SampleAssetRef)
-      : undefined;
-  });
-  return assets.some(Boolean) ? assets : undefined;
-}
-function polyphonyFromData(data: Record<string, unknown> | undefined) {
-  const value = data?.patchworkWebPolyphony;
-  return typeof value === "number" && [1, 2, 4, 8, 16].includes(value)
-    ? value
-    : undefined;
-}
-
-function rackKeyFromKeyboard(event: KeyboardEvent) {
-  if (event.key.length === 1) return event.key.toUpperCase().charCodeAt(0);
-  const named: Record<string, number> = {
-    Escape: 256,
-    Enter: 257,
-    Tab: 258,
-    Backspace: 259,
-    Insert: 260,
-    Delete: 261,
-    ArrowRight: 262,
-    ArrowLeft: 263,
-    ArrowDown: 264,
-    ArrowUp: 265,
-    PageUp: 266,
-    PageDown: 267,
-    Home: 268,
-    End: 269,
-    CapsLock: 280,
-    ScrollLock: 281,
-    NumLock: 282,
-    PrintScreen: 283,
-    Pause: 284,
-  };
-  if (event.key in named) return named[event.key];
-  const functionKey = /^F([1-9]|1\d|2[0-5])$/.exec(event.key);
-  return functionKey ? 289 + Number(functionKey[1]) : -1;
-}
-
-function rackModifiersFromKeyboard(event: KeyboardEvent) {
-  return (
-    (event.shiftKey ? 1 : 0) |
-    (event.ctrlKey ? 2 : 0) |
-    (event.altKey ? 4 : 0) |
-    (event.metaKey ? 8 : 0)
-  );
-}
-
-function strokeBindings(module: ModuleInstance) {
-  const data = module.rack?.data;
-  const values =
-    module.state?.length || !data || typeof data !== "object"
-      ? (module.state ?? [])
-      : stateFromData(
-          module.key,
-          data as Record<string, unknown>,
-          module.stateKeys,
-        );
-  return Array.from({ length: 10 }, (_, id) => ({
-    id,
-    button: Number(values[1 + id * 5] ?? -1),
-    key: Number(values[2 + id * 5] ?? -1),
-    mods: Number(values[3 + id * 5] ?? 0),
-    mode: Number(values[4 + id * 5] ?? 1),
-    data:
-      data &&
-      Array.isArray((data as Record<string, unknown>).keys) &&
-      typeof ((data as Record<string, unknown>).keys as unknown[])[id] ===
-        "object"
-        ? String(
-            (((data as Record<string, unknown>).keys as unknown[])[id] as Record<
-              string,
-              unknown
-            >).data ?? "",
-          )
-        : "",
-  }));
-}
-
 export function RackWebStudio() {
-  const history = usePatchHistory(emptyPatch),
+  const history = usePatchHistory(studioHelpers.emptyPatch),
     patch = history.value;
   const commitHistory = history.commit,
     mutateHistory = history.mutate,
@@ -461,13 +134,7 @@ export function RackWebStudio() {
   );
   const [moduleQuery, setModuleQuery] = useState("");
   const [replaceMode, setReplaceMode] = useState(false);
-  const [quickAdd, setQuickAdd] = useState<{
-    left: number;
-    top: number;
-    worldX: number;
-    worldY: number;
-    query: string;
-  } | null>(null);
+  const [quickAdd, setQuickAdd] = useState<RackStudioQuickAddState | null>(null);
   const [moduleMenu, setModuleMenu] = useState<{
     left: number;
     top: number;
@@ -485,7 +152,7 @@ export function RackWebStudio() {
     cableId: string;
   } | null>(null);
   const [status, setStatus] = useState(
-    "Rack 2.6.6 source tree detected · Web ABI 0.3",
+    "Loading modules from the GitHub registry…",
   );
   const [busy, setBusy] = useState(false),
     [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set()),
@@ -493,6 +160,11 @@ export function RackWebStudio() {
       () => new Set(),
     ),
     [pending, setPending] = useState<PortClick | null>(null);
+  const [manualHelpHover,setManualHelpHover]=useState<{
+    moduleId:string;
+    type:"module"|"param"|"in"|"out";
+    id?:number;
+  }|null>(null);
   const [audioRunning, setAudioRunning] = useState(false);
   const [midiDevices, setMidiDevices] = useState<{
     inputs: string[];
@@ -508,6 +180,7 @@ export function RackWebStudio() {
   );
   const [layoutRevision, setLayoutRevision] = useState(0);
   const [registry, setRegistry] = useState(() => allWebPlugins());
+  const [registryState,setRegistryState]=useState<"loading"|"ready"|"error">("loading");
   const [autosaveReady, setAutosaveReady] = useState(false),
     [patchName, setPatchName] = useState("Peach-Patch.vcv");
   const [pan, setPan] = useState({ x: 30, y: 72 }),
@@ -532,6 +205,7 @@ export function RackWebStudio() {
   }>({ cables: {}, plugs: {}, scopes: {}, lights: {} });
   const [cablesVisible, setCablesVisible] = useState(true),
     [cableOpacity, setCableOpacity] = useState(1),
+    [cableTension, setCableTension] = useState(.5),
     [modulesLocked, setModulesLocked] = useState(false),
     [libraryOpen, setLibraryOpen] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null),
@@ -546,7 +220,10 @@ export function RackWebStudio() {
     automationPlaybackCountRef = useRef(0),
     automationStructureRef = useRef(""),
     rackRef = useRef<HTMLDivElement>(null),
-    wasmRef = useRef(new Map<string, WasmExports>());
+    wasmRef = useRef(new Map<string, wasmHost.WasmExports>());
+  const viewportControlRef=useRef({pan,zoom}),
+    undularLockRef=useRef<{x:number|null;y:number|null}>({x:null,y:null});
+  viewportControlRef.current={pan,zoom};
   const clipboardRef = useRef<{
     modules: ModuleInstance[];
     cables: PatchDocument["cables"];
@@ -558,35 +235,11 @@ export function RackWebStudio() {
   const audioPatchRef = useRef(patch),
     audioStructureRef = useRef(""),
     audioRestartRef = useRef(0);
-  const dragRef = useRef<{
-    ids: string[];
-    clientX: number;
-    clientY: number;
-    origins: Map<string, { x: number; y: number }>;
-    before: PatchDocument;
-  } | null>(null);
-  const marqueeRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    currentX: number;
-    currentY: number;
-    base: Set<string>;
-  } | null>(null);
-  const panGestureRef = useRef<{
-      pointerId: number;
-      clientX: number;
-      clientY: number;
-      panX: number;
-      panY: number;
-    } | null>(null),
+  const dragRef = useRef<RackDragState | null>(null);
+  const marqueeRef = useRef<RackMarqueeState | null>(null);
+  const panGestureRef = useRef<RackPanGestureState | null>(null),
     touchPointsRef = useRef(new Map<number, { x: number; y: number }>()),
-    pinchRef = useRef<{
-      distance: number;
-      zoom: number;
-      worldX: number;
-      worldY: number;
-    } | null>(null);
+    pinchRef = useRef<RackPinchState | null>(null);
   const hoveredModuleRef = useRef<string | null>(null),
     hoveredParamRef = useRef<{ moduleId: string; paramId: number } | null>(null),
     copiedParamRef = useRef<number | null>(null),
@@ -596,7 +249,7 @@ export function RackWebStudio() {
     runStrokeSpecialRef = useRef<
       (
         source: ModuleInstance,
-        binding: ReturnType<typeof strokeBindings>[number],
+        binding: ReturnType<typeof studioHelpers.strokeBindings>[number],
       ) => void
     >(() => {});
 
@@ -607,7 +260,8 @@ export function RackWebStudio() {
       result = (await response.json()) as ResolveResult;
     if (!response.ok || result.error)
       throw new Error(result.error || "Module could not be resolved");
-    return result;
+    const runtime=getWebPlugin(result.key);
+    return {...result,compiled:Boolean(runtime),runtime:runtime??null};
   }, []);
 
   const recordAutomationValue = useCallback(
@@ -627,19 +281,16 @@ export function RackWebStudio() {
     (moduleId: string, id: number, value: number) => {
       audioRef.current?.setParam(moduleId, id, value);
       recordAutomationValue(moduleId, id, value);
-      commitHistory((current) => ({
-        ...current,
-        modules: current.modules.map((module) =>
-          module.id === moduleId
-            ? {
-                ...module,
-                params: module.params.map((currentValue, index) =>
-                  index === id ? value : currentValue,
-                ),
-              }
-            : module,
-        ),
-      }));
+      commitHistory((current) => updateModuleParam(current, moduleId, id, value));
+    },
+    [commitHistory, recordAutomationValue],
+  );
+
+  const resetModuleParam = useCallback(
+    (moduleId: string, id: number, value: number) => {
+      audioRef.current?.resetParam(moduleId, id, value);
+      recordAutomationValue(moduleId, id, value);
+      commitHistory((current) => updateModuleParam(current, moduleId, id, value));
     },
     [commitHistory, recordAutomationValue],
   );
@@ -648,181 +299,63 @@ export function RackWebStudio() {
     (moduleId: string, updates: Array<[id: number, value: number]>) => {
       for (const [id, value] of updates)
         audioRef.current?.setState(moduleId, id, value);
-      commitHistory((current) => ({
-        ...current,
-        modules: current.modules.map((module) => {
-          if (module.id !== moduleId) return module;
-          const state = [...(module.state ?? [])];
-          for (const [id, value] of updates) state[id] = value;
-          return { ...module, state };
-        }),
-      }));
+      commitHistory((current) => updateModuleState(current, moduleId, updates));
     },
     [commitHistory],
   );
 
+  const setModuleData = useCallback(
+    (moduleId: string, data: Record<string, unknown>) => {
+      const next = mergeModuleData(patch, moduleId, data).data;
+      audioRef.current?.setStateJson(moduleId, next);
+      commitHistory((current) => mergeModuleData(current, moduleId, data).patch);
+    },
+    [commitHistory, patch],
+  );
+
+  const applyRackHostControl=useCallback((control:RackHostControl)=>{
+    if(Number.isFinite(control.opacity))setCableOpacity(Math.max(0,Math.min(1,control.opacity!)));
+    if(Number.isFinite(control.tension))setCableTension(Math.max(0,Math.min(1,control.tension!)));
+    const next = applyRackHostViewportControl(control, {
+      pan: viewportControlRef.current.pan,
+      zoom: viewportControlRef.current.zoom,
+      lockX: undularLockRef.current.x,
+      lockY: undularLockRef.current.y,
+    }, {
+      modules: audioPatchRef.current.modules,
+      width: rackRef.current?.clientWidth ?? 1,
+      height: rackRef.current?.clientHeight ?? 1,
+    });
+    viewportControlRef.current = { pan: next.pan, zoom: next.zoom };
+    undularLockRef.current = { x: next.lockX, y: next.lockY };
+    setZoom(next.zoom);
+    setPan(next.pan);
+  },[]);
+
   const createAudioEngine = useCallback(
     () =>
-      new RackAudioEngine({
-        onMidiParam: (moduleId, id, value) => {
-          recordAutomationValue(moduleId, id, value);
-          mutateHistory((current) => ({
-            ...current,
-            modules: current.modules.map((module) => {
-              if (
-                module.id !== moduleId ||
-                id < 0 ||
-                id >= module.params.length
-              )
-                return module;
-              const params = [...module.params];
-              params[id] = value;
-              return { ...module, params };
-            }),
-          }));
-        },
-        onMidiDevices: (inputs, outputs) => setMidiDevices({ inputs, outputs }),
-        onMidiMessage: (inputName, bytes) => {
-          const targetRef = midiLearnTargetRef.current;
-          if (!targetRef || bytes.length < 3 || (bytes[0] & 0xf0) !== 0xb0)
-            return;
-          const current = audioPatchRef.current,
-            target = current.modules.find(
-              (module) => module.id === targetRef.moduleId,
-            ),
-            midiMap = current.modules.find(
-              (module) => module.key === "Core/MIDI-Map",
-            );
-          midiLearnTargetRef.current = null;
-          setMidiLearnArmed(false);
-          if (!target || !midiMap) {
-            setStatus("MIDI learn target or Core MIDI-Map is no longer available");
-            return;
-          }
-          const data =
-              midiMap.rack?.data && typeof midiMap.rack.data === "object"
-                ? (midiMap.rack.data as Record<string, unknown>)
-                : {},
-            existingMaps = Array.isArray(data.maps) ? data.maps : [],
-            targetRackId = Number(target.rack?.id),
-            map = {
-              cc: bytes[1] & 0x7f,
-              moduleId: Number.isInteger(targetRackId) ? targetRackId : -1,
-              patchworkModuleId: target.id,
-              paramId: targetRef.paramId,
-            },
-            maps = [
-              ...existingMaps.filter((entry) => {
-                if (!entry || typeof entry !== "object") return true;
-                const value = entry as Record<string, unknown>;
-                return !(
-                  value.patchworkModuleId === target.id &&
-                  Number(value.paramId) === targetRef.paramId
-                );
-              }),
-              map,
-            ],
-            nextData = { ...data, maps };
-          audioRef.current?.setStateJson(midiMap.id, nextData);
-          commitHistory((patchValue) => ({
-            ...patchValue,
-            modules: patchValue.modules.map((module) =>
-              module.id === midiMap.id
-                ? {
-                    ...module,
-                    rack: { ...(module.rack ?? {}), data: nextData },
-                  }
-                : module,
-            ),
-          }));
-          const definition = getWebPlugin(target.key),
-            paramName =
-              definition?.params.find(
-                (param) => param.id === targetRef.paramId,
-              )?.name ?? `parameter ${targetRef.paramId + 1}`;
-          setStatus(
-            `MIDI learn · ${inputName || "default input"} CC ${map.cc} → ${target.plugin}/${target.model} ${paramName}`,
-          );
-        },
-        onAutomationComplete: () => {
-          const before = automationBeforeRef.current;
-          automationBeforeRef.current = null;
-          automationStructureRef.current = "";
-          if (before) checkpointHistory(before);
-          setAutomationPlaying(false);
-          setStatus(
-            `AudioWorklet automation complete · ${automationPlaybackCountRef.current} events · undo is available`,
-          );
-        },
-        onPortPeaks: (
-          moduleId,
-          inputs,
-          outputs,
-          inputScopes,
-          outputScopes,
-        ) =>
-          setPortPeaks({
-            moduleId,
-            inputs,
-            outputs,
-            inputScopes,
-            outputScopes,
-          }),
-        onVisualSignals: (cables, scopes, plugs, lights) =>
-          setVisualSignals({ cables, scopes, plugs, lights }),
-        onStateSnapshot: (moduleId, data) =>
-          commitHistory((current) => ({
-            ...current,
-            modules: current.modules.map((module) => {
-              if (module.id !== moduleId) return module;
-              const previous =
-                  module.rack?.data && typeof module.rack.data === "object"
-                    ? (module.rack.data as Record<string, unknown>)
-                    : {},
-                hostData = Object.fromEntries(
-                  Object.entries(previous).filter(([key]) =>
-                    key.startsWith("patchworkWeb"),
-                  ),
-                ),
-                merged = { ...data, ...hostData },
-                definition = getWebPlugin(module.key),
-                state = stateFromData(
-                  module.key,
-                  merged,
-                  definition?.stateKeys,
-                );
-              return {
-                ...module,
-                rack: { ...(module.rack ?? {}), data: merged },
-                state: state.length ? state : module.state,
-              };
-            }),
-          })),
-        onCaptureState: (moduleId, active) =>
-          setRecordingIds((current) => {
-            const next = new Set(current);
-            if (active) next.add(moduleId);
-            else next.delete(moduleId);
-            return next;
-          }),
-        onRecordingComplete: (recording) => {
-          const rackModule = audioPatchRef.current.modules.find(
-              (module) => module.id === recording.moduleId,
-            ),
-            stamp = new Date().toISOString().replaceAll(":", "-").replace(/\.\d{3}Z$/, "Z"),
-            name = `${rackModule?.model || "Recorder"}-${stamp}.wav`,
-            url = URL.createObjectURL(recording.blob),
-            anchor = document.createElement("a");
-          anchor.href = url;
-          anchor.download = name;
-          anchor.click();
-          window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-          setStatus(
-            `${name} captured · ${(recording.frames / recording.sampleRate).toFixed(1)}s · ${recording.channels === 2 ? "stereo" : "mono"}`,
-          );
-        },
+      createRackAudioEngine({
+        applyRackHostControl,
+        recordAutomationValue,
+        mutateHistory,
+        commitHistory,
+        checkpointHistory,
+        setMidiDevices,
+        setMidiLearnArmed,
+        midiLearnTargetRef,
+        audioPatchRef,
+        audioRef,
+        setStatus,
+        setAutomationPlaying,
+        automationBeforeRef,
+        automationStructureRef,
+        automationPlaybackCountRef,
+        setPortPeaks,
+        setVisualSignals,
+        setRecordingIds,
       }),
     [
+      applyRackHostControl,
       checkpointHistory,
       commitHistory,
       mutateHistory,
@@ -830,59 +363,36 @@ export function RackWebStudio() {
     ],
   );
 
-  const compileModule = useCallback(async (url: string) => {
-    const response = await fetch(`${LOCAL_PLUGIN_BUILDER}/compile`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url }),
-      }),
-      result = (await response.json()) as {
-        runtime?: WebPluginModule;
-        error?: string;
-      };
-    if (!response.ok || !result.runtime)
-      throw new Error(result.error || "Local Rack Web compiler is unavailable");
-    registerDynamicModule(result.runtime);
-    setRegistry(allWebPlugins());
-    return result.runtime;
-  }, []);
-
   useEffect(() => {
     let cancelled=false;
-    const install=(modules:WebPluginModule[])=>{
-        if(cancelled||!Array.isArray(modules)||!modules.length)return;
-        registerDynamicModules(modules);
-        setRegistry(allWebPlugins());
+    const controller=new AbortController();
+    const load=async()=>{
+      try{
+        const modules=await loadPeachRegistry(undefined,controller.signal);
+        if(cancelled)return;
+        replaceRegistryModules(modules);
+        setRegistry(modules);
+        setRegistryState("ready");
         mutateHistory((current) => {
-          let changed = false;
-          const nextModules = current.modules.map((module) => {
-            if (module.key === "Core/Blank") return module;
-            const width = getWebPlugin(module.key)?.width;
-            if (!width || Math.abs(module.width - width) < 0.001) return module;
-            changed = true;
-            return { ...module, width };
-          });
-          return changed ? { ...current, modules: nextModules } : current;
+          const nextModules = hydrateModulesWithDefinitions(
+            current.modules,
+            modules,
+          );
+          return nextModules === current.modules
+            ? current
+            : { ...current, modules: nextModules };
         });
-      },load=async()=>{
-        try {
-          install(await loadPeachRegistry());
-        } catch {
-          const bundled=await fetch("/dynamic-plugins/catalog.json"),
-            bundledModules=bundled.ok?await bundled.json() as WebPluginModule[]:[];
-          install(bundledModules);
-        }
-        try{
-          const local=await fetch(`${LOCAL_PLUGIN_BUILDER}/catalog`);
-          if(local.ok)install(await local.json() as WebPluginModule[]);
-        }catch{
-          // The bundled exact-source catalog is the offline runtime; the local
-          // compiler is only an optional development override.
-        }
-      };
-    void load()
-      .catch(() => undefined);
-    return()=>{cancelled=true};
+        setStatus(`GitHub registry ready · ${modules.length} verified modules`);
+      }catch(error){
+        if(cancelled||controller.signal.aborted)return;
+        replaceRegistryModules([]);
+        setRegistry([]);
+        setRegistryState("error");
+        setStatus(`GitHub registry unavailable · ${error instanceof Error?error.message:"request failed"}`);
+      }
+    };
+    void load();
+    return()=>{cancelled=true;controller.abort()};
   }, [mutateHistory]);
 
   useEffect(() => {
@@ -900,6 +410,10 @@ export function RackWebStudio() {
   }, []);
 
   const addFromUrl = async () => {
+    if(registryState!=="ready"){
+      setStatus(registryState==="error"?"GitHub registry is unavailable":"Wait for the GitHub registry to finish loading");
+      return;
+    }
     if (modulesLocked) {
       setStatus("Exit Perform mode before adding a module");
       return;
@@ -910,7 +424,7 @@ export function RackWebStudio() {
       const result = await resolveModule(moduleUrl);
       const addRuntime = (runtime: WebPluginModule) => {
         history.commit((current) => {
-          const position = findOpenPosition(current.modules, runtime.width, {
+          const position = studioHelpers.findOpenPosition(current.modules, runtime.width, {
             x: (-pan.x + 80) / zoom,
             y: (-pan.y + 80) / zoom,
           });
@@ -918,34 +432,24 @@ export function RackWebStudio() {
             ...current,
             modules: [
               ...current.modules,
-              moduleFromDefinition(runtime, position.x, position.y),
+              studioHelpers.moduleFromDefinition(runtime, position.x, position.y),
             ],
           };
         });
       };
-      setStatus(`${result.key}: isolating original Rack DSP and compiling WASM…`);
-      try {
-        const runtime = await compileModule(moduleUrl);
+      if(result.runtime){
+        const runtime=result.runtime;
         addRuntime(runtime);
-        setStatus(`${result.key} compiled from original Rack source and loaded`);
-      } catch (compileFailure) {
-        const compileError =
-          compileFailure instanceof Error
-            ? compileFailure.message
-            : "Automatic build failed";
-        if (result.compiled && result.runtime) {
-          addRuntime(result.runtime);
-          setStatus(
-            `${result.key} loaded with bundled browser adapter · source build: ${compileError}`,
-          );
-        } else {
+        setStatus(`${result.key} loaded from the GitHub registry`);
+      }else{
+        const registryError=`${result.key} is not available in the GitHub registry`;
           const origin = {
               x: (-pan.x + 80) / zoom,
               y: (-pan.y + 80) / zoom,
             },
-            position = findOpenPosition(history.value.modules, 240, origin),
+            position = studioHelpers.findOpenPosition(history.value.modules, 240, origin),
             instance: ModuleInstance = {
-              id: newModuleId(),
+              id: studioHelpers.newModuleId(),
               key: result.key,
               plugin: result.plugin,
               model: result.model,
@@ -959,14 +463,13 @@ export function RackWebStudio() {
               screenshotUrl: result.screenshotUrl,
               sourceUrl: result.sourceUrl,
               license: result.license,
-              error: compileError,
+              error: registryError,
             };
           history.commit((current) => ({
             ...current,
             modules: [...current.modules, instance],
           }));
-          setStatus(`${result.key}: ${compileError}`);
-        }
+          setStatus(registryError);
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Module load failed");
@@ -992,33 +495,29 @@ export function RackWebStudio() {
         loaded = 0,
         blocked = 0;
       setStatus(`Resolving 0/${missing.length} missing plugin models…`);
-      await runWithConcurrency(missing, 2, async (module) => {
+      await studioHelpers.runWithConcurrency(missing, 2, async (module) => {
           try {
-            const result = await resolveModule(
+            const runtime=getWebPlugin(module.key);
+            const result=runtime?null:await resolveModule(
               `https://library.vcvrack.com/${module.plugin}/${module.model}`,
             );
-            const runtime =
-              result.runtime ??
-              (await compileModule(
-                `https://library.vcvrack.com/${module.plugin}/${module.model}`,
-              ).catch(() => undefined));
-            if (runtime) loaded++;
-            else blocked++;
+            if(runtime)loaded++;else blocked++;
             mutateHistory((current) => ({
               ...current,
               modules: current.modules.map((item) =>
                 item.key !== module.key
                   ? item
                   : runtime
-                    ? hydrateModuleWithDefinition(item, runtime, result)
+                    ? hydrateModuleWithDefinition(item, runtime)
                     : {
                       ...item,
-                      version: result.version ?? item.version,
+                      version: result?.version ?? item.version,
                       status: "source-required",
-                      description: result.description,
-                      screenshotUrl: result.screenshotUrl,
-                      sourceUrl: result.sourceUrl,
-                      license: result.license,
+                      description: result?.description,
+                      screenshotUrl: result?.screenshotUrl,
+                      sourceUrl: result?.sourceUrl,
+                      license: result?.license,
+                      error:`${module.key} is not available in the GitHub registry`,
                     },
               ),
             }));
@@ -1050,10 +549,14 @@ export function RackWebStudio() {
           : `Patch opened · all ${loaded} missing plugin models loaded`,
       );
     },
-    [compileModule, mutateHistory, resolveModule],
+    [mutateHistory, resolveModule],
   );
 
   const openPatch = async (file: File) => {
+    if(registryState!=="ready"){
+      setStatus(registryState==="error"?"GitHub registry is unavailable":"Wait for the GitHub registry to finish loading");
+      return;
+    }
     for (const timer of automationTimersRef.current) window.clearTimeout(timer);
     automationTimersRef.current = [];
     automationBeforeRef.current = null;
@@ -1062,70 +565,10 @@ export function RackWebStudio() {
     setAutomationRecording(false);
     setBusy(true);
     try {
-      const raw = parseVcvArchive(await file.arrayBuffer()),
-        minX = raw.modules.length
-          ? Math.min(...raw.modules.map((module) => module.pos[0]))
-          : 0,
-        minY = raw.modules.length
-          ? Math.min(...raw.modules.map((module) => module.pos[1]))
-          : 0,
-        rack = Object.fromEntries(
-          Object.entries(raw).filter(
-            ([key]) => key !== "modules" && key !== "cables",
-          ),
-        );
-      const modules = raw.modules.map((source) => {
-        const key = `${source.plugin}/${source.model}`,
-          definition = getWebPlugin(key),
-          values =
-            definition?.params.map((param) => param.default) ??
-            Array.from({ length: source.params?.length ?? 0 }, () => 0);
-        source.params?.forEach((param) => {
-          values[param.id] = param.value;
-        });
-        const blankWidth =
-          source.plugin === "Core" && source.model === "Blank"
-            ? Math.max(45, Number(source.data?.width ?? 10) * 15)
-            : undefined;
-        return {
-          id: `vcv-${source.id}`,
-          key,
-          plugin: source.plugin,
-          model: source.model,
-          version: source.version ?? definition?.version,
-          x: (source.pos[0] - minX) * 15,
-          y: (source.pos[1] - minY) * 380,
-          width:
-            blankWidth ??
-            definition?.width ??
-            Math.max(90, Number(source.data?.width ?? 12) * 15),
-          params: values,
-          state: stateFromData(key, source.data, definition?.stateKeys),
-          stateKeys: definition?.stateKeys,
-          asset: sampleAssetFromData(source.data),
-          assets: sampleAssetsFromData(source.data),
-          polyphony:
-            polyphonyFromData(source.data) ??
-            (definition?.polyphonic ? 1 : undefined),
-          bypassed: source.bypass === true || source.disabled === true,
-          rack: { ...source },
-          status: definition ? "ready" : "resolving",
-          description: definition?.description,
-          screenshotUrl: definition?.screenshotUrl,
-          sourceUrl: definition?.sourceUrl,
-          license: definition?.license,
-        } as ModuleInstance;
-      });
-      const cables = raw.cables.map((cable) => ({
-        id: `vcv-cable-${cable.id}`,
-        fromModule: `vcv-${cable.outputModuleId}`,
-        fromPort: cable.outputId,
-        toModule: `vcv-${cable.inputModuleId}`,
-        toPort: cable.inputId,
-        color: cable.color ?? CABLES[cable.id % CABLES.length],
-        rack: { ...cable },
-      }));
-      history.commit({ modules, cables, rack, rackOrigin: [minX, minY] });
+      const raw = parseVcvArchive(await file.arrayBuffer());
+      const imported = importVcvPatch(raw, getWebPlugin, CABLES);
+      const { modules, cables, rack, rackOrigin, unresolved } = imported;
+      history.commit({ modules, cables, rack, rackOrigin });
       setSelectedIds(new Set());
       setSelectedCableIds(new Set());
       setReplaceMode(false);
@@ -1143,7 +586,7 @@ export function RackWebStudio() {
       setStatus(
         `${file.name} · ${modules.length} modules · ${cables.length} cables · resolving plugins…`,
       );
-      void hydrateMissing(modules);
+      void hydrateMissing(unresolved);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Invalid .vcv patch");
     } finally {
@@ -1164,66 +607,12 @@ export function RackWebStudio() {
       setStatus(`${module.plugin}/${module.model} does not expose a browser audio asset input`);
       return;
     }
-    if (file.size > 100 * 1024 * 1024) {
-      setStatus("Sample is larger than the 100 MB browser decode limit");
-      return;
-    }
     setBusy(true);
     setStatus(`Decoding ${file.name} locally…`);
-    let decoder: AudioContext | null = null;
     try {
-      if (assetContract.type === "image") {
-        const bitmap = await createImageBitmap(file),
-          maxPixels = Math.max(1, Math.floor(assetContract.maxSamples / 4)),
-          scale = Math.min(1, Math.sqrt(maxPixels / (bitmap.width * bitmap.height))),
-          width = Math.max(1, Math.floor(bitmap.width * scale)),
-          height = Math.max(1, Math.floor(bitmap.height * scale)),
-          canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) throw new Error("Browser could not create an image decoder");
-        context.drawImage(bitmap, 0, 0, width, height);
-        bitmap.close();
-        const rgba = context.getImageData(0, 0, width, height).data,
-          samples = new Float32Array(width * height * 4);
-        for (let index = 0; index < rgba.length; index++) samples[index] = rgba[index] / 255;
-        const ref: SampleAssetRef = {
-          storageKey: `sample-${crypto.randomUUID()}`,
-          name: file.name,
-          sampleRate: width,
-          channels: 4,
-          frames: width * height,
-        };
-        await putSample({ ref, samples });
-        commitHistory((current) => ({
-          ...current,
-          modules: current.modules.map((item) => item.id === module.id ? { ...item, asset: ref } : item),
-        }));
-        setStatus(`${file.name} loaded · ${width}×${height} RGBA · stored in this browser`);
-        return;
-      }
-      decoder = new AudioContext();
-      const buffer = await decoder.decodeAudioData(await file.arrayBuffer()),
-        channels = Math.min(assetContract.channels, buffer.numberOfChannels),
-        frames = Math.min(
-          buffer.length,
-          Math.floor(buffer.sampleRate * assetContract.maxSeconds),
-          Math.floor(assetContract.maxSamples / channels),
-        ),
-        samples = new Float32Array(frames * channels);
-      for (let frame = 0; frame < frames; frame++)
-        for (let channel = 0; channel < channels; channel++)
-          samples[frame * channels + channel] =
-            buffer.getChannelData(channel)[frame];
-      const ref: SampleAssetRef = {
-        storageKey: `sample-${crypto.randomUUID()}`,
-        name: file.name,
-        sampleRate: buffer.sampleRate,
-        channels,
-        frames,
-      };
-      await putSample({ ref, samples });
+      const loaded = await loadBrowserAsset(file, assetContract);
+      const { ref } = loaded;
+      await putSample({ ref, samples: loaded.samples });
       commitHistory((current) => ({
         ...current,
         modules: current.modules.map((item) =>
@@ -1241,7 +630,7 @@ export function RackWebStudio() {
         ),
       }));
       setStatus(
-        `${file.name} loaded${assetContract.slots && assetContract.slots > 1 ? ` into channel ${slot + 1}` : ""} · ${(frames / buffer.sampleRate).toFixed(1)}s · ${channels === 2 ? "stereo" : "mono"} · stored in this browser`,
+        `${file.name} loaded${assetContract.slots && assetContract.slots > 1 ? ` into channel ${slot + 1}` : ""} · ${loaded.detail} · stored in this browser`,
       );
     } catch (error) {
       setStatus(
@@ -1249,10 +638,7 @@ export function RackWebStudio() {
           ? error.message
           : "Browser could not decode this audio file",
       );
-    } finally {
-      await decoder?.close();
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   const runClock = async (module: ModuleInstance) => {
@@ -1262,12 +648,12 @@ export function RackWebStudio() {
       let wasm = wasmRef.current.get(module.id);
       if (!wasm) {
         const bytes = await fetchVerifiedWasm(definition),
-          wasiHolder: { runtime?: WasmExports; randomState?: number } = {},
+          wasiHolder: wasmHost.WasmHostState = {},
           result = await WebAssembly.instantiate(
             bytes,
-            browserWasiImports(wasiHolder),
+            wasmHost.browserWasiImports(wasiHolder),
           );
-        wasm = result.instance.exports as unknown as WasmExports;
+        wasm = result.instance.exports as unknown as wasmHost.WasmExports;
         wasiHolder.runtime = wasm;
         wasm._initialize();
         wasm.rack_web_seed(0x51c0ffee);
@@ -1275,7 +661,7 @@ export function RackWebStudio() {
       }
       wasm.rack_web_set_polyphony(module.polyphony ?? 1);
       module.params.forEach((value, id) => wasm!.rack_web_set_param(id, value));
-      loadWasmStateJson(
+      wasmHost.loadWasmStateJson(
         wasm,
         dataFromState(
           module.key,
@@ -1403,75 +789,14 @@ export function RackWebStudio() {
     setStatus("Cable dragged into place · existing input cable replaced · undo is available");
   };
 
-  const cablePaths = useMemo(() => {
-      const definitionsByKey=new Map(registry.map(definition=>[definition.key,definition])),topInputs=new Map<string,{id:string;order:number}>(),topOutputs=new Map<string,{id:string;order:number}>();
-      patch.cables.forEach((cable,index)=>{
-        const inputOrder=Number(cable.rack?.inputPlugOrder),outputOrder=Number(cable.rack?.outputPlugOrder),
-          inputKey=`${cable.toModule}:${cable.toPort}`,outputKey=`${cable.fromModule}:${cable.fromPort}`,
-          rankedInput=Number.isFinite(inputOrder)?inputOrder:index*2+1,rankedOutput=Number.isFinite(outputOrder)?outputOrder:index*2;
-        if((topInputs.get(inputKey)?.order??-Infinity)<=rankedInput)topInputs.set(inputKey,{id:cable.id,order:rankedInput});
-        if((topOutputs.get(outputKey)?.order??-Infinity)<=rankedOutput)topOutputs.set(outputKey,{id:cable.id,order:rankedOutput});
-      });
-      return patch.cables
-        .map((cable) => {
-          const from = patch.modules.find(
-              (module) => module.id === cable.fromModule,
-            ),
-            to = patch.modules.find((module) => module.id === cable.toModule);
-          if (!from || !to) return null;
-          const fromDefinition = definitionsByKey.get(from.key),
-            toDefinition = definitionsByKey.get(to.key),
-            outputPosition = resolvedModulePortPosition(
-              from,
-              "out",
-              cable.fromPort,
-              fromDefinition?.outputs ?? [],
-              fromDefinition?.width ?? from.width,
-            ),
-            inputPosition = resolvedModulePortPosition(
-              to,
-              "in",
-              cable.toPort,
-              toDefinition?.inputs ?? [],
-              toDefinition?.width ?? to.width,
-            ),
-            x1 = outputPosition.x,
-            y1 = outputPosition.y,
-            x2 = inputPosition.x,
-            y2 = inputPosition.y,
-            sag = Math.max(70, Math.abs(x2 - x1) * 0.22),
-            slumpX = (x1 + x2) / 2,
-            slumpY = (y1 + y2) / 2 + sag,
-            outputAngle = Math.atan2(slumpY - y1, slumpX - x1),
-            inputAngle = Math.atan2(slumpY - y2, slumpX - x2),
-            plugClearance = 14,
-            cableStartX = x1 + Math.cos(outputAngle) * plugClearance,
-            cableStartY = y1 + Math.sin(outputAngle) * plugClearance,
-            cableEndX = x2 + Math.cos(inputAngle) * plugClearance,
-            cableEndY = y2 + Math.sin(inputAngle) * plugClearance;
-          return {
-            ...cable,
-            x1,y1,x2,y2,
-            outputAngle,
-            inputAngle,
-            topOutputPlug:topOutputs.get(`${cable.fromModule}:${cable.fromPort}`)?.id===cable.id,
-            topInputPlug:topInputs.get(`${cable.toModule}:${cable.toPort}`)?.id===cable.id,
-            d: `M${cableStartX} ${cableStartY} Q${slumpX} ${slumpY},${cableEndX} ${cableEndY}`,
-          };
-        })
-        .filter(Boolean);
-    },[patch,registry]);
-  const jackSignalLevels = useMemo(() => {
-    const levels = new Map<string, number>();
-    for (const cable of patch.cables) {
-      const level = visualSignals.cables[cable.id] ?? 0,
-        outputKey = `${cable.fromModule}:out:${cable.fromPort}`,
-        inputKey = `${cable.toModule}:in:${cable.toPort}`;
-      levels.set(outputKey, Math.max(levels.get(outputKey) ?? 0, level));
-      levels.set(inputKey, Math.max(levels.get(inputKey) ?? 0, level));
-    }
-    return levels;
-  }, [patch.cables, visualSignals.cables]);
+  const cablePaths = useMemo(
+    () => layoutPatchCables(patch, registry, cableTension),
+    [cableTension, patch, registry],
+  );
+  const jackSignalLevels = useMemo(
+    () => cableSignalLevels(patch.cables, visualSignals.cables),
+    [patch.cables, visualSignals.cables],
+  );
   const structureKey = useMemo(
     () =>
       `${layoutRevision}#${patch.modules.map((module) => `${module.id}:${module.key}:${module.status}:${module.asset?.storageKey ?? ""}:${module.assets?.map(asset=>asset?.storageKey??"").join(",")??""}:${module.polyphony ?? 1}:${module.x}:${module.y}:${module.width}`).join("|")}#${patch.cables.map((cable) => `${cable.fromModule}:${cable.fromPort}>${cable.toModule}:${cable.toPort}`).join("|")}`,
@@ -1524,7 +849,7 @@ export function RackWebStudio() {
         ]),
       ),
       replacement = {
-        ...moduleFromDefinition(definition, target.x, target.y),
+        ...studioHelpers.moduleFromDefinition(definition, target.x, target.y),
         id: targetId,
         params: definition.params.map((param) => {
           const oldId = oldParamsByName.get(param.name.trim().toLowerCase()),
@@ -1609,12 +934,12 @@ export function RackWebStudio() {
               x: (-pan.x + 80) / zoom,
               y: (-pan.y + 80) / zoom,
             },
-        position = findOpenPosition(
+        position = studioHelpers.findOpenPosition(
           patch.modules,
           definition.width,
           origin,
         ),
-        instance = moduleFromDefinition(
+        instance = studioHelpers.moduleFromDefinition(
           definition,
           position.x,
           position.y,
@@ -1652,11 +977,11 @@ export function RackWebStudio() {
 
   const addQuickModule = (definition: WebPluginModule) => {
     if (!quickAdd || modulesLocked) return;
-    const position = findOpenPosition(patch.modules, definition.width, {
+    const position = studioHelpers.findOpenPosition(patch.modules, definition.width, {
         x: Math.round(quickAdd.worldX / 15) * 15,
         y: Math.round(quickAdd.worldY / 380) * 380,
       }),
-      instance = moduleFromDefinition(definition, position.x, position.y);
+      instance = studioHelpers.moduleFromDefinition(definition, position.x, position.y);
     commitHistory((current) => ({
       ...current,
       modules: [...current.modules, instance],
@@ -1762,7 +1087,7 @@ export function RackWebStudio() {
     }
     const stamp = Date.now(),
       ids = new Map<string, string>();
-    copied.modules.forEach((module) => ids.set(module.id, newModuleId()));
+    copied.modules.forEach((module) => ids.set(module.id, studioHelpers.newModuleId()));
     const modules = copied.modules.map((module) => ({
         ...module,
         id: ids.get(module.id)!,
@@ -1770,7 +1095,7 @@ export function RackWebStudio() {
         y: module.y + 40,
         params: [...module.params],
         state: module.state ? [...module.state] : undefined,
-        rack: withoutRackId(module.rack),
+        rack: studioHelpers.withoutRackId(module.rack),
       })),
       cables = copied.cables.flatMap((cable, index) => {
         const fromModule = ids.get(cable.fromModule),
@@ -1782,7 +1107,7 @@ export function RackWebStudio() {
                 id: `cable-${stamp}-${index}-${crypto.randomUUID()}`,
                 fromModule,
                 toModule,
-                rack: withoutRackId(cable.rack),
+                rack: studioHelpers.withoutRackId(cable.rack),
               },
             ]
           : [];
@@ -1804,7 +1129,7 @@ export function RackWebStudio() {
     const result = duplicatePatchModules(
       patch,
       selectedIds,
-      () => newModuleId(),
+      () => studioHelpers.newModuleId(),
       () => `cable-${crypto.randomUUID()}`,
     );
     if (!result) return;
@@ -1938,187 +1263,26 @@ export function RackWebStudio() {
     );
   }, [commitHistory, patch, selectedIds]);
 
-  const startBackgroundGesture = (event: PointerEvent<HTMLElement>) => {
-    const rack = rackRef.current;
-    if (!rack) return;
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture is optional on older touch browsers.
-    }
-    if (event.pointerType === "touch") {
-      touchPointsRef.current.set(event.pointerId, {
-        x: event.clientX,
-        y: event.clientY,
-      });
-      const points = [...touchPointsRef.current.values()];
-      if (points.length === 1) {
-        panGestureRef.current = {
-          pointerId: event.pointerId,
-          clientX: event.clientX,
-          clientY: event.clientY,
-          panX: pan.x,
-          panY: pan.y,
-        };
-        pinchRef.current = null;
-      } else if (points.length >= 2) {
-        const [first, second] = points,
-          rect = rack.getBoundingClientRect(),
-          midX = (first.x + second.x) / 2 - rect.left,
-          midY = (first.y + second.y) / 2 - rect.top;
-        pinchRef.current = {
-          distance: Math.max(
-            1,
-            Math.hypot(second.x - first.x, second.y - first.y),
-          ),
-          zoom,
-          worldX: (midX - pan.x) / zoom,
-          worldY: (midY - pan.y) / zoom,
-        };
-        panGestureRef.current = null;
-      }
-      event.preventDefault();
-      return;
-    }
-    if (event.button === 0 || event.button === 1) {
-      panGestureRef.current = {
-        pointerId: event.pointerId,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        panX: pan.x,
-        panY: pan.y,
-      };
-      event.preventDefault();
-    }
-  };
-
-  const pointerMove = (event: PointerEvent<HTMLElement>) => {
-    const selection = marqueeRef.current;
-    if (selection?.pointerId === event.pointerId) {
-      const rack = rackRef.current;
-      if (!rack) return;
-      const rect = rack.getBoundingClientRect();
-      selection.currentX = event.clientX - rect.left;
-      selection.currentY = event.clientY - rect.top;
-      setMarquee({
-        left: Math.min(selection.startX, selection.currentX),
-        top: Math.min(selection.startY, selection.currentY),
-        width: Math.abs(selection.currentX - selection.startX),
-        height: Math.abs(selection.currentY - selection.startY),
-      });
-      event.preventDefault();
-      return;
-    }
-    const drag = dragRef.current;
-    if (drag) {
-      const dx = (event.clientX - drag.clientX) / zoom,
-        dy = (event.clientY - drag.clientY) / zoom;
-      history.mutate((current) => ({
-        ...current,
-        modules: moveRackModulesWithoutOverlap(
-          current.modules,
-          drag.origins,
-          { x: dx, y: dy },
-        ),
-      }));
-      return;
-    }
-    if (event.pointerType === "touch" && touchPointsRef.current.has(event.pointerId)) {
-      touchPointsRef.current.set(event.pointerId, {
-        x: event.clientX,
-        y: event.clientY,
-      });
-      const points = [...touchPointsRef.current.values()],
-        pinch = pinchRef.current,
-        rack = rackRef.current;
-      if (points.length >= 2 && pinch && rack) {
-        const [first, second] = points,
-          rect = rack.getBoundingClientRect(),
-          midX = (first.x + second.x) / 2 - rect.left,
-          midY = (first.y + second.y) / 2 - rect.top,
-          distance = Math.max(
-            1,
-            Math.hypot(second.x - first.x, second.y - first.y),
-          ),
-          nextZoom = Math.min(
-            1.5,
-            Math.max(0.08, pinch.zoom * (distance / pinch.distance)),
-          );
-        setZoom(nextZoom);
-        setPan({
-          x: midX - pinch.worldX * nextZoom,
-          y: midY - pinch.worldY * nextZoom,
-        });
-      } else {
-        const gesture = panGestureRef.current;
-        if (gesture?.pointerId === event.pointerId)
-          setPan({
-            x: gesture.panX + event.clientX - gesture.clientX,
-            y: gesture.panY + event.clientY - gesture.clientY,
-          });
-      }
-      event.preventDefault();
-      return;
-    }
-    const gesture = panGestureRef.current;
-    if (gesture?.pointerId === event.pointerId) {
-      setPan({
-        x: gesture.panX + event.clientX - gesture.clientX,
-        y: gesture.panY + event.clientY - gesture.clientY,
-      });
-      event.preventDefault();
-    }
-  };
-  const pointerUp = (event?: PointerEvent<HTMLElement>) => {
-    const selection = marqueeRef.current;
-    if (selection && (!event || selection.pointerId === event.pointerId)) {
-      const left = Math.min(selection.startX, selection.currentX),
-        top = Math.min(selection.startY, selection.currentY),
-        right = Math.max(selection.startX, selection.currentX),
-        bottom = Math.max(selection.startY, selection.currentY),
-        hits = modulesIntersectingViewportRect(patch.modules, pan, zoom, {
-          left,
-          top,
-          right,
-          bottom,
-        }),
-        next = new Set(selection.base);
-      for (const id of hits) next.add(id);
-      setSelectedIds(next);
-      setSelectedCableIds(new Set());
-      setStatus(
-        `${hits.length} module${hits.length === 1 ? "" : "s"} added by marquee · ${next.size} selected`,
-      );
-      marqueeRef.current = null;
-      setMarquee(null);
-    }
-    if (dragRef.current) {
-      history.checkpoint(dragRef.current.before);
-      dragRef.current = null;
-      setLayoutRevision((revision) => revision + 1);
-    }
-    if (!event) return;
-    touchPointsRef.current.delete(event.pointerId);
-    if (panGestureRef.current?.pointerId === event.pointerId)
-      panGestureRef.current = null;
-    const remaining = [...touchPointsRef.current.entries()];
-    pinchRef.current = null;
-    if (remaining.length === 1) {
-      const [pointerId, point] = remaining[0];
-      panGestureRef.current = {
-        pointerId,
-        clientX: point.x,
-        clientY: point.y,
-        panX: pan.x,
-        panY: pan.y,
-      };
-    }
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    } catch {
-      // The pointer may already have been released by the browser.
-    }
-  };
+  const { startBackgroundGesture, pointerMove, pointerUp } = useRackCanvasGestures({
+    rackRef,
+    dragRef,
+    marqueeRef,
+    panGestureRef,
+    touchPointsRef,
+    pinchRef,
+    modules: patch.modules,
+    pan,
+    zoom,
+    setPan,
+    setZoom,
+    setMarquee,
+    setSelectedIds,
+    setSelectedCableIds,
+    setStatus,
+    mutatePatch: history.mutate,
+    checkpointPatch: history.checkpoint,
+    bumpLayoutRevision: () => setLayoutRevision((revision) => revision + 1),
+  });
 
   const fitPatch = () => {
     const rack = rackRef.current;
@@ -2386,6 +1550,10 @@ export function RackWebStudio() {
   };
 
   const toggleAudio = async () => {
+    if(registryState!=="ready"){
+      setStatus(registryState==="error"?"GitHub registry is unavailable":"Wait for the GitHub registry to finish loading");
+      return;
+    }
     setBusy(true);
     try {
       if (audioRef.current) {
@@ -2496,7 +1664,7 @@ export function RackWebStudio() {
 
   const runStrokeSpecial = (
     source: ModuleInstance,
-    binding: ReturnType<typeof strokeBindings>[number],
+    binding: ReturnType<typeof studioHelpers.strokeBindings>[number],
   ) => {
     const target = strokeTargetModule(binding.data);
     switch (binding.mode) {
@@ -2633,7 +1801,7 @@ export function RackWebStudio() {
           definition = candidates[Math.floor(Math.random() * candidates.length)];
         if (!definition) return;
         commitHistory((current) => {
-          const position = findOpenPosition(current.modules, definition.width, {
+          const position = studioHelpers.findOpenPosition(current.modules, definition.width, {
             x: (-pan.x + 80) / zoom,
             y: (-pan.y + 80) / zoom,
           });
@@ -2641,7 +1809,7 @@ export function RackWebStudio() {
             ...current,
             modules: [
               ...current.modules,
-              moduleFromDefinition(definition, position.x, position.y),
+              studioHelpers.moduleFromDefinition(definition, position.x, position.y),
             ],
           };
         });
@@ -2688,13 +1856,13 @@ export function RackWebStudio() {
   }, [cableMenu, moduleMenu]);
   useEffect(() => {
     const dispatchStroke = (event: KeyboardEvent, active: boolean) => {
-      const keyCode = rackKeyFromKeyboard(event),
-        modifiers = rackModifiersFromKeyboard(event);
+      const keyCode = studioHelpers.rackKeyFromKeyboard(event),
+        modifiers = studioHelpers.rackModifiersFromKeyboard(event);
       if (keyCode < 0) return false;
       let matched = false;
       for (const strokeModule of patch.modules) {
         if (strokeModule.key !== "Stoermelder-P1/Stroke") continue;
-        for (const binding of strokeBindings(strokeModule)) {
+        for (const binding of studioHelpers.strokeBindings(strokeModule)) {
           if (binding.key !== keyCode || binding.mods !== modifiers) continue;
           if (event.repeat && !STROKE_REPEATABLE_MODES.has(binding.mode)) continue;
           matched = true;
@@ -2705,6 +1873,48 @@ export function RackWebStudio() {
       }
       return matched;
     };
+    const dispatchHoveredHotkey = (event: KeyboardEvent) => {
+      if (event.repeat) return false;
+      const moduleId = hoveredModuleRef.current,
+        hotkeyModule = moduleId
+          ? patch.modules.find((module) => module.id === moduleId)
+          : undefined,
+        definition = hotkeyModule ? getWebPlugin(hotkeyModule.key) : undefined,
+        contract = definition?.runtime?.hotkey;
+      if (!hotkeyModule || !contract) return false;
+      const keyCode = studioHelpers.rackKeyFromKeyboard(event),
+        modifiers = studioHelpers.rackModifiersFromKeyboard(event);
+      if (keyCode < 0) return false;
+      const recording =
+          (hotkeyModule.params[contract.recordParam] ?? 0) >= 0.5,
+        storedKey =
+          hotkeyModule.state?.[contract.keyState] ??
+          definition.stateKeys?.[contract.keyState]?.default ??
+          -1,
+        storedModifiers =
+          hotkeyModule.state?.[contract.modsState] ??
+          definition.stateKeys?.[contract.modsState]?.default ??
+          0;
+      if (
+        !recording &&
+        (keyCode !== storedKey || modifiers !== storedModifiers)
+      )
+        return false;
+      const action =
+        contract.actionBase |
+        ((modifiers & 0xf) << 16) |
+        (keyCode & 0xffff);
+      audioRef.current?.triggerAction(hotkeyModule.id, action, true);
+      if (recording) {
+        setModuleState(hotkeyModule.id, [
+          [contract.keyState, keyCode],
+          [contract.modsState, modifiers],
+        ]);
+        setModuleParam(hotkeyModule.id, contract.recordParam, 0);
+        setStatus(`Hotkey recorded · ${event.key}`);
+      }
+      return true;
+    };
     const key = (event: KeyboardEvent) => {
       const target = event.target;
       if (
@@ -2714,6 +1924,10 @@ export function RackWebStudio() {
         (target instanceof HTMLElement && target.isContentEditable)
       )
         return;
+      if (dispatchHoveredHotkey(event)) {
+        event.preventDefault();
+        return;
+      }
       if (dispatchStroke(event, true)) {
         event.preventDefault();
         return;
@@ -2831,6 +2045,8 @@ export function RackWebStudio() {
     redoHistory,
     selectedCableIds,
     selectedIds,
+    setModuleParam,
+    setModuleState,
     toggleAutomationPlayback,
     toggleAutomationRecording,
     togglePerformanceMode,
@@ -2853,46 +2069,7 @@ export function RackWebStudio() {
       audioModuleSyncRef.current.clear();
       return;
     }
-    const active = new Set<string>();
-    for (const rackModule of patch.modules) {
-      if (rackModule.status !== "ready") continue;
-      active.add(rackModule.id);
-      const definition = getWebPlugin(rackModule.key),
-        source =
-          rackModule.rack?.data && typeof rackModule.rack.data === "object"
-            ? (rackModule.rack.data as Record<string, unknown>)
-            : undefined,
-        data = dataFromState(
-          rackModule.key,
-          source,
-          rackModule.state,
-          rackModule.stateKeys ?? definition?.stateKeys,
-        ),
-        controls = JSON.stringify([
-          rackModule.params,
-          rackModule.state ?? [],
-          Boolean(rackModule.bypassed),
-        ]),
-        dataSignature = JSON.stringify(data ?? {}),
-        previous = audioModuleSyncRef.current.get(rackModule.id);
-      if (previous?.data !== dataSignature)
-        engine.setStateJson(rackModule.id, data);
-      if (previous?.controls !== controls) {
-        rackModule.params.forEach((value, id) =>
-          engine.setParam(rackModule.id, id, value),
-        );
-        rackModule.state?.forEach((value, id) =>
-          engine.setState(rackModule.id, id, value),
-        );
-        engine.setBypassed(rackModule.id, Boolean(rackModule.bypassed));
-      }
-      audioModuleSyncRef.current.set(rackModule.id, {
-        controls,
-        data: dataSignature,
-      });
-    }
-    for (const id of audioModuleSyncRef.current.keys())
-      if (!active.has(id)) audioModuleSyncRef.current.delete(id);
+    syncRackAudioModules(engine, patch.modules, audioModuleSyncRef.current);
   }, [audioRunning, patch.modules]);
   useEffect(() => {
     if (dragRef.current) return;
@@ -2936,21 +2113,9 @@ export function RackWebStudio() {
   }, [audioRunning, createAudioEngine, selectedIds, structureKey]);
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(AUTOSAVE_KEY);
-      if (saved) {
-        const value = JSON.parse(saved) as PatchDocument;
-        if (Array.isArray(value.modules) && Array.isArray(value.cables)) {
-          const restored = repairDuplicateModuleIds(value),
-            restoredPatch = {
-              ...restored.patch,
-              modules: restored.patch.modules.map((module) => {
-                if (module.key === "Core/Blank") return module;
-                const definition = getWebPlugin(module.key);
-                return definition && module.width !== definition.width
-                  ? { ...module, width: definition.width }
-                  : module;
-              }),
-            };
+      const restored = parseAutosavedPatch(localStorage.getItem(studioHelpers.AUTOSAVE_KEY));
+      if (restored) {
+            const restoredPatch = normalizeRestoredPatch(restored.patch, getWebPlugin);
           mutateHistory(() => restoredPatch);
           setLibraryOpen(restoredPatch.modules.length < 12);
           if (restoredPatch.modules.length >= 12) {
@@ -2965,9 +2130,8 @@ export function RackWebStudio() {
             }
           }
           setStatus(
-            `Autosave restored · ${value.modules.length} modules${restored.repaired ? ` · repaired ${restored.repaired} duplicate ID` : ""}`,
+            `Autosave restored · ${restoredPatch.modules.length} modules${restored.repaired ? ` · repaired ${restored.repaired} duplicate ID` : ""}`,
           );
-        }
       }
     } finally {
       setAutosaveReady(true);
@@ -2976,7 +2140,7 @@ export function RackWebStudio() {
   useEffect(() => {
     if (!autosaveReady) return;
     try {
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(patch));
+      localStorage.setItem(studioHelpers.AUTOSAVE_KEY, serializeAutosavePatch(patch));
     } catch {
       setStatus("Autosave storage is full");
     }
@@ -3008,6 +2172,24 @@ export function RackWebStudio() {
     )
       ? midiLearnParamId
       : (selectedDefinition?.params[0]?.id ?? 0);
+  const manualHelpTarget=useMemo<MadzineManualTarget|null>(()=>{
+    if(!manualHelpHover)return null;
+    const targetModule=patch.modules.find(module=>module.id===manualHelpHover.moduleId),
+      targetDefinition=targetModule?getWebPlugin(targetModule.key):undefined;
+    if(!targetModule||!targetDefinition||targetDefinition.plugin!=="MADZINE"||targetDefinition.model==="Manual")return null;
+    if(manualHelpHover.type==="module")return {moduleSlug:targetDefinition.model,moduleName:targetDefinition.name};
+    const targetName=manualHelpHover.type==="param"
+      ? targetDefinition.params.find(param=>param.id===manualHelpHover.id)?.name
+      : manualHelpHover.type==="in"
+        ? targetDefinition.inputs.find(port=>port.id===manualHelpHover.id)?.name
+        : targetDefinition.outputs.find(port=>port.id===manualHelpHover.id)?.name;
+    return {
+      moduleSlug:targetDefinition.model,
+      moduleName:targetDefinition.name,
+      ...(targetName?{targetName}:{}),
+      targetType:manualHelpHover.type==="param"?"param":manualHelpHover.type==="in"?"input":"output",
+    };
+  },[manualHelpHover,patch.modules]);
   useEffect(() => {
     midiLearnTargetRef.current = null;
     setMidiLearnArmed(false);
@@ -3028,192 +2210,76 @@ export function RackWebStudio() {
     if (!selectedId) setPortPeaks(null);
   }, [audioRunning, selectedId, structureKey]);
 
+  const handleNewPatch = () => {
+    clearAutomationTimers();
+    automationBeforeRef.current = null;
+    automationRecordingRef.current = false;
+    setAutomationPlaying(false);
+    setAutomationRecording(false);
+    history.commit(studioHelpers.emptyPatch);
+    patchFileHandleRef.current = null;
+    setPatchName("Peach-Patch.vcv");
+    setSelectedIds(new Set());
+    setSelectedCableIds(new Set());
+    setReplaceMode(false);
+    setPending(null);
+    setLibraryOpen(true);
+    setStatus("New empty patch");
+  };
+  const patchFileInput = (
+    <input ref={fileRef} hidden type="file" accept=".vcv" onChange={(event) => {
+      patchFileHandleRef.current = null;
+      if (event.target.files?.[0]) void openPatch(event.target.files[0]);
+      event.target.value = "";
+    }} />
+  );
+  const presetFileInput = (
+    <input ref={presetFileRef} hidden type="file" accept=".vcvm,application/json" onChange={(event) => {
+      const file = event.target.files?.[0];
+      if (file) void loadModulePreset(file);
+      event.target.value = "";
+    }} />
+  );
+
   return (
     <main className={`pw-app ${libraryOpen ? "" : "library-collapsed"}`}>
-      <header className="pw-topbar">
-        <div className="pw-brand">
-          <i />
-          <span>PEACH</span>
-          <b>PATCH</b>
-        </div>
-        <nav className="pw-actions" aria-label="Peach Patch application menu">
-          <div className="pw-action-group" aria-label="File actions">
-            <button
-              type="button"
-              disabled={modulesLocked}
-              title="Create a new patch"
-              onClick={() => {
-                clearAutomationTimers();
-                automationBeforeRef.current = null;
-                automationRecordingRef.current = false;
-                setAutomationPlaying(false);
-                setAutomationRecording(false);
-                history.commit(emptyPatch);
-                patchFileHandleRef.current = null;
-                setPatchName("Peach-Patch.vcv");
-                setSelectedIds(new Set());
-                setSelectedCableIds(new Set());
-                setReplaceMode(false);
-                setPending(null);
-                setLibraryOpen(true);
-                setStatus("New empty patch");
-              }}
-            >
-              New
-            </button>
-            <button
-              type="button"
-              onClick={() => void choosePatchFile()}
-              disabled={modulesLocked}
-              title="Open a .vcv patch"
-            >
-              Open
-            </button>
-            <input
-              ref={fileRef}
-              hidden
-              type="file"
-              accept=".vcv"
-              onChange={(event) => {
-                patchFileHandleRef.current = null;
-                if (event.target.files?.[0]) void openPatch(event.target.files[0]);
-                event.target.value = "";
-              }}
-            />
-            <input
-              ref={presetFileRef}
-              hidden
-              type="file"
-              accept=".vcvm,application/json"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void loadModulePreset(file);
-                event.target.value = "";
-              }}
-            />
-            <button type="button" onClick={() => void savePatch()} title="Save the current .vcv patch">
-              Save
-            </button>
-          </div>
-          <div className="pw-action-group" aria-label="History actions">
-            <button
-              type="button"
-              onClick={history.undo}
-              disabled={modulesLocked || !history.canUndo}
-              title="Undo · ⌘/Ctrl+Z"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              onClick={history.redo}
-              disabled={modulesLocked || !history.canRedo}
-              title="Redo · ⇧⌘/Ctrl+Z"
-            >
-              Redo
-            </button>
-          </div>
-          <div className="pw-action-group" aria-label="View actions">
-            <button
-              type="button"
-              className={libraryOpen ? "active" : ""}
-              aria-pressed={libraryOpen}
-              onClick={() => setLibraryOpen((open) => !open)}
-              title="Show or hide the module Library"
-            >
-              Library
-            </button>
-          </div>
-          <button
-            type="button"
-            className={`pw-audio-action ${audioRunning ? "audio-live" : ""}`}
-            onClick={() => void toggleAudio()}
-            disabled={busy}
-            title={audioRunning ? "Stop browser audio" : "Start browser audio"}
-          >
-            {audioRunning ? (
-              <Square aria-hidden="true" size={11} strokeWidth={2.25} />
-            ) : (
-              <Play aria-hidden="true" size={11} strokeWidth={2.25} />
-            )}
-            <span>{audioRunning ? "Stop audio" : "Start audio"}</span>
-          </button>
-        </nav>
-      </header>
+      <RackStudioTopbar
+        modulesLocked={modulesLocked}
+        registryReady={registryState === "ready"}
+        libraryOpen={libraryOpen}
+        audioRunning={audioRunning}
+        busy={busy}
+        canUndo={history.canUndo}
+        canRedo={history.canRedo}
+        onNewPatch={handleNewPatch}
+        onOpenPatch={() => void choosePatchFile()}
+        onSavePatch={() => void savePatch()}
+        onUndo={history.undo}
+        onRedo={history.redo}
+        onToggleLibrary={() => setLibraryOpen((open) => !open)}
+        onToggleAudio={() => void toggleAudio()}
+        fileInput={patchFileInput}
+        presetInput={presetFileInput}
+      />
       <output className="pw-status-sr" aria-live="polite">
         {status}
       </output>
-      <aside className="pw-library">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void addFromUrl();
-          }}
-        >
-          <input
-            aria-label="VCV Library module URL"
-            value={moduleUrl}
-            onChange={(event) => setModuleUrl(event.target.value)}
-            placeholder="https://library.vcvrack.com/Plugin/Model"
-          />
-          <button disabled={busy} type="submit" title="Load module from VCV Library URL">
-            {busy ? "Loading…" : "Load URL"}
-          </button>
-        </form>
-        <div className="pw-registry">
-          <label>
-            <span>
-              MODULES · {filteredModules.length}/{registry.length}
-            </span>
-            <input
-              aria-label="Search web builds"
-              value={moduleQuery}
-              onChange={(event) => setModuleQuery(event.target.value)}
-              placeholder="VCO, mixer, brand…"
-            />
-          </label>
-          <div className="pw-registry-results">
-            {filteredModules.map((module) => (
-              <button
-                key={module.key}
-                draggable={!modulesLocked}
-                onDragStart={(event) => {
-                  event.dataTransfer.setData(
-                    "application/x-patchwork-module",
-                    module.key,
-                  );
-                  event.dataTransfer.effectAllowed = "copy";
-                }}
-                onClick={() => {
-                  setModuleUrl(module.libraryUrl);
-                  addRegistryModule(module);
-                }}
-                title={
-                  replaceMode && selectedIds.size === 1
-                    ? `Replace the selected module with ${module.key}`
-                    : selectedCableIds.size === 1 &&
-                  module.inputs.length > 0 &&
-                  module.outputs.length > 0
-                    ? `Insert ${module.key} on the selected cable`
-                    : `Add ${module.key} to the patch`
-                }
-              >
-                <b>{module.key}</b>
-                <em>{module.version}</em>
-                <small>
-                  {replaceMode && selectedIds.size === 1
-                    ? "REPLACE"
-                    : selectedCableIds.size === 1 &&
-                  module.inputs.length > 0 &&
-                  module.outputs.length > 0
-                    ? "INSERT"
-                    : "WASM"}
-                </small>
-              </button>
-            ))}
-          </div>
-        </div>
-      </aside>
+      <RackStudioLibrary
+        moduleUrl={moduleUrl}
+        moduleQuery={moduleQuery}
+        busy={busy}
+        registryState={registryState}
+        filteredModules={filteredModules}
+        registryCount={registry.length}
+        modulesLocked={modulesLocked}
+        replaceMode={replaceMode}
+        selectedModuleCount={selectedIds.size}
+        selectedCableCount={selectedCableIds.size}
+        onModuleUrlChange={setModuleUrl}
+        onModuleQueryChange={setModuleQuery}
+        onAddFromUrl={() => void addFromUrl()}
+        onAddModule={addRegistryModule}
+      />
       <section
         ref={rackRef}
         className={`pw-rack ${modulesLocked ? "modules-locked" : ""}`}
@@ -3314,321 +2380,50 @@ export function RackWebStudio() {
         }}
       >
         {selectedModule && selectedDefinition && (
-          <aside
-            className="pw-inspector"
-            aria-label={`Live inspector for ${selectedModule.plugin}/${selectedModule.model}`}
-          >
-            <header>
-              <span>{audioRunning ? "LIVE PORTS" : "MODULE INSPECTOR"}</span>
-              <b>{selectedModule.model}</b>
-              <small>{selectedModule.plugin}</small>
-            </header>
-            <div className="pw-inspector-ports">
-              {selectedDefinition.inputs.map((port) => {
-                const peak = selectedPeaks?.inputs[port.id] ?? 0;
-                return (
-                  <label key={`in-${port.id}`}>
-                    <span>IN · {port.name}</span>
-                    <PortScope
-                      samples={selectedPeaks?.inputScopes[port.id] ?? []}
-                      label={`${port.name} input waveform`}
-                    />
-                    <em>{peak.toFixed(2)}V</em>
-                  </label>
-                );
-              })}
-              {selectedDefinition.outputs.map((port) => {
-                const peak = selectedPeaks?.outputs[port.id] ?? 0;
-                return (
-                  <label key={`out-${port.id}`}>
-                    <span>OUT · {port.name}</span>
-                    <PortScope
-                      samples={selectedPeaks?.outputScopes[port.id] ?? []}
-                      label={`${port.name} output waveform`}
-                    />
-                    <em>{peak.toFixed(2)}V</em>
-                  </label>
-                );
-              })}
-            </div>
-            {selectedDefinition.params.some((param) => !param.hidden && !param.button) && (
-              <details className="pw-inspector-params">
-                <summary>
-                  PARAMETERS · {selectedDefinition.params.filter((param) => !param.hidden && !param.button).length}
-                </summary>
-                <div>
-                  {selectedDefinition.params
-                    .filter((param) => !param.hidden && !param.button)
-                    .map((param) => {
-                      const value =
-                        selectedModule.params[param.id] ?? param.default;
-                      return (
-                        <label key={param.id}>
-                          <span title={param.name}>{param.name}</span>
-                          <input
-                            aria-label={`${selectedModule.model} ${param.name} inspector control`}
-                            type="range"
-                            min={param.min}
-                            max={param.max}
-                            step={param.snap ? 1 : "any"}
-                            value={value}
-                            onPointerEnter={() => {
-                              hoveredParamRef.current = {
-                                moduleId: selectedModule.id,
-                                paramId: param.id,
-                              };
-                            }}
-                            onPointerLeave={() => {
-                              if (
-                                hoveredParamRef.current?.moduleId ===
-                                  selectedModule.id &&
-                                hoveredParamRef.current.paramId === param.id
-                              )
-                                hoveredParamRef.current = null;
-                            }}
-                            onChange={(event) =>
-                              setModuleParam(
-                                selectedModule.id,
-                                param.id,
-                                Number(event.target.value),
-                              )
-                            }
-                          />
-                          <output>{Number(value).toFixed(param.snap ? 0 : 3)}</output>
-                        </label>
-                      );
-                    })}
-                </div>
-              </details>
-            )}
-            {selectedDefinition.stateKeys?.length ? (
-              <details
-                className="pw-inspector-state"
-                open={inspectorStateOpen}
-                onToggle={(event) =>
-                  setInspectorStateOpen(event.currentTarget.open)
-                }
-              >
-                <summary>
-                  MODULE STATE · {selectedDefinition.stateKeys.length}
-                </summary>
-                {inspectorStateOpen && (
-                  <div>
-                    {selectedDefinition.stateKeys.map((stateKey, id) => {
-                      const value = Number(selectedModule.state?.[id] ?? 0),
-                        suffix = stateKey.path?.length
-                          ? `.${stateKey.path.join(".")}`
-                          : stateKey.index === undefined
-                            ? ""
-                            : `[${stateKey.index}]`,
-                        label = `${stateKey.key}${suffix}`;
-                      return (
-                        <label key={`${label}-${id}`}>
-                          <span title={label}>{label}</span>
-                          {stateKey.type === "boolean" ? (
-                            <input
-                              aria-label={`${selectedModule.model} ${label} state`}
-                              type="checkbox"
-                              checked={Boolean(value)}
-                              onChange={(event) =>
-                                setModuleState(selectedModule.id, [
-                                  [id, event.target.checked ? 1 : 0],
-                                ])
-                              }
-                            />
-                          ) : stateKey.type === "string-enum" ? (
-                            <select
-                              aria-label={`${selectedModule.model} ${label} state`}
-                              value={Math.round(value)}
-                              onChange={(event) =>
-                                setModuleState(selectedModule.id, [
-                                  [id, Number(event.target.value)],
-                                ])
-                              }
-                            >
-                              {(stateKey.values ?? []).map((option, index) => (
-                                <option key={`${option}-${index}`} value={index}>
-                                  {option || `(empty ${index})`}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              aria-label={`${selectedModule.model} ${label} state`}
-                              type="number"
-                              step={stateKey.type === "integer" ? 1 : "any"}
-                              value={value}
-                              onChange={(event) => {
-                                const next = Number(event.target.value);
-                                if (Number.isFinite(next))
-                                  setModuleState(selectedModule.id, [[id, next]]);
-                              }}
-                            />
-                          )}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </details>
-            ) : null}
-            {selectedDefinition.params.length > 0 && (
-              <div className="pw-midi-learn">
-                <label>
-                  <span>MIDI LEARN TARGET</span>
-                  <select
-                    aria-label={`${selectedModule.model} MIDI learn parameter`}
-                    value={selectedLearnParamId}
-                    onChange={(event) =>
-                      setMidiLearnParamId(Number(event.target.value))
-                    }
-                  >
-                    {selectedDefinition.params.map((param) => (
-                      <option key={param.id} value={param.id}>
-                        {param.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className={midiLearnArmed ? "active" : ""}
-                  disabled={!audioRunning || !midiMapModule}
-                  title={
-                    !midiMapModule
-                      ? "Add a Core MIDI-Map module first"
-                      : !audioRunning
-                        ? "Start audio to receive Web MIDI"
-                        : "Move the next MIDI CC to create a mapping"
-                  }
-                  onClick={() => {
-                    midiLearnTargetRef.current = {
-                      moduleId: selectedModule.id,
-                      paramId: selectedLearnParamId,
-                    };
-                    setMidiLearnArmed(true);
-                    setStatus(
-                      `MIDI learn armed for ${selectedModule.plugin}/${selectedModule.model} ${selectedDefinition.params.find((param) => param.id === selectedLearnParamId)?.name ?? "parameter"} · move a CC`,
-                    );
-                  }}
-                >
-                  {midiLearnArmed ? "Waiting for CC…" : "Map next MIDI CC"}
-                </button>
-              </div>
-            )}
-            <div className="pw-inspector-actions">
-              {selectedModule.sourceUrl && (
-                <a
-                  href={selectedModule.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Original source
-                </a>
-              )}
-              <button
-                type="button"
-                disabled={modulesLocked}
-                onClick={() => {
-                  setReplaceMode(true);
-                  setLibraryOpen(true);
-                  setStatus(
-                    `Choose a Library module to replace ${selectedModule.plugin}/${selectedModule.model}`,
-                  );
-                }}
-              >
-                Replace from Library…
-              </button>
-              <button
-                type="button"
-                disabled={modulesLocked}
-                onClick={duplicateSelection}
-                title="⌘/Ctrl+D"
-              >
-                Duplicate
-              </button>
-              <button
-                type="button"
-                disabled={modulesLocked || !selectedDefinition.params.length}
-                onClick={() => resetControls(selectedModule, selectedDefinition)}
-              >
-                Initialize controls
-              </button>
-              <button
-                type="button"
-                disabled={modulesLocked || !selectedDefinition.params.length}
-                onClick={() => randomizeControls(selectedModule, selectedDefinition)}
-              >
-                Randomize controls
-              </button>
-              <button
-                type="button"
-                disabled={modulesLocked}
-                onClick={() => disconnectModule(selectedModule)}
-              >
-                Disconnect cables
-              </button>
-              <button
-                type="button"
-                onClick={() => saveStrokePreset(selectedModule, false)}
-              >
-                Save .vcvm preset
-              </button>
-              <button
-                type="button"
-                disabled={modulesLocked}
-                onClick={() => requestPresetLoad(selectedModule)}
-              >
-                Load .vcvm preset…
-              </button>
-            </div>
-          </aside>
+          <RackStudioInspector
+            module={selectedModule}
+            definition={selectedDefinition}
+            peaks={selectedPeaks ?? undefined}
+            audioRunning={audioRunning}
+            modulesLocked={modulesLocked}
+            inspectorStateOpen={inspectorStateOpen}
+            setInspectorStateOpen={setInspectorStateOpen}
+            hoveredParamRef={hoveredParamRef}
+            midiLearnArmed={midiLearnArmed}
+            selectedLearnParamId={selectedLearnParamId}
+            midiMapAvailable={Boolean(midiMapModule)}
+            setMidiLearnParamId={setMidiLearnParamId}
+            onArmMidiLearn={(paramId) => {
+              midiLearnTargetRef.current = { moduleId: selectedModule.id, paramId };
+              setMidiLearnArmed(true);
+              setStatus(
+                `MIDI learn armed for ${selectedModule.plugin}/${selectedModule.model} ${selectedDefinition.params.find((param) => param.id === paramId)?.name ?? "parameter"} · move a CC`,
+              );
+            }}
+            onSetParam={setModuleParam}
+            onSetState={setModuleState}
+            onReplace={() => {
+              setReplaceMode(true);
+              setLibraryOpen(true);
+              setStatus(`Choose a Library module to replace ${selectedModule.plugin}/${selectedModule.model}`);
+            }}
+            onDuplicate={duplicateSelection}
+            onReset={() => resetControls(selectedModule, selectedDefinition)}
+            onRandomize={() => randomizeControls(selectedModule, selectedDefinition)}
+            onDisconnect={() => disconnectModule(selectedModule)}
+            onSavePreset={() => saveStrokePreset(selectedModule, false)}
+            onLoadPreset={() => requestPresetLoad(selectedModule)}
+          />
         )}
         {quickAdd && (
-          <div
-            className="pw-quick-add"
-            style={{ left: quickAdd.left, top: quickAdd.top }}
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (quickAddMatches[0]) addQuickModule(quickAddMatches[0]);
-              }}
-            >
-              <input
-                autoFocus
-                aria-label="Quick add module"
-                value={quickAdd.query}
-                onChange={(event) =>
-                  setQuickAdd((current) =>
-                    current
-                      ? { ...current, query: event.target.value }
-                      : current,
-                  )
-                }
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setQuickAdd(null);
-                }}
-                placeholder="Add module at this position…"
-              />
-              <kbd>↵</kbd>
-            </form>
-            <div>
-              {quickAddMatches.map((module) => (
-                <button
-                  key={module.key}
-                  type="button"
-                  onClick={() => addQuickModule(module)}
-                >
-                  <b>{module.model}</b>
-                  <span>{module.plugin}</span>
-                  <small>{module.inputs.length} in · {module.outputs.length} out</small>
-                </button>
-              ))}
-              {!quickAddMatches.length && <p>No matching web build</p>}
-            </div>
-          </div>
+          <RackStudioQuickAdd
+            state={quickAdd}
+            matches={quickAddMatches}
+            onQueryChange={(query) => setQuickAdd((current) => current ? { ...current, query } : current)}
+            onSubmit={() => { if (quickAddMatches[0]) addQuickModule(quickAddMatches[0]); }}
+            onSelect={addQuickModule}
+            onDismiss={() => setQuickAdd(null)}
+          />
         )}
         <div
           className="pw-world"
@@ -3651,485 +2446,204 @@ export function RackWebStudio() {
               backgroundPosition: `${-rackSurface.x}px ${-rackSurface.y}px`,
             }}
           />
-          <svg
-            className="pw-cable-hits"
-            viewBox={`${rackSurface.x} ${rackSurface.y} ${rackSurface.width} ${rackSurface.height}`}
-            style={{
-              left: rackSurface.x,
-              top: rackSurface.y,
-              width: rackSurface.width,
-              height: rackSurface.height,
-              display: cablesVisible ? undefined : "none",
+          <RackStudioCableLayer
+            paths={cablePaths}
+            surface={rackSurface}
+            visible={cablesVisible}
+            opacity={cableOpacity}
+            selectedIds={selectedCableIds}
+            signalLevels={visualSignals.cables}
+            plugSignals={visualSignals.plugs}
+            onSelect={selectCable}
+            onContextMenu={(id, event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const rack = rackRef.current;
+              if (!rack) return;
+              const rect = rack.getBoundingClientRect();
+              const localX = event.clientX - rect.left;
+              const localY = event.clientY - rect.top;
+              setSelectedIds(new Set());
+              setSelectedCableIds(new Set([id]));
+              setModuleMenu(null);
+              setQuickAdd(null);
+              setCableMenu({
+                left: Math.max(8, Math.min(localX, rack.clientWidth - 210)),
+                top: Math.max(8, Math.min(localY, rack.clientHeight - 178)),
+                cableId: id,
+              });
             }}
-          >
-            {cablePaths.map((path)=>path&&(
-              <path
-                key={path.id}
-                className="hit"
-                d={path.d}
-                role="button"
-                aria-label={`Cable ${path.id}`}
-                tabIndex={0}
-                onPointerDown={(event)=>selectCable(path.id,event)}
-                onContextMenu={(event)=>{
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const rack=rackRef.current;
-                  if(!rack)return;
-                  const rect=rack.getBoundingClientRect(),localX=event.clientX-rect.left,localY=event.clientY-rect.top;
-                  setSelectedIds(new Set());
-                  setSelectedCableIds(new Set([path.id]));
-                  setModuleMenu(null);
-                  setQuickAdd(null);
-                  setCableMenu({
-                    left:Math.max(8,Math.min(localX,rack.clientWidth-210)),
-                    top:Math.max(8,Math.min(localY,rack.clientHeight-178)),
-                    cableId:path.id,
-                  });
-                }}
-                onKeyDown={(event)=>{
-                  if(event.key!=="Enter"&&event.key!==" ")return;
-                  event.preventDefault();
-                  selectCable(path.id,event);
-                }}
-              />
-            ))}
-          </svg>
-          <svg
-            className="pw-cables"
-            viewBox={`${rackSurface.x} ${rackSurface.y} ${rackSurface.width} ${rackSurface.height}`}
-            style={{
-              left: rackSurface.x,
-              top: rackSurface.y,
-              width: rackSurface.width,
-              height: rackSurface.height,
-              opacity: cableOpacity,
-              display: cablesVisible ? undefined : "none",
+          />
+          <RackStudioModuleLayer
+            modules={patch.modules}
+            cables={patch.cables}
+            getDefinition={getWebPlugin}
+            selectedIds={selectedIds}
+            pending={pending}
+            jackSignalLevels={jackSignalLevels}
+            visualSignals={visualSignals}
+            audioRunning={audioRunning}
+            recordingIds={recordingIds}
+            midiDevices={midiDevices}
+            manualHelpTarget={manualHelpTarget}
+            hoveredModuleRef={hoveredModuleRef}
+            hoveredParamRef={hoveredParamRef}
+            onSelect={(module, event) => {
+              setModuleMenu(null);
+              setCableMenu(null);
+              selectModule(module.id, event);
             }}
-          >
-            {cablePaths.map(
-              (path,index) =>
-                path && (
-                  <g
-                    key={path.id}
-                    className={`${selectedCableIds.has(path.id) ? "selected" : ""} ${Math.abs(visualSignals.cables[path.id] ?? 0) > .01 ? "powered" : ""}`}
-                  >
-                    <path d={path.d} stroke={path.color} />
-                    <RackCablePlug
-                      x={path.x1}
-                      y={path.y1}
-                      angle={path.outputAngle}
-                      color={path.color}
-                      signal={visualSignals.plugs[path.id]}
-                      top={path.topOutputPlug}
-                      gradientId={`plug-out-${index}`}
-                      cableId={path.id}
-                      moduleId={path.fromModule}
-                      direction="out"
-                      portId={path.fromPort}
-                    />
-                    <RackCablePlug
-                      x={path.x2}
-                      y={path.y2}
-                      angle={path.inputAngle}
-                      color={path.color}
-                      signal={visualSignals.plugs[path.id]}
-                      top={path.topInputPlug}
-                      gradientId={`plug-in-${index}`}
-                      cableId={path.id}
-                      moduleId={path.toModule}
-                      direction="in"
-                      portId={path.toPort}
-                    />
-                  </g>
-                ),
-            )}
-          </svg>
-          {patch.modules.map((module) => (
-            <ModulePanel
-              key={module.id}
-              module={module}
-              definition={getWebPlugin(module.key)}
-              selected={selectedIds.has(module.id)}
-              pending={pending}
-              inputSignalLevels={Object.fromEntries(
-                (getWebPlugin(module.key)?.inputs ?? []).flatMap((port) => {
-                  const key = `${module.id}:in:${port.id}`;
-                  return jackSignalLevels.has(key)
-                    ? [[port.id, jackSignalLevels.get(key) ?? 0]]
-                    : [];
-                }),
-              )}
-              outputSignalLevels={Object.fromEntries(
-                (getWebPlugin(module.key)?.outputs ?? []).flatMap((port) => {
-                  const key = `${module.id}:out:${port.id}`;
-                  return jackSignalLevels.has(key)
-                    ? [[port.id, jackSignalLevels.get(key) ?? 0]]
-                    : [];
-                }),
-              )}
-              scopeSamples={visualSignals.scopes[module.id]}
-              lightValues={visualSignals.lights[module.id]}
-              audioRunning={audioRunning}
-              onSelect={(event) => {
-                setModuleMenu(null);
-                setCableMenu(null);
-                selectModule(module.id, event);
-              }}
-              onContextMenu={(event) => {
-                event.preventDefault();
+            onContextMenu={(module, event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const rack = rackRef.current;
+              if (!rack) return;
+              const rect = rack.getBoundingClientRect();
+              const localX = event.clientX - rect.left;
+              const localY = event.clientY - rect.top;
+              setSelectedIds(new Set([module.id]));
+              setSelectedCableIds(new Set());
+              setQuickAdd(null);
+              setCableMenu(null);
+              setModuleMenu({
+                left: Math.max(8, Math.min(localX, rack.clientWidth - 224)),
+                top: Math.max(8, Math.min(localY, rack.clientHeight - 432)),
+                moduleId: module.id,
+              });
+            }}
+            onDragStart={(module, event) => {
+              if (modulesLocked) {
                 event.stopPropagation();
-                const rack = rackRef.current;
-                if (!rack) return;
-                const rect = rack.getBoundingClientRect(),
-                  localX = event.clientX - rect.left,
-                  localY = event.clientY - rect.top;
-                setSelectedIds(new Set([module.id]));
-                setSelectedCableIds(new Set());
-                setQuickAdd(null);
-                setCableMenu(null);
-                setModuleMenu({
-                  left: Math.max(8, Math.min(localX, rack.clientWidth - 224)),
-                  top: Math.max(8, Math.min(localY, rack.clientHeight - 432)),
-                  moduleId: module.id,
-                });
-              }}
-              onDragStart={(event) => {
-                if (modulesLocked) {
-                  event.stopPropagation();
-                  setStatus("Module movement is locked · use Stroke or unlock it first");
-                  return;
-                }
-                startDrag(module, event);
-              }}
-              onModuleHover={(hovered) => {
-                if (hovered) hoveredModuleRef.current = module.id;
-                else if (hoveredModuleRef.current === module.id)
-                  hoveredModuleRef.current = null;
-              }}
-              onFocus={() => focusModule(module.id)}
-              onParam={(id, value) => {
-                setModuleParam(module.id, id, value);
-              }}
-              onMomentary={(id, active) => {
-                audioRef.current?.setParam(module.id, id, active ? 1 : 0);
-                recordAutomationValue(module.id, id, active ? 1 : 0);
-                if (!active) audioRef.current?.snapshotState(module.id);
-              }}
-              onParamHover={(paramId) => {
-                if (paramId === null) {
-                  if (hoveredParamRef.current?.moduleId === module.id)
-                    hoveredParamRef.current = null;
-                } else hoveredParamRef.current = { moduleId: module.id, paramId };
-              }}
-              onState={(updates) => {
-                setModuleState(module.id, updates);
-              }}
-              onData={(data) => {
-                const previous =
-                    module.rack?.data && typeof module.rack.data === "object"
-                      ? (module.rack.data as Record<string, unknown>)
-                      : {},
-                  next = { ...previous, ...data };
-                audioRef.current?.setStateJson(module.id, next);
-                commitHistory((current) => ({
-                  ...current,
-                  modules: current.modules.map((item) =>
-                    item.id === module.id
-                      ? {
-                          ...item,
-                          rack: { ...(item.rack ?? {}), data: next },
-                        }
-                      : item,
-                  ),
-                }));
-              }}
-              onPolyphony={(polyphony) =>
-                commitHistory((current) => ({
-                  ...current,
-                  modules: current.modules.map((item) =>
-                    item.id === module.id ? { ...item, polyphony } : item,
-                  ),
-                }))
+                setStatus("Module movement is locked · use Stroke or unlock it first");
+                return;
               }
-              midiDevices={midiDevices}
-              onMidiDevice={(deviceName) => {
-                const definition = getWebPlugin(module.key),
-                  data =
-                    module.rack?.data && typeof module.rack.data === "object"
-                      ? (module.rack.data as Record<string, unknown>)
-                      : {},
-                  previousMidi =
-                    data.midi &&
-                    typeof data.midi === "object" &&
-                    !Array.isArray(data.midi)
-                      ? (data.midi as Record<string, unknown>)
-                      : {},
-                  nextData = {
-                    ...data,
-                    midi: { ...previousMidi, deviceName },
-                  };
-                audioRef.current?.setMidiDevice(
-                  module.id,
-                  deviceName,
-                  Boolean(definition?.runtime?.midi?.input),
-                  Boolean(definition?.runtime?.midi?.output),
-                );
-                commitHistory((current) => ({
-                  ...current,
-                  modules: current.modules.map((item) =>
-                    item.id === module.id
-                      ? {
-                          ...item,
-                          rack: { ...(item.rack ?? {}), data: nextData },
-                        }
-                      : item,
-                  ),
-                }));
-                setStatus(
-                  `${module.plugin}/${module.model} MIDI ${deviceName || "default route"} selected`,
-                );
-              }}
-              onBypass={() => {
-                const bypassed = !module.bypassed;
-                audioRef.current?.setBypassed(module.id, bypassed);
-                commitHistory((current) => ({
-                  ...current,
-                  modules: current.modules.map((item) =>
-                    item.id === module.id ? { ...item, bypassed } : item,
-                  ),
-                }));
-              }}
-              onPort={connectPort}
-              onPortDragStart={(port) => {
-                if (modulesLocked) {
-                  setStatus("Exit Perform mode before changing cables");
-                  return;
-                }
-                setPending(port);
-              }}
-              onPortDrop={connectDraggedPorts}
-              onPortDragEnd={() => setPending(null)}
-              onClock={() => void runClock(module)}
-              onSample={(file, slot) => void loadSample(module, file, slot)}
-              recording={recordingIds.has(module.id)}
-              onCapture={() => void toggleCapture(module)}
-              onRemove={() => {
-                if (modulesLocked) {
-                  setStatus("Exit Perform mode before removing a module");
-                  return;
-                }
-                deleteModules(new Set([module.id]));
-              }}
-              onReplaceDrop={(key) => {
-                if (modulesLocked) {
-                  setStatus("Exit Perform mode before replacing a module");
-                  return;
-                }
-                const definition = getWebPlugin(key);
-                if (definition) replaceModule(module.id, definition);
-              }}
-            />
-          ))}
+              startDrag(module, event);
+            }}
+            onModuleHover={(module, hovered) => {
+              if (hovered) setManualHelpHover({ moduleId: module.id, type: "module" });
+              else setManualHelpHover((current) => current?.moduleId === module.id ? null : current);
+            }}
+            onFocus={(module) => focusModule(module.id)}
+            onParam={(module, id, value) => setModuleParam(module.id, id, value)}
+            onParamReset={(module, id, value) => resetModuleParam(module.id, id, value)}
+            onMomentary={(module, id, active) => {
+              audioRef.current?.setMomentaryParam(module.id, id, active);
+              audioRef.current?.triggerAction(module.id, id, active);
+              recordAutomationValue(module.id, id, active ? 1 : 0);
+              if (!active) window.setTimeout(() => audioRef.current?.snapshotState(module.id), 20);
+            }}
+            onParamHover={(module, paramId) => {
+              setManualHelpHover(paramId === null
+                ? { moduleId: module.id, type: "module" }
+                : { moduleId: module.id, type: "param", id: paramId });
+            }}
+            onPortHover={(module, direction, portId) => {
+              setManualHelpHover(portId === null
+                ? { moduleId: module.id, type: "module" }
+                : { moduleId: module.id, type: direction, id: portId });
+            }}
+            onState={(module, updates) => setModuleState(module.id, updates)}
+            onData={(module, data) => setModuleData(module.id, data)}
+            onPolyphony={(module, polyphony) => commitHistory((current) => ({
+              ...current,
+              modules: current.modules.map((item) => item.id === module.id ? { ...item, polyphony } : item),
+            }))}
+            onMidiDevice={(module, deviceName) => {
+              const definition = getWebPlugin(module.key);
+              const data = module.rack?.data && typeof module.rack.data === "object"
+                ? module.rack.data as Record<string, unknown>
+                : {};
+              const previousMidi = data.midi && typeof data.midi === "object" && !Array.isArray(data.midi)
+                ? data.midi as Record<string, unknown>
+                : {};
+              const nextData = { ...data, midi: { ...previousMidi, deviceName } };
+              audioRef.current?.setMidiDevice(module.id, deviceName, Boolean(definition?.runtime?.midi?.input), Boolean(definition?.runtime?.midi?.output));
+              commitHistory((current) => ({
+                ...current,
+                modules: current.modules.map((item) => item.id === module.id
+                  ? { ...item, rack: { ...(item.rack ?? {}), data: nextData } }
+                  : item),
+              }));
+              setStatus(module.plugin + "/" + module.model + " MIDI " + (deviceName || "default route") + " selected");
+            }}
+            onBypass={(module) => {
+              const bypassed = !module.bypassed;
+              audioRef.current?.setBypassed(module.id, bypassed);
+              commitHistory((current) => ({
+                ...current,
+                modules: current.modules.map((item) => item.id === module.id ? { ...item, bypassed } : item),
+              }));
+            }}
+            onPort={connectPort}
+            onPortDragStart={(port) => {
+              if (modulesLocked) {
+                setStatus("Exit Perform mode before changing cables");
+                return;
+              }
+              setPending(port);
+            }}
+            onPortDrop={connectDraggedPorts}
+            onPortDragEnd={() => setPending(null)}
+            onClock={(module) => void runClock(module)}
+            onSample={(module, file, slot) => void loadSample(module, file, slot)}
+            onCapture={(module) => void toggleCapture(module)}
+            onRemove={(module) => {
+              if (modulesLocked) {
+                setStatus("Exit Perform mode before removing a module");
+                return;
+              }
+              deleteModules(new Set([module.id]));
+            }}
+            onReplaceDrop={(module, key) => {
+              if (modulesLocked) {
+                setStatus("Exit Perform mode before replacing a module");
+                return;
+              }
+              const definition = getWebPlugin(key);
+              if (definition) replaceModule(module.id, definition);
+            }}
+          />
         </div>
-        {moduleMenu && contextModule && (
-          <div
-            className="pw-module-menu"
-            style={{ left: moduleMenu.left, top: moduleMenu.top }}
-            role="menu"
-            aria-label={`${contextModule.plugin}/${contextModule.model} actions`}
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <header>
-              <span>MODULE</span>
-              <b>{contextModule.model}</b>
-              <small>{contextModule.plugin}</small>
-            </header>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                const bypassed = !contextModule.bypassed;
-                audioRef.current?.setBypassed(contextModule.id, bypassed);
-                commitHistory((current) => ({
-                  ...current,
-                  modules: current.modules.map((item) =>
-                    item.id === contextModule.id ? { ...item, bypassed } : item,
-                  ),
-                }));
-                setModuleMenu(null);
-              }}
-            >
-              {contextModule.bypassed ? "Enable module" : "Bypass module"}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={modulesLocked}
-              onClick={() => {
-                duplicateSelection();
-                setModuleMenu(null);
-              }}
-            >
-              Duplicate <kbd>⌘D</kbd>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={modulesLocked || !contextDefinition?.params.length}
-              onClick={() => {
-                if (contextDefinition)
-                  resetControls(contextModule, contextDefinition);
-                setModuleMenu(null);
-              }}
-            >
-              Initialize controls
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={modulesLocked || !contextDefinition?.params.length}
-              onClick={() => {
-                if (contextDefinition)
-                  randomizeControls(contextModule, contextDefinition);
-                setModuleMenu(null);
-              }}
-            >
-              Randomize controls
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={modulesLocked}
-              onClick={() => {
-                disconnectModule(contextModule);
-                setModuleMenu(null);
-              }}
-            >
-              Disconnect cables
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                saveStrokePreset(contextModule, false);
-                setModuleMenu(null);
-              }}
-            >
-              Save .vcvm preset
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={modulesLocked}
-              onClick={() => {
-                requestPresetLoad(contextModule);
-                setModuleMenu(null);
-              }}
-            >
-              Load .vcvm preset…
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={modulesLocked}
-              onClick={() => {
-                setReplaceMode(true);
-                setLibraryOpen(true);
-                setModuleMenu(null);
-                setStatus(
-                  `Choose a Library module to replace ${contextModule.plugin}/${contextModule.model}`,
-                );
-              }}
-            >
-              Replace from Library…
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="danger"
-              disabled={modulesLocked}
-              onClick={() => {
-                deleteModules(new Set([contextModule.id]));
-                setModuleMenu(null);
-              }}
-            >
-              Delete module
-            </button>
-          </div>
-        )}
-        {cableMenu && contextCable && (
-          <div
-            className="pw-cable-menu"
-            style={{ left: cableMenu.left, top: cableMenu.top }}
-            role="menu"
-            aria-label={`Cable ${contextCable.id} actions`}
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <header>
-              <span>CABLE</span>
-              <b>Signal connection</b>
-            </header>
-            <div aria-label="Cable color">
-              {CABLES.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  role="menuitem"
-                  className={contextCable.color === color ? "active" : ""}
-                  aria-label={`Use cable color ${color}`}
-                  style={{ backgroundColor: color }}
-                  disabled={modulesLocked}
-                  onClick={() => {
-                    commitHistory((current) => ({
-                      ...current,
-                      cables: current.cables.map((cable) =>
-                        cable.id === contextCable.id
-                          ? { ...cable, color }
-                          : cable,
-                      ),
-                    }));
-                    setCableMenu(null);
-                    setStatus("Cable color changed · undo is available");
-                  }}
-                />
-              ))}
-            </div>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={modulesLocked}
-              onClick={() => {
-                setCableMenu(null);
-                setLibraryOpen(true);
-                setStatus(
-                  "Choose a compatible Library module to insert on this cable",
-                );
-              }}
-            >
-              Insert module here…
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="danger"
-              disabled={modulesLocked}
-              onClick={() => {
-                commitHistory((current) => ({
-                  ...current,
-                  cables: current.cables.filter(
-                    (cable) => cable.id !== contextCable.id,
-                  ),
-                }));
-                setSelectedCableIds(new Set());
-                setCableMenu(null);
-                setStatus("Cable removed · undo is available");
-              }}
-            >
-              Delete cable
-            </button>
-          </div>
-        )}
+        <RackStudioContextMenus
+          moduleMenu={moduleMenu}
+          cableMenu={cableMenu}
+          module={contextModule}
+          definition={contextDefinition}
+          cable={contextCable}
+          colors={CABLES}
+          modulesLocked={modulesLocked}
+          onSetParam={setModuleParam}
+          onResetParam={resetModuleParam}
+          onSetState={setModuleState}
+          onSetData={setModuleData}
+          onToggleBypass={(module) => {
+            const bypassed = !module.bypassed;
+            audioRef.current?.setBypassed(module.id, bypassed);
+            commitHistory((current) => ({ ...current, modules: current.modules.map((item) => item.id === module.id ? { ...item, bypassed } : item) }));
+            setModuleMenu(null);
+          }}
+          onDuplicate={() => { duplicateSelection(); setModuleMenu(null); }}
+          onReset={(module, definition) => { resetControls(module, definition); setModuleMenu(null); }}
+          onRandomize={(module, definition) => { randomizeControls(module, definition); setModuleMenu(null); }}
+          onDisconnect={(module) => { disconnectModule(module); setModuleMenu(null); }}
+          onSavePreset={(module) => { saveStrokePreset(module, false); setModuleMenu(null); }}
+          onLoadPreset={(module) => { requestPresetLoad(module); setModuleMenu(null); }}
+          onReplace={(module) => { setReplaceMode(true); setLibraryOpen(true); setModuleMenu(null); setStatus(`Choose a Library module to replace ${module.plugin}/${module.model}`); }}
+          onDeleteModule={(module) => { deleteModules(new Set([module.id])); setModuleMenu(null); }}
+          onColor={(color) => {
+            if (!contextCable) return;
+            commitHistory((current) => ({ ...current, cables: current.cables.map((item) => item.id === contextCable.id ? { ...item, color } : item) }));
+            setCableMenu(null);
+            setStatus("Cable color changed · undo is available");
+          }}
+          onInsertCable={() => { setCableMenu(null); setLibraryOpen(true); setStatus("Choose a compatible Library module to insert on this cable"); }}
+          onDeleteCable={(cable) => {
+            commitHistory((current) => ({ ...current, cables: current.cables.filter((item) => item.id !== cable.id) }));
+            setSelectedCableIds(new Set());
+            setCableMenu(null);
+            setStatus("Cable removed · undo is available");
+          }}
+        />
         {marquee && (
           <div
             className="pw-marquee"
@@ -4160,7 +2674,7 @@ export function RackWebStudio() {
           <div className="pw-empty">
             <b>Empty rack.</b>
             <span>Paste a Library URL or open a .vcv patch.</span>
-            <button onClick={() => void addFromUrl()}>
+            <button disabled={registryState!=="ready"} onClick={() => void addFromUrl()}>
               Load the SEQ1 WASM example
             </button>
           </div>

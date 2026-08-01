@@ -5,7 +5,13 @@
 struct FixtureModule : Module {
   enum ParamIds { LEVEL_PARAM, NUM_PARAMS };
   enum InputIds { SIGNAL_INPUT, NUM_INPUTS };
-  enum OutputIds { SIGNAL_OUTPUT, NUM_OUTPUTS };
+  enum OutputIds {
+    SIGNAL_OUTPUT,
+#ifdef FIXTURE_DEBUG_OUTPUTS
+    DEBUG_OUTPUT,
+#endif
+    NUM_OUTPUTS
+  };
   enum LightIds { ACTIVE_LIGHT, NUM_LIGHTS };
 
   FixtureModule() {

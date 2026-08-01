@@ -8,6 +8,59 @@ import type { ParamSpec } from "./web-plugin-registry";
 export const RACK_GRID_WIDTH = 15;
 export const RACK_GRID_HEIGHT = 380;
 
+export function updateModuleParam(
+  patch: PatchDocument,
+  moduleId: string,
+  paramId: number,
+  value: number,
+) {
+  return {
+    ...patch,
+    modules: patch.modules.map((module) =>
+      module.id === moduleId
+        ? { ...module, params: module.params.map((current, id) => id === paramId ? value : current) }
+        : module,
+    ),
+  };
+}
+
+export function updateModuleState(
+  patch: PatchDocument,
+  moduleId: string,
+  updates: Array<[id: number, value: number]>,
+) {
+  return {
+    ...patch,
+    modules: patch.modules.map((module) => {
+      if (module.id !== moduleId) return module;
+      const state = [...(module.state ?? [])];
+      for (const [id, value] of updates) state[id] = value;
+      return { ...module, state };
+    }),
+  };
+}
+
+export function mergeModuleData(
+  patch: PatchDocument,
+  moduleId: string,
+  data: Record<string, unknown>,
+) {
+  const module = patch.modules.find((candidate) => candidate.id === moduleId);
+  const previous = module?.rack?.data && typeof module.rack.data === "object"
+    ? module.rack.data as Record<string, unknown>
+    : {};
+  const next = { ...previous, ...data };
+  return {
+    patch: {
+      ...patch,
+      modules: patch.modules.map((candidate) => candidate.id === moduleId
+        ? { ...candidate, rack: { ...(candidate.rack ?? {}), data: next } }
+        : candidate),
+    },
+    data: next,
+  };
+}
+
 export function snapRackPosition(position: { x: number; y: number }) {
   return {
     x: Math.round(position.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH,

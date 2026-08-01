@@ -64,6 +64,20 @@ void random_shuffle(RandomIterator first, RandomIterator last) {
 #define __forceinline inline __attribute__((always_inline))
 #endif
 
+#ifdef __EMSCRIPTEN__
+template <typename Vector, typename Mask>
+inline Vector rackWebBuiltinShuffle(const Vector& first, const Vector& second, const Mask& mask) {
+  Vector result{};
+  constexpr int lanes = sizeof(Vector) / sizeof(first[0]);
+  for (int index = 0; index < lanes; index++) {
+    const int source = mask[index];
+    result[index] = source < lanes ? first[source] : second[source - lanes];
+  }
+  return result;
+}
+#define __builtin_shuffle(first, second, mask) rackWebBuiltinShuffle((first), (second), (mask))
+#endif
+
 template <typename Function>
 struct RackWebDefer {
   Function function;
@@ -77,7 +91,26 @@ RackWebDefer(Function) -> RackWebDefer<Function>;
 #define DEFER(body) auto RACK_WEB_JOIN(rackWebDefer_, __LINE__) = RackWebDefer([&]() body)
 #endif
 
+#ifdef RACK_WEB_EXTERNAL_PFFFT
+#include "pffft.h"
+#else
 extern "C" {
+typedef enum {
+  PFFFT_REAL,
+  PFFFT_COMPLEX,
+} pffft_transform_t;
+
+typedef enum {
+  PFFFT_FORWARD,
+  PFFFT_BACKWARD,
+} pffft_direction_t;
+
+typedef struct PFFFT_Setup {
+  int size;
+  pffft_transform_t transform;
+  mutable std::vector<std::complex<float>> scratch;
+} PFFFT_Setup;
+
 inline void* pffft_aligned_malloc(size_t bytes) {
   if (bytes == 0) return nullptr;
   constexpr size_t alignment = 16;
@@ -86,7 +119,85 @@ inline void* pffft_aligned_malloc(size_t bytes) {
 inline void pffft_aligned_free(void* pointer) {
   std::free(pointer);
 }
+
+inline PFFFT_Setup* pffft_new_setup(int size, pffft_transform_t transform) {
+  if (size <= 0 || (size & (size - 1)) != 0) return nullptr;
+  return new PFFFT_Setup{size, transform, std::vector<std::complex<float>>(static_cast<size_t>(size))};
 }
+
+inline void pffft_destroy_setup(PFFFT_Setup* setup) {
+  delete setup;
+}
+}
+
+inline void rackWebPffftTransform(std::vector<std::complex<float>>& values, bool inverse) {
+  const size_t count = values.size();
+  for (size_t index = 1, reversed = 0; index < count; ++index) {
+    size_t bit = count >> 1;
+    for (; reversed & bit; bit >>= 1) reversed ^= bit;
+    reversed ^= bit;
+    if (index < reversed) std::swap(values[index], values[reversed]);
+  }
+  for (size_t length = 2; length <= count; length <<= 1) {
+    const float angle = (inverse ? 2.f : -2.f) * 3.14159265358979323846f / static_cast<float>(length);
+    const std::complex<float> step(std::cos(angle), std::sin(angle));
+    for (size_t offset = 0; offset < count; offset += length) {
+      std::complex<float> twiddle(1.f, 0.f);
+      for (size_t index = 0; index < length / 2; ++index) {
+        const std::complex<float> even = values[offset + index];
+        const std::complex<float> odd = values[offset + index + length / 2] * twiddle;
+        values[offset + index] = even + odd;
+        values[offset + index + length / 2] = even - odd;
+        twiddle *= step;
+      }
+    }
+  }
+}
+
+extern "C" inline void pffft_transform_ordered(
+    const PFFFT_Setup* setup,
+    const float* input,
+    float* output,
+    float*,
+    pffft_direction_t direction) {
+  if (!setup || !input || !output) return;
+  const size_t count = static_cast<size_t>(setup->size);
+  auto& values = setup->scratch;
+  const bool inverse = direction == PFFFT_BACKWARD;
+
+  if (setup->transform == PFFFT_REAL) {
+    if (!inverse) {
+      for (size_t index = 0; index < count; ++index) values[index] = {input[index], 0.f};
+      rackWebPffftTransform(values, false);
+      output[0] = values[0].real();
+      output[1] = values[count / 2].real();
+      for (size_t index = 1; index < count / 2; ++index) {
+        output[index * 2] = values[index].real();
+        output[index * 2 + 1] = values[index].imag();
+      }
+    }
+    else {
+      values[0] = {input[0], 0.f};
+      values[count / 2] = {input[1], 0.f};
+      for (size_t index = 1; index < count / 2; ++index) {
+        values[index] = {input[index * 2], input[index * 2 + 1]};
+        values[count - index] = std::conj(values[index]);
+      }
+      rackWebPffftTransform(values, true);
+      for (size_t index = 0; index < count; ++index) output[index] = values[index].real();
+    }
+    return;
+  }
+
+  for (size_t index = 0; index < count; ++index)
+    values[index] = {input[index * 2], input[index * 2 + 1]};
+  rackWebPffftTransform(values, inverse);
+  for (size_t index = 0; index < count; ++index) {
+    output[index * 2] = values[index].real();
+    output[index * 2 + 1] = values[index].imag();
+  }
+}
+#endif
 
 struct json_t {
   enum class Type { Object, Array, Integer, Real, Boolean, String, Null } type = Type::Object;
@@ -203,6 +314,14 @@ inline void json_array_insert_new(json_t* array, int index, json_t* value) {
   array->values[index] = value;
   array->size = static_cast<int>(array->values.size());
 }
+inline int json_array_set_new(json_t* array, size_t index, json_t* value) {
+  if (!array || array->type != json_t::Type::Array) { json_decref(value); return -1; }
+  if (index >= array->values.size()) array->values.resize(index + 1, nullptr);
+  json_decref(array->values[index]);
+  array->values[index] = value;
+  array->size = static_cast<int>(array->values.size());
+  return 0;
+}
 inline void json_array_append_new(json_t* array, json_t* value) {
   if (!array || array->type != json_t::Type::Array) { json_decref(value); return; }
   array->values.push_back(value);
@@ -244,6 +363,7 @@ inline long long json_integer_value(const json_t* value) { return value ? static
 inline double json_real_value(const json_t* value) { return value ? value->number : 0.0; }
 inline double json_number_value(const json_t* value) { return value ? value->number : 0.0; }
 inline int json_boolean_value(const json_t* value) { return value && value->number != 0.0; }
+inline int json_bool_value(const json_t* value) { return value && value->number != 0.0; }
 inline int json_is_true(const json_t* value) { return value && value->number != 0.0; }
 inline int json_is_false(const json_t* value) { return json_is_boolean(value) && value->number == 0.0; }
 inline const char* json_string_value(const json_t* value) { return value && value->type == json_t::Type::String ? value->text.c_str() : ""; }
@@ -502,6 +622,22 @@ struct Skins { static RackWebSkinRegistry& skins() { static RackWebSkinRegistry 
 namespace rack {
 
 struct Menu;
+namespace event {
+struct Action {};
+}
+struct MenuItem {
+  virtual ~MenuItem() = default;
+  std::string text;
+  std::string rightText;
+  virtual Menu* createChildMenu() { return nullptr; }
+  virtual void onAction(const event::Action&) {}
+};
+struct Menu {
+  std::vector<MenuItem*> children;
+  ~Menu() { for (auto* child : children) delete child; }
+  void addChild(MenuItem* child) { if (child) children.push_back(child); }
+};
+inline constexpr const char* RIGHT_ARROW = "›";
 
 static constexpr int PORT_MAX_CHANNELS = 16;
 static constexpr int RACK_GRID_WIDTH = 15;
@@ -511,7 +647,12 @@ namespace logger {}
 template <typename T = void> inline T* appGet() { return nullptr; }
 
 namespace plugin {
-struct Model { std::string slug; };
+struct Model {
+  std::string slug;
+  bool hidden = false;
+  std::string getFullName() const { return slug; }
+  std::string getFactoryPresetDirectory() const { return std::string("/rack-web/plugin/presets/") + slug; }
+};
 struct Plugin {
   std::vector<Model*> models;
   void addModel(Model* model) {
@@ -538,7 +679,14 @@ namespace system {
 inline std::string getFilename(const std::string& value) { const auto slash=value.find_last_of("/\\"); return slash==std::string::npos?value:value.substr(slash+1); }
 inline std::string getDirectory(const std::string& value) { const auto slash=value.find_last_of("/\\"); return slash==std::string::npos?std::string():value.substr(0,slash); }
 inline std::string getExtension(const std::string& value) { const std::string filename=getFilename(value); const auto dot=filename.find_last_of('.'); return dot==std::string::npos?std::string():filename.substr(dot+1); }
+inline std::string getStem(const std::string& value) { const std::string filename=getFilename(value); const auto dot=filename.find_last_of('.'); return dot==std::string::npos?filename:filename.substr(0,dot); }
+inline bool isFile(const std::string&) { return false; }
+inline bool isDirectory(const std::string&) { return false; }
+inline std::vector<std::string> getEntries(const std::string&) { return {}; }
+inline double getTime() { static double time = 0.; time += 1. / 60.; return time; }
 }
+
+struct ModuleWidget;
 
 template <typename TModule, typename TWidget>
 plugin::Model* createModel(const std::string&) {
@@ -547,6 +695,22 @@ plugin::Model* createModel(const std::string&) {
 }
 
 namespace simd {
+inline uint32_t rackWebFloatBits(float value) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
+
+inline float rackWebFloatFromBits(uint32_t bits) {
+  float value = 0.f;
+  std::memcpy(&value, &bits, sizeof(value));
+  return value;
+}
+
+inline float rackWebFloatMask(bool value) {
+  return rackWebFloatFromBits(value ? UINT32_MAX : 0u);
+}
+
 struct float_4 {
   static constexpr int size = 4;
 #ifdef __SSE__
@@ -564,7 +728,7 @@ struct float_4 {
 #endif
   static float_4 zero() { return float_4(0.f); }
   static float_4 load(const float* source) { float_4 result; for (int index = 0; index < 4; index++) result[index] = source[index]; return result; }
-  static float_4 mask() { return float_4(1.f); }
+  static float_4 mask() { return float_4(rackWebFloatMask(true)); }
   void store(float* target) const { for (int index = 0; index < 4; index++) target[index] = values[index]; }
   float& operator[](int index) { return values[index]; }
   float operator[](int index) const { return values[index]; }
@@ -572,9 +736,9 @@ struct float_4 {
   float_4& operator-=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] -= other[index]; return *this; }
   float_4& operator*=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] *= other[index]; return *this; }
   float_4& operator/=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] /= other[index]; return *this; }
-  float_4& operator&=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] = values[index] != 0.f ? other[index] : 0.f; return *this; }
-  float_4& operator|=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] = values[index] != 0.f || other[index] != 0.f ? 1.f : 0.f; return *this; }
-  float_4& operator^=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] = (values[index] != 0.f) != (other[index] != 0.f) ? 1.f : 0.f; return *this; }
+  float_4& operator&=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] = rackWebFloatFromBits(rackWebFloatBits(values[index]) & rackWebFloatBits(other[index])); return *this; }
+  float_4& operator|=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] = rackWebFloatFromBits(rackWebFloatBits(values[index]) | rackWebFloatBits(other[index])); return *this; }
+  float_4& operator^=(const float_4& other) { for (int index = 0; index < 4; index++) values[index] = rackWebFloatFromBits(rackWebFloatBits(values[index]) ^ rackWebFloatBits(other[index])); return *this; }
   float_4& operator++() { for (float& value : values) value += 1.f; return *this; }
   float_4 operator++(int) { float_4 previous = *this; ++*this; return previous; }
   float_4& operator--() { for (float& value : values) value -= 1.f; return *this; }
@@ -586,6 +750,7 @@ struct int32_4 {
 
   int32_4() = default;
   int32_4(int32_t value) : values{value, value, value, value} {}
+  int32_4(int32_t x, int32_t y, int32_t z, int32_t w) : values{x, y, z, w} {}
   int32_4(const float_4& value) {
     for (int index = 0; index < 4; index++) values[index] = static_cast<int32_t>(value[index]);
   }
@@ -596,29 +761,49 @@ struct int32_4 {
   void store(int32_t* target) const { for (int index = 0; index < 4; index++) target[index] = values[index]; }
   int32_t& operator[](int index) { return values[index]; }
   int32_t operator[](int index) const { return values[index]; }
+  int32_4& operator+=(const int32_4& other) { for (int index = 0; index < 4; index++) values[index] = static_cast<int32_t>(static_cast<uint32_t>(values[index]) + static_cast<uint32_t>(other[index])); return *this; }
+  int32_4& operator-=(const int32_4& other) { for (int index = 0; index < 4; index++) values[index] = static_cast<int32_t>(static_cast<uint32_t>(values[index]) - static_cast<uint32_t>(other[index])); return *this; }
+  int32_4& operator*=(const int32_4& other) { for (int index = 0; index < 4; index++) values[index] = static_cast<int32_t>(static_cast<uint32_t>(values[index]) * static_cast<uint32_t>(other[index])); return *this; }
+  int32_4& operator&=(const int32_4& other) { for (int index = 0; index < 4; index++) values[index] &= other[index]; return *this; }
+  int32_4& operator|=(const int32_4& other) { for (int index = 0; index < 4; index++) values[index] |= other[index]; return *this; }
+  int32_4& operator^=(const int32_4& other) { for (int index = 0; index < 4; index++) values[index] ^= other[index]; return *this; }
 };
 
+inline int32_4 operator+(int32_4 left, const int32_4& right) { return left += right; }
+inline int32_4 operator-(int32_4 left, const int32_4& right) { return left -= right; }
+inline int32_4 operator*(int32_4 left, const int32_4& right) { return left *= right; }
+inline int32_4 operator-(const int32_4& value) { int32_4 result; for (int index = 0; index < 4; index++) result[index] = static_cast<int32_t>(0u - static_cast<uint32_t>(value[index])); return result; }
 inline int32_4 operator&(const int32_4& left, const int32_4& right) { int32_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] & right[index]; return result; }
 inline int32_4 operator|(const int32_4& left, const int32_4& right) { int32_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] | right[index]; return result; }
 inline int32_4 operator^(const int32_4& left, const int32_4& right) { int32_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] ^ right[index]; return result; }
 inline int32_4 operator~(const int32_4& value) { int32_4 result; for (int index = 0; index < 4; index++) result[index] = ~value[index]; return result; }
 inline int32_4 operator<<(const int32_4& left, const int32_4& right) { int32_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] << (right[index] & 31); return result; }
 inline int32_4 operator>>(const int32_4& left, const int32_4& right) { int32_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] >> (right[index] & 31); return result; }
-inline float_4 operator==(const int32_4& left, const int32_4& right) { float_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] == right[index] ? 1.f : 0.f; return result; }
-inline float_4 operator!=(const int32_4& left, const int32_4& right) { float_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] != right[index] ? 1.f : 0.f; return result; }
+#define RACK_WEB_INT32_SIMD_COMPARE(op) inline int32_4 operator op(const int32_4& left, const int32_4& right) { int32_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] op right[index] ? -1 : 0; return result; }
+RACK_WEB_INT32_SIMD_COMPARE(<)
+RACK_WEB_INT32_SIMD_COMPARE(<=)
+RACK_WEB_INT32_SIMD_COMPARE(>)
+RACK_WEB_INT32_SIMD_COMPARE(>=)
+RACK_WEB_INT32_SIMD_COMPARE(==)
+RACK_WEB_INT32_SIMD_COMPARE(!=)
+#undef RACK_WEB_INT32_SIMD_COMPARE
 
 inline float_4 operator+(float_4 left, const float_4& right) { return left += right; }
 inline float_4 operator-(float_4 left, const float_4& right) { return left -= right; }
 inline float_4 operator*(float_4 left, const float_4& right) { return left *= right; }
 inline float_4 operator/(float_4 left, const float_4& right) { return left /= right; }
+template <typename Left, std::enable_if_t<std::is_same_v<std::decay_t<Left>, int32_4>, int> = 0>
+inline float_4 operator*(Left&& left, const float_4& right) { return float_4(left) * right; }
+template <typename Right, std::enable_if_t<std::is_same_v<std::decay_t<Right>, int32_4>, int> = 0>
+inline float_4 operator*(const float_4& left, Right&& right) { return left * float_4(right); }
 inline float_4 operator-(const float_4& value) { return float_4(0.f) - value; }
-inline float_4 operator&(const float_4& left, const float_4& right) { float_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] != 0.f ? right[index] : 0.f; return result; }
-inline float_4 operator|(const float_4& left, const float_4& right) { float_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] != 0.f || right[index] != 0.f ? 1.f : 0.f; return result; }
+inline float_4 operator&(float_4 left, const float_4& right) { return left &= right; }
+inline float_4 operator|(float_4 left, const float_4& right) { return left |= right; }
 inline float_4 operator^(float_4 left, const float_4& right) { return left ^= right; }
-inline float_4 operator~(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = value[index] == 0.f ? 1.f : 0.f; return result; }
+inline float_4 operator~(const float_4& value) { return value ^ float_4::mask(); }
 inline int32_4 andnot(const int32_4& left, const int32_4& right) { return ~left & right; }
 inline float_4 andnot(const float_4& left, const float_4& right) { return ~left & right; }
-#define RACK_WEB_SIMD_COMPARE(op) inline float_4 operator op(const float_4& left, const float_4& right) { float_4 result; for (int index = 0; index < 4; index++) result[index] = left[index] op right[index] ? 1.f : 0.f; return result; }
+#define RACK_WEB_SIMD_COMPARE(op) inline float_4 operator op(const float_4& left, const float_4& right) { float_4 result; for (int index = 0; index < 4; index++) result[index] = rackWebFloatMask(left[index] op right[index]); return result; }
 RACK_WEB_SIMD_COMPARE(<)
 RACK_WEB_SIMD_COMPARE(<=)
 RACK_WEB_SIMD_COMPARE(>)
@@ -626,7 +811,7 @@ RACK_WEB_SIMD_COMPARE(>=)
 RACK_WEB_SIMD_COMPARE(==)
 RACK_WEB_SIMD_COMPARE(!=)
 #undef RACK_WEB_SIMD_COMPARE
-inline float fmax(float left, float right) { return std::fmax(left, right); }
+using std::fmax;
 inline float_4 fmax(const float_4& value, float minimum) {
   float_4 result;
   for (int index = 0; index < 4; index++) result[index] = std::fmax(value[index], minimum);
@@ -638,42 +823,46 @@ inline float_4 fmax(const float_4& left, const float_4& right) {
   for (int index = 0; index < 4; index++) result[index] = std::fmax(left[index], right[index]);
   return result;
 }
-inline float fmin(float left, float right) { return std::fmin(left, right); }
+using std::fmin;
 inline float_4 fmin(const float_4& left, const float_4& right) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::fmin(left[index], right[index]); return result; }
 inline float_4 fmin(const float_4& value, float maximum) { return fmin(value, float_4(maximum)); }
 inline float_4 fmin(float maximum, const float_4& value) { return fmin(value, maximum); }
 inline float clamp(float value, float minimum = 0.f, float maximum = 1.f) { return std::clamp(value, minimum, maximum); }
 inline float_4 clamp(const float_4& value, const float_4& minimum = float_4(0.f), const float_4& maximum = float_4(1.f)) { return fmin(fmax(value, minimum), maximum); }
+using std::fabs;
 inline float_4 fabs(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::fabs(value[index]); return result; }
-inline float fmod(float value, float divisor) { return std::fmod(value, divisor); }
+using std::fmod;
 inline float_4 fmod(const float_4& value, const float_4& divisor) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::fmod(value[index], divisor[index]); return result; }
-inline float sqrt(float value) { return std::sqrt(value); }
+using std::sqrt;
 inline float_4 sqrt(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::sqrt(value[index]); return result; }
-inline float pow(float base, float exponent) { return std::pow(base, exponent); }
+using std::pow;
 inline float_4 pow(const float_4& base, const float_4& exponent) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::pow(base[index], exponent[index]); return result; }
 inline float_4 pow(float base, const float_4& exponent) { return pow(float_4(base), exponent); }
 inline float_4 pow(const float_4& base, float exponent) { return pow(base, float_4(exponent)); }
+inline float exp(float value) { return std::exp(value); }
 inline float_4 exp(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::exp(value[index]); return result; }
+inline float log(float value) { return std::log(value); }
 inline float_4 log(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::log(value[index]); return result; }
+inline float log10(float value) { return std::log10(value); }
 inline float_4 log10(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::log10(value[index]); return result; }
-inline float sin(float value) { return std::sin(value); }
+using std::sin;
 inline float_4 sin(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::sin(value[index]); return result; }
-inline float cos(float value) { return std::cos(value); }
+using std::cos;
 inline float_4 cos(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::cos(value[index]); return result; }
 inline float_4 atan2(const float_4& y, const float_4& x) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::atan2(y[index], x[index]); return result; }
-inline float atan(float value) { return std::atan(value); }
+using std::atan;
 inline float_4 atan(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::atan(value[index]); return result; }
-inline float log2(float value) { return std::log2(value); }
+using std::log2;
 inline float_4 log2(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::log2(value[index]); return result; }
-inline float tan(float value) { return std::tan(value); }
+using std::tan;
 inline float_4 tan(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::tan(value[index]); return result; }
-inline float round(float value) { return std::round(value); }
+using std::round;
 inline float_4 round(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::round(value[index]); return result; }
-inline float floor(float value) { return std::floor(value); }
+using std::floor;
 inline float_4 floor(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::floor(value[index]); return result; }
-inline float ceil(float value) { return std::ceil(value); }
+using std::ceil;
 inline float_4 ceil(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::ceil(value[index]); return result; }
-inline float hypot(float left, float right) { return std::hypot(left, right); }
+using std::hypot;
 inline float_4 hypot(const float_4& left, const float_4& right) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::hypot(left[index], right[index]); return result; }
 inline float rcp(float value) { return 1.f / value; }
 inline float_4 rcp(const float_4& value) { return float_4(1.f) / value; }
@@ -682,27 +871,35 @@ inline float_4 ifelse(const float_4& condition, const float_4& whenTrue, const f
 inline float ifelse(bool condition, float whenTrue, float whenFalse) { return condition ? whenTrue : whenFalse; }
 inline float sgn(float value) { return value > 0.f ? 1.f : value < 0.f ? -1.f : 0.f; }
 inline float_4 sgn(const float_4& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = value[index] > 0.f ? 1.f : value[index] < 0.f ? -1.f : 0.f; return result; }
-inline float abs(float value) { return std::fabs(value); }
+using std::abs;
 inline float_4 abs(const float_4& value) { return fabs(value); }
-inline float abs(const std::complex<float>& value) { return std::abs(value); }
 inline float_4 abs(const std::complex<float_4>& value) { return sqrt(value.real() * value.real() + value.imag() * value.imag()); }
-inline float arg(const std::complex<float>& value) { return std::arg(value); }
+using std::arg;
 inline float_4 arg(const std::complex<float_4>& value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = std::atan2(value.imag()[index], value.real()[index]); return result; }
 inline float crossfade(float first, float second, float mix) { return first + (second - first) * mix; }
 inline float_4 crossfade(const float_4& first, const float_4& second, const float_4& mix) { return first + (second - first) * mix; }
 inline float_4 crossfade(const float_4& first, const float_4& second, float mix) { return crossfade(first, second, float_4(mix)); }
+template <typename Value, typename InputMinimum, typename InputMaximum, typename OutputMinimum, typename OutputMaximum, std::enable_if_t<std::is_arithmetic_v<Value> && std::is_arithmetic_v<InputMinimum> && std::is_arithmetic_v<InputMaximum> && std::is_arithmetic_v<OutputMinimum> && std::is_arithmetic_v<OutputMaximum>, int> = 0>
+inline auto rescale(const Value& value, const InputMinimum& inputMinimum, const InputMaximum& inputMaximum, const OutputMinimum& outputMinimum, const OutputMaximum& outputMaximum) {
+  using Result = std::common_type_t<Value, InputMinimum, InputMaximum, OutputMinimum, OutputMaximum>;
+  return static_cast<Result>(outputMinimum)
+    + (static_cast<Result>(value) - static_cast<Result>(inputMinimum))
+    / (static_cast<Result>(inputMaximum) - static_cast<Result>(inputMinimum))
+    * (static_cast<Result>(outputMaximum) - static_cast<Result>(outputMinimum));
+}
 inline float_4 rescale(const float_4& value, const float_4& inputMinimum, const float_4& inputMaximum, const float_4& outputMinimum, const float_4& outputMaximum) { return outputMinimum + (value - inputMinimum) / (inputMaximum - inputMinimum) * (outputMaximum - outputMinimum); }
 inline int movemask(const float_4& value) {
   int result = 0;
-  for (int index = 0; index < 4; index++) if (value[index] != 0.f) result |= 1 << index;
+  for (int index = 0; index < 4; index++) if (rackWebFloatBits(value[index]) & 0x80000000u) result |= 1 << index;
   return result;
 }
 template <typename T>
 T movemaskInverse(int value);
 template <>
-inline float_4 movemaskInverse<float_4>(int value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = value & (1 << index) ? 1.f : 0.f; return result; }
+inline float_4 movemaskInverse<float_4>(int value) { float_4 result; for (int index = 0; index < 4; index++) result[index] = rackWebFloatMask(value & (1 << index)); return result; }
 } // namespace simd
 
+#ifndef RACK_WEB_OMIT_PULSE_GENERATOR_4
 struct PulseGenerator_4 {
   simd::float_4 remaining = simd::float_4::zero();
   void trigger(const simd::float_4& mask, float seconds = 1e-3f) {
@@ -714,6 +911,7 @@ struct PulseGenerator_4 {
     return active;
   }
 };
+#endif
 
 #ifndef _MM_SHUFFLE
 #define _MM_SHUFFLE(z, y, x, w) (((z) << 6) | ((y) << 4) | ((x) << 2) | (w))
@@ -827,6 +1025,8 @@ struct Engine {
   ParamHandle* getParamHandle(int64_t moduleId, int paramId);
   ParamHandle* getParamHandle(::rack::Module* module, int paramId);
   void updateParamHandle(ParamHandle* paramHandle, int64_t moduleId, int paramId, bool overwrite = true);
+  std::vector<int64_t> getModuleIds() const { return {}; }
+  ::rack::Module* getModule(int64_t) const { return nullptr; }
   void rackWebAttachModule(::rack::Module* module);
   void yieldWorkers() {}
 };
@@ -836,15 +1036,162 @@ struct RackWebWindow {
   int mods = 0;
   int getMods() const { return mods; }
 };
+namespace history {
+struct Action {
+  std::string name;
+  virtual ~Action() = default;
+  virtual void undo() {}
+  virtual void redo() {}
+};
+struct ModuleAction : Action {
+  int64_t moduleId = -1;
+};
+struct ParamChange : ModuleAction {
+  int paramId = -1;
+  float oldValue = 0.f;
+  float newValue = 0.f;
+};
+struct History {
+  template <typename T>
+  void push(T* action) {
+    // Browser modules preserve their state directly; desktop undo records do
+    // not cross the WASM boundary, so release them after the source action.
+    delete action;
+  }
+};
+}
 struct AppGlobal {
   engine::Engine* engine = nullptr;
   RackWebWindow* window = nullptr;
+  history::History* history = nullptr;
 };
 inline engine::Engine rackWebEngine;
 inline RackWebWindow rackWebWindow;
-inline AppGlobal rackWebApp{&rackWebEngine, &rackWebWindow};
+inline history::History rackWebHistory;
+inline AppGlobal rackWebApp{&rackWebEngine, &rackWebWindow, &rackWebHistory};
 inline AppGlobal* APP = &rackWebApp;
 inline constexpr const char* APP_VERSION = "2.6.6";
+inline constexpr int GLFW_RELEASE = 0;
+inline constexpr int GLFW_PRESS = 1;
+inline constexpr int GLFW_REPEAT = 2;
+inline constexpr int GLFW_KEY_UNKNOWN = -1;
+inline constexpr int GLFW_KEY_SPACE = 32;
+inline constexpr int GLFW_KEY_APOSTROPHE = 39;
+inline constexpr int GLFW_KEY_COMMA = 44;
+inline constexpr int GLFW_KEY_MINUS = 45;
+inline constexpr int GLFW_KEY_PERIOD = 46;
+inline constexpr int GLFW_KEY_SLASH = 47;
+inline constexpr int GLFW_KEY_0 = 48;
+inline constexpr int GLFW_KEY_1 = 49;
+inline constexpr int GLFW_KEY_2 = 50;
+inline constexpr int GLFW_KEY_3 = 51;
+inline constexpr int GLFW_KEY_4 = 52;
+inline constexpr int GLFW_KEY_5 = 53;
+inline constexpr int GLFW_KEY_6 = 54;
+inline constexpr int GLFW_KEY_7 = 55;
+inline constexpr int GLFW_KEY_8 = 56;
+inline constexpr int GLFW_KEY_9 = 57;
+inline constexpr int GLFW_KEY_SEMICOLON = 59;
+inline constexpr int GLFW_KEY_EQUAL = 61;
+inline constexpr int GLFW_KEY_A = 65;
+inline constexpr int GLFW_KEY_B = 66;
+inline constexpr int GLFW_KEY_C = 67;
+inline constexpr int GLFW_KEY_D = 68;
+inline constexpr int GLFW_KEY_E = 69;
+inline constexpr int GLFW_KEY_F = 70;
+inline constexpr int GLFW_KEY_G = 71;
+inline constexpr int GLFW_KEY_H = 72;
+inline constexpr int GLFW_KEY_I = 73;
+inline constexpr int GLFW_KEY_J = 74;
+inline constexpr int GLFW_KEY_K = 75;
+inline constexpr int GLFW_KEY_L = 76;
+inline constexpr int GLFW_KEY_M = 77;
+inline constexpr int GLFW_KEY_N = 78;
+inline constexpr int GLFW_KEY_O = 79;
+inline constexpr int GLFW_KEY_P = 80;
+inline constexpr int GLFW_KEY_Q = 81;
+inline constexpr int GLFW_KEY_R = 82;
+inline constexpr int GLFW_KEY_S = 83;
+inline constexpr int GLFW_KEY_T = 84;
+inline constexpr int GLFW_KEY_U = 85;
+inline constexpr int GLFW_KEY_V = 86;
+inline constexpr int GLFW_KEY_W = 87;
+inline constexpr int GLFW_KEY_X = 88;
+inline constexpr int GLFW_KEY_Y = 89;
+inline constexpr int GLFW_KEY_Z = 90;
+inline constexpr int GLFW_KEY_LEFT_BRACKET = 91;
+inline constexpr int GLFW_KEY_BACKSLASH = 92;
+inline constexpr int GLFW_KEY_RIGHT_BRACKET = 93;
+inline constexpr int GLFW_KEY_GRAVE_ACCENT = 96;
+inline constexpr int GLFW_KEY_WORLD_1 = 161;
+inline constexpr int GLFW_KEY_WORLD_2 = 162;
+inline constexpr int GLFW_KEY_ESCAPE = 256;
+inline constexpr int GLFW_KEY_ENTER = 257;
+inline constexpr int GLFW_KEY_TAB = 258;
+inline constexpr int GLFW_KEY_BACKSPACE = 259;
+inline constexpr int GLFW_KEY_INSERT = 260;
+inline constexpr int GLFW_KEY_DELETE = 261;
+inline constexpr int GLFW_KEY_RIGHT = 262;
+inline constexpr int GLFW_KEY_LEFT = 263;
+inline constexpr int GLFW_KEY_DOWN = 264;
+inline constexpr int GLFW_KEY_UP = 265;
+inline constexpr int GLFW_KEY_PAGE_UP = 266;
+inline constexpr int GLFW_KEY_PAGE_DOWN = 267;
+inline constexpr int GLFW_KEY_HOME = 268;
+inline constexpr int GLFW_KEY_END = 269;
+inline constexpr int GLFW_KEY_PRINT_SCREEN = 283;
+inline constexpr int GLFW_KEY_PAUSE = 284;
+inline constexpr int GLFW_KEY_F1 = 290;
+inline constexpr int GLFW_KEY_F2 = 291;
+inline constexpr int GLFW_KEY_F3 = 292;
+inline constexpr int GLFW_KEY_F4 = 293;
+inline constexpr int GLFW_KEY_F5 = 294;
+inline constexpr int GLFW_KEY_F6 = 295;
+inline constexpr int GLFW_KEY_F7 = 296;
+inline constexpr int GLFW_KEY_F8 = 297;
+inline constexpr int GLFW_KEY_F9 = 298;
+inline constexpr int GLFW_KEY_F10 = 299;
+inline constexpr int GLFW_KEY_F11 = 300;
+inline constexpr int GLFW_KEY_F12 = 301;
+inline constexpr int GLFW_KEY_F13 = 302;
+inline constexpr int GLFW_KEY_F14 = 303;
+inline constexpr int GLFW_KEY_F15 = 304;
+inline constexpr int GLFW_KEY_LEFT_SHIFT = 340;
+inline constexpr int GLFW_KEY_LEFT_CONTROL = 341;
+inline constexpr int GLFW_KEY_LEFT_ALT = 342;
+inline constexpr int GLFW_KEY_LEFT_SUPER = 343;
+inline constexpr int GLFW_KEY_RIGHT_SHIFT = 344;
+inline constexpr int GLFW_KEY_RIGHT_CONTROL = 345;
+inline constexpr int GLFW_KEY_RIGHT_ALT = 346;
+inline constexpr int GLFW_KEY_RIGHT_SUPER = 347;
+inline constexpr int GLFW_KEY_F16 = 305;
+inline constexpr int GLFW_KEY_F17 = 306;
+inline constexpr int GLFW_KEY_F18 = 307;
+inline constexpr int GLFW_KEY_F19 = 308;
+inline constexpr int GLFW_KEY_F20 = 309;
+inline constexpr int GLFW_KEY_F21 = 310;
+inline constexpr int GLFW_KEY_F22 = 311;
+inline constexpr int GLFW_KEY_F23 = 312;
+inline constexpr int GLFW_KEY_F24 = 313;
+inline constexpr int GLFW_KEY_F25 = 314;
+inline constexpr int GLFW_KEY_KP_0 = 320;
+inline constexpr int GLFW_KEY_KP_1 = 321;
+inline constexpr int GLFW_KEY_KP_2 = 322;
+inline constexpr int GLFW_KEY_KP_3 = 323;
+inline constexpr int GLFW_KEY_KP_4 = 324;
+inline constexpr int GLFW_KEY_KP_5 = 325;
+inline constexpr int GLFW_KEY_KP_6 = 326;
+inline constexpr int GLFW_KEY_KP_7 = 327;
+inline constexpr int GLFW_KEY_KP_8 = 328;
+inline constexpr int GLFW_KEY_KP_9 = 329;
+inline constexpr int GLFW_KEY_KP_DECIMAL = 330;
+inline constexpr int GLFW_KEY_KP_DIVIDE = 331;
+inline constexpr int GLFW_KEY_KP_MULTIPLY = 332;
+inline constexpr int GLFW_KEY_KP_SUBTRACT = 333;
+inline constexpr int GLFW_KEY_KP_ADD = 334;
+inline constexpr int GLFW_KEY_KP_ENTER = 335;
+inline constexpr int GLFW_KEY_KP_EQUAL = 336;
+inline const char* glfwGetKeyName(int, int) { return nullptr; }
 inline constexpr int GLFW_MOD_SHIFT = 0x0001;
 inline constexpr int GLFW_MOD_CONTROL = 0x0002;
 inline constexpr int GLFW_MOD_ALT = 0x0004;
@@ -859,6 +1206,16 @@ inline bool isPlugin = true;
 inline bool preferDarkPanels = false;
 inline float rackBrightness = 1.f;
 inline float haloBrightness = 1.f;
+inline float sampleRate = 48000.f;
+inline std::vector<NVGcolor> cableColors = {
+  nvgRGB(0xc9, 0x18, 0x47),
+  nvgRGB(0xdd, 0x6c, 0x00),
+  nvgRGB(0xc9, 0xb7, 0x0e),
+  nvgRGB(0x0c, 0x8e, 0x15),
+  nvgRGB(0x09, 0x86, 0xad),
+  nvgRGB(0x8a, 0x2b, 0xe2),
+  nvgRGB(0xf5, 0xa9, 0xe0),
+};
 struct PluginWhitelist {
   bool subscribed = false;
   std::set<std::string> moduleSlugs;
@@ -932,7 +1289,7 @@ struct Port {
   union { bool connected; bool active; };
   Light plugLights[3];
   Port() : voltages{}, connected(false) {}
-  float getVoltage(int channel = 0) const { return channel >= 0 && channel < channels ? voltages[channel] : 0.f; }
+  float getVoltage(int channel = 0) const { return channel >= 0 && channel < 16 ? voltages[channel] : 0.f; }
   float getPolyVoltage(int channel = 0) const { return channels == 1 ? voltages[0] : getVoltage(channel); }
   template <typename T>
   T getVoltageSimd(int firstChannel = 0) const { T result{}; for (int lane = 0; lane < 4; lane++) result[lane] = getVoltage(firstChannel + lane); return result; }
@@ -945,7 +1302,7 @@ struct Port {
   float getVoltageSum() const { float sum = 0.f; for (int channel = 0; channel < channels; channel++) sum += voltages[channel]; return sum; }
   bool isConnected() const { return connected; }
   int getChannels() const { return channels; }
-  void setChannels(int next) { channels = next < 0 ? 0 : (next > 16 ? 16 : next); }
+  void setChannels(int next) { next = next < 0 ? 0 : (next > 16 ? 16 : next); for (int channel = next; channel < channels; channel++) voltages[channel] = 0.f; channels = next; }
   void setVoltage(float next, int channel = 0) { if (channel >= 0 && channel < 16) voltages[channel] = next; }
   void clearVoltages() { for (float& voltage : voltages) voltage = 0.f; }
 };
@@ -1007,6 +1364,7 @@ struct Quantity {
   virtual std::string getDisplayValueString() { return std::to_string(getDisplayValue()); }
   virtual void setDisplayValueString(std::string value) { setDisplayValue(std::strtof(value.c_str(), nullptr)); }
   virtual std::string getLabel() { return ""; }
+  virtual std::string getDescription() { return ""; }
   virtual std::string getUnit() { return ""; }
   virtual std::string getString() { return getDisplayValueString() + getUnit(); }
   virtual void reset() { setValue(getDefaultValue()); }
@@ -1065,7 +1423,7 @@ struct ParamQuantity : Quantity {
   void setImmediateValue(float next) { setValue(next); }
   void setSmoothValue(float next) { setValue(next); }
   float getSmoothValue() { return getValue(); }
-  void setValue(float next) override { value = std::clamp(next, minValue, maxValue); }
+  void setValue(float next) override;
   void randomize() override {}
   float getMinValue() override { return minValue; }
   float getMinValue() const override { return minValue; }
@@ -1093,29 +1451,22 @@ using InputInfo = PortInfo;
 using OutputInfo = PortInfo;
 struct LightInfo { std::string description; };
 
-namespace history {
-struct ParamChange {
-  std::string name;
-  int64_t moduleId = -1;
-  int paramId = -1;
-  float oldValue = 0.f;
-  float newValue = 0.f;
-};
-}
-
 template <typename T, size_t Capacity>
 struct RackWebStaticVector : std::vector<T> {
   RackWebStaticVector() : std::vector<T>(Capacity) {}
 };
 
 struct Module {
-  static constexpr int rackWebMessageCapacity = 16384;
+  // Large visual expanders such as Leviathan TD.Scope use Rack messages just
+  // over 24 KiB (two 3072-bin stereo envelopes). Keep the transport lossless.
+  static constexpr int rackWebMessageCapacity = 32768;
   using ProcessArgs = ::rack::ProcessArgs;
   using AddEvent = ::rack::AddEvent;
   using RemoveEvent = ::rack::RemoveEvent;
   using RandomizeEvent = ::rack::RandomizeEvent;
   using ResetEvent = ::rack::ResetEvent;
   using SampleRateChangeEvent = ::rack::SampleRateChangeEvent;
+  struct SaveEvent {};
   struct BypassEvent {};
   struct UnBypassEvent {};
   struct ExpanderChangeEvent { uint8_t side = 0; };
@@ -1141,22 +1492,26 @@ struct Module {
   int64_t id = -1;
   Expander leftExpander;
   Expander rightExpander;
+  static constexpr int rackWebMaxParams = 1024;
+  static constexpr int rackWebMaxPorts = 256;
+  static constexpr int rackWebMaxLights = 512;
   Module* rackWebNeighborModules[2]{};
   Module* rackWebNeighborChainModules[2][16]{};
   alignas(16) uint8_t rackWebOwnMessages[2][2][rackWebMessageCapacity]{};
   alignas(16) uint8_t rackWebNeighborMessages[2][2][rackWebMessageCapacity]{};
   std::vector<BypassRoute> bypassRoutes;
-  RackWebStaticVector<Param, 256> params;
-  RackWebStaticVector<Input, 256> inputs;
-  RackWebStaticVector<Output, 256> outputs;
-  RackWebStaticVector<Light, 512> lights;
-  ParamQuantity quantities[256]{};
-  std::array<ParamQuantity*, 256> paramQuantities{};
-  InputInfo inputInfoStorage[256]{};
-  InputInfo* inputInfos[256]{};
-  OutputInfo outputInfoStorage[256]{};
-  OutputInfo* outputInfos[256]{};
-  LightInfo lightInfos[512]{};
+  RackWebStaticVector<Param, rackWebMaxParams> params;
+  RackWebStaticVector<Input, rackWebMaxPorts> inputs;
+  RackWebStaticVector<Output, rackWebMaxPorts> outputs;
+  RackWebStaticVector<Light, rackWebMaxLights> lights;
+  ParamQuantity quantities[rackWebMaxParams]{};
+  std::array<ParamQuantity*, rackWebMaxParams> paramQuantities{};
+  InputInfo inputInfoStorage[rackWebMaxPorts]{};
+  std::array<InputInfo*, rackWebMaxPorts> inputInfos{};
+  OutputInfo outputInfoStorage[rackWebMaxPorts]{};
+  std::array<OutputInfo*, rackWebMaxPorts> outputInfos{};
+  LightInfo lightInfoStorage[rackWebMaxLights]{};
+  LightInfo* lightInfos[rackWebMaxLights]{};
   int polyphony = 1;
   int configuredParams = 0;
   int configuredInputs = 0;
@@ -1181,9 +1536,12 @@ struct Module {
   int rackWebMidiPacketOutputBytes = 0;
 
   Module() {
-    for (int index = 0; index < 256; index++) { quantities[index].module = this; paramQuantities[index] = &quantities[index]; inputInfos[index] = &inputInfoStorage[index]; outputInfos[index] = &outputInfoStorage[index]; }
+    for (int index = 0; index < rackWebMaxParams; index++) { quantities[index].module = this; paramQuantities[index] = &quantities[index]; }
+    for (int index = 0; index < rackWebMaxPorts; index++) { inputInfos[index] = &inputInfoStorage[index]; outputInfos[index] = &outputInfoStorage[index]; }
+    for (int index = 0; index < rackWebMaxLights; index++) lightInfos[index] = &lightInfoStorage[index];
   }
-  virtual ~Module() { for (int index = 0; index < 256; index++) if (paramQuantities[index] != &quantities[index]) delete paramQuantities[index]; }
+  int64_t getId() const { return id; }
+  virtual ~Module() { for (int index = 0; index < rackWebMaxParams; index++) if (paramQuantities[index] != &quantities[index]) delete paramQuantities[index]; }
   virtual void onAdd() {}
   virtual void onAdd(const AddEvent&) { onAdd(); }
   virtual void onRemove() {}
@@ -1196,6 +1554,7 @@ struct Module {
   virtual void onSampleRateChange(const SampleRateChangeEvent&) { onSampleRateChange(); }
   virtual void onRandomize() {}
   virtual void onRandomize(const RandomizeEvent&) { onRandomize(); }
+  virtual void onSave(const SaveEvent&) {}
   virtual void onBypass(const BypassEvent&) {}
   virtual void onUnBypass(const UnBypassEvent&) {}
   virtual json_t* toJson() { return dataToJson(); }
@@ -1233,6 +1592,14 @@ struct Module {
   }
   uint8_t* rackWebSnapshotStateBuffer() { return rackWebStateJson.empty() ? nullptr : rackWebStateJson.data(); }
   virtual void rackWebTriggerAction(int, bool) {}
+  virtual void rackWebResetParam(int id, float value) {
+    if (id < 0 || id >= rackWebMaxParams) return;
+    if (auto* quantity = getParamQuantity(id)) {
+      quantity->setValue(value);
+      params[id].setValue(quantity->getValue());
+    }
+    else params[id].setValue(value);
+  }
   virtual void rackWebPushMidi(int size, int status, int data1, int data2) { midi::rackWebPushToInputs(size, status, data1, data2, APP && APP->engine ? APP->engine->getFrame() : -1); }
   void rackWebEmitMidi(int size, int status, int data1 = 0, int data2 = 0) {
     if (rackWebMidiOutputCount >= rackWebMidiCapacity) return;
@@ -1294,6 +1661,10 @@ struct Module {
   virtual bool rackWebCaptureActive() const { return false; }
   virtual void rackWebConsumeCapture(int) {}
   virtual void rackWebSetCaptureEnabled(bool) {}
+  // Modules with native dynamic displays can expose a compact, read-only
+  // snapshot for the browser renderer without changing their Rack light ABI.
+  virtual int rackWebVisualCount() const { return 0; }
+  virtual float* rackWebVisualBuffer() { return nullptr; }
   virtual int rackWebExpanderCapacity() const { return 0; }
   virtual void rackWebSetExpanderCount(int) {}
   virtual void rackWebSetExpanderType(int, int) {}
@@ -1304,12 +1675,18 @@ struct Module {
   virtual void rackWebSyncExpanderFrame(int, const float*, int) {}
   virtual void rackWebCopyExpanderOutputFrame(int, float*, int) {}
   virtual int rackWebExpanderOutputChannels(int, int) const { return 0; }
+  virtual plugin::Model* rackWebSelfModel() { return nullptr; }
   virtual plugin::Model* rackWebResolveNeighborModel(int) { return nullptr; }
   virtual Module* rackWebCreateNeighborModule(int) { return new Module; }
   void rackWebSetMessageNeighbor(int side, int modelIndex, bool connected) {
     if (side < 0 || side > 1) return;
     Expander& own = side ? rightExpander : leftExpander;
     if (!connected) {
+      if (Module* neighbor = own.module) {
+        Expander& remote = side ? neighbor->leftExpander : neighbor->rightExpander;
+        remote.module = nullptr;
+        remote.moduleId = -1;
+      }
       own.module = nullptr;
       own.moduleId = -1;
       rackWebNeighborChainModules[side][0] = nullptr;
@@ -1326,6 +1703,8 @@ struct Module {
     own.producerMessage = rackWebOwnMessages[side][0];
     own.consumerMessage = rackWebOwnMessages[side][1];
     Expander& remote = side ? neighbor->leftExpander : neighbor->rightExpander;
+    remote.module = this;
+    remote.moduleId = id;
     remote.producerMessage = rackWebNeighborMessages[side][0];
     remote.consumerMessage = rackWebNeighborMessages[side][1];
     remote.messageFlipRequested = false;
@@ -1364,7 +1743,11 @@ struct Module {
     if (Module* module = rackWebChainNeighbor(side, index)) module->bypassed = value;
   }
   void rackWebSetChainNeighborParam(int side, int index, int id, float value) {
-    if (Module* module = rackWebChainNeighbor(side, index); module && id >= 0 && id < 256) module->params[id].setValue(value);
+    if (Module* module = rackWebChainNeighbor(side, index); module && id >= 0 && id < rackWebMaxParams) module->params[id].setValue(value);
+  }
+  float rackWebChainNeighborParam(int side, int index, int id) const {
+    Module* module = rackWebChainNeighbor(side, index);
+    return module && id >= 0 && id < module->getNumParams() ? module->params[id].getValue() : 0.f;
   }
   void rackWebSetChainNeighborInput(int side, int index, int id, int channels, int channel, float value) {
     Module* module = rackWebChainNeighbor(side, index);
@@ -1373,6 +1756,14 @@ struct Module {
     input.connected = channels > 0;
     input.setChannels(std::clamp(channels, 0, 16));
     if (channel >= 0 && channel < input.getChannels()) input.setVoltage(value, channel);
+  }
+  int rackWebChainNeighborInputChannels(int side, int index, int id) const {
+    Module* module = rackWebChainNeighbor(side, index);
+    return module && id >= 0 && id < module->getNumInputs() ? module->inputs[id].getChannels() : 0;
+  }
+  float rackWebChainNeighborInputVoltage(int side, int index, int id, int channel) const {
+    Module* module = rackWebChainNeighbor(side, index);
+    return module && id >= 0 && id < module->getNumInputs() ? module->inputs[id].getVoltage(channel) : 0.f;
   }
   void rackWebSetChainNeighborOutputConnected(int side, int index, int id, bool connected) {
     if (Module* module = rackWebChainNeighbor(side, index); module && id >= 0 && id < module->getNumOutputs()) module->outputs[id].connected = connected;
@@ -1385,11 +1776,15 @@ struct Module {
     Module* module = rackWebChainNeighbor(side, index);
     return module && id >= 0 && id < module->getNumOutputs() ? module->outputs[id].getVoltage(channel) : 0.f;
   }
+  float rackWebChainNeighborLightBrightness(int side, int index, int id) const {
+    Module* module = rackWebChainNeighbor(side, index);
+    return module && id >= 0 && id < module->getNumLights() ? module->lights[id].getBrightness() : 0.f;
+  }
   void rackWebSetNeighborBypassed(int side, bool value) {
     if (side >= 0 && side <= 1 && rackWebNeighborModules[side]) rackWebNeighborModules[side]->bypassed = value;
   }
   void rackWebSetNeighborParam(int side, int id, float value) {
-    if (side >= 0 && side <= 1 && rackWebNeighborModules[side] && id >= 0 && id < 256) rackWebNeighborModules[side]->params[id].setValue(value);
+    if (side >= 0 && side <= 1 && rackWebNeighborModules[side] && id >= 0 && id < rackWebMaxParams) rackWebNeighborModules[side]->params[id].setValue(value);
   }
   void rackWebSetNeighborInput(int side, int id, int channels, int channel, float value) {
     if (side < 0 || side > 1 || !rackWebNeighborModules[side] || id < 0 || id >= 256) return;
@@ -1406,6 +1801,9 @@ struct Module {
   }
   float rackWebNeighborOutputVoltage(int side, int id, int channel) const {
     return side >= 0 && side <= 1 && rackWebNeighborModules[side] && id >= 0 && id < rackWebNeighborModules[side]->getNumOutputs() ? rackWebNeighborModules[side]->outputs[id].getVoltage(channel) : 0.f;
+  }
+  float rackWebNeighborLightBrightness(int side, int id) const {
+    return side >= 0 && side <= 1 && rackWebNeighborModules[side] && id >= 0 && id < rackWebNeighborModules[side]->getNumLights() ? rackWebNeighborModules[side]->lights[id].getBrightness() : 0.f;
   }
   void* rackWebMessagePointer(int side, bool neighbor, bool consumer) {
     if (side < 0 || side > 1) return nullptr;
@@ -1453,24 +1851,30 @@ struct Module {
   Expander& getRightExpander() { return rightExpander; }
   Expander& getExpander(uint8_t side) { return side ? rightExpander : leftExpander; }
   bool isBypassed() const { return bypassed; }
-  void config(int paramCount, int inputCount, int outputCount, int lightCount = 0) { configuredParams = paramCount; configuredInputs = inputCount; configuredOutputs = outputCount; configuredLights = lightCount; }
+  void config(int paramCount, int inputCount, int outputCount, int lightCount = 0) {
+    configuredParams = paramCount;
+    configuredInputs = inputCount;
+    configuredOutputs = outputCount;
+    configuredLights = lightCount;
+    if (lightCount > static_cast<int>(lights.size())) lights.resize(lightCount);
+  }
   int getNumParams() const { return configuredParams; }
   int getNumInputs() const { return configuredInputs; }
   int getNumOutputs() const { return configuredOutputs; }
   int getNumLights() const { return configuredLights; }
   plugin::Model* getModel() const { return model; }
-  Param& getParam(int id) { return params[std::clamp(id, 0, 255)]; }
-  const Param& getParam(int id) const { return params[std::clamp(id, 0, 255)]; }
+  Param& getParam(int id) { return params[std::clamp(id, 0, rackWebMaxParams - 1)]; }
+  const Param& getParam(int id) const { return params[std::clamp(id, 0, rackWebMaxParams - 1)]; }
   Input& getInput(int id) { return inputs[std::clamp(id, 0, 255)]; }
   const Input& getInput(int id) const { return inputs[std::clamp(id, 0, 255)]; }
   Output& getOutput(int id) { return outputs[std::clamp(id, 0, 255)]; }
   const Output& getOutput(int id) const { return outputs[std::clamp(id, 0, 255)]; }
-  Light& getLight(int id) { return lights[std::clamp(id, 0, 255)]; }
-  const Light& getLight(int id) const { return lights[std::clamp(id, 0, 255)]; }
-  ParamQuantity* getParamQuantity(int id) { return id >= 0 && id < 256 ? paramQuantities[id] : nullptr; }
-  InputInfo* getInputInfo(int id) { return id >= 0 && id < 256 ? inputInfos[id] : nullptr; }
-  OutputInfo* getOutputInfo(int id) { return id >= 0 && id < 256 ? outputInfos[id] : nullptr; }
-  LightInfo* getLightInfo(int id) { return id >= 0 && id < 512 ? &lightInfos[id] : nullptr; }
+  Light& getLight(int id) { return lights[std::clamp(id, 0, std::max(0, static_cast<int>(lights.size()) - 1))]; }
+  const Light& getLight(int id) const { return lights[std::clamp(id, 0, std::max(0, static_cast<int>(lights.size()) - 1))]; }
+  ParamQuantity* getParamQuantity(int id) { return id >= 0 && id < rackWebMaxParams ? paramQuantities[id] : nullptr; }
+  InputInfo* getInputInfo(int id) { return id >= 0 && id < rackWebMaxPorts ? inputInfos[id] : nullptr; }
+  OutputInfo* getOutputInfo(int id) { return id >= 0 && id < rackWebMaxPorts ? outputInfos[id] : nullptr; }
+  LightInfo* getLightInfo(int id) { return id >= 0 && id < rackWebMaxLights ? lightInfos[id] : nullptr; }
   InputInfo* configInput(int id, const char* name = "") { auto* info = getInputInfo(id); if (info) info->name = info->description = name ? name : ""; return info; }
   InputInfo* configInput(int id, const std::string& name) { return configInput(id, name.c_str()); }
   OutputInfo* configOutput(int id, const char* name = "") { auto* info = getOutputInfo(id); if (info) info->name = info->description = name ? name : ""; return info; }
@@ -1512,7 +1916,7 @@ struct Module {
   template <typename Quantity, typename Labels>
   Quantity* configSwitch(int id, float minimum, float maximum, float initial, const std::string& name, Labels&& labels) { return configSwitch<Quantity>(id, minimum, maximum, initial, name.c_str(), std::forward<Labels>(labels)); }
   ParamQuantity* configureParamQuantity(int id, ParamQuantity* quantity, float minimum, float maximum, float initial, const char* name, const char* unit, float displayBase, float displayMultiplier, float displayOffset) {
-    if (id < 0 || id >= 256 || !quantity) return nullptr;
+    if (id < 0 || id >= rackWebMaxParams || !quantity) return nullptr;
     params[id].value = initial;
     quantity->module = this;
     quantity->paramId = id;
@@ -1529,7 +1933,10 @@ struct Module {
     return quantity;
   }
   ParamQuantity* configParam(int id, float minimum, float maximum, float initial, const char* name, const char* unit = "", float displayBase = 0.f, float displayMultiplier = 1.f, float displayOffset = 0.f) {
-    return configureParamQuantity(id, id >= 0 && id < 256 ? &quantities[id] : nullptr, minimum, maximum, initial, name, unit, displayBase, displayMultiplier, displayOffset);
+    if (id < 0 || id >= rackWebMaxParams) return nullptr;
+    if (paramQuantities[id] != &quantities[id]) delete paramQuantities[id];
+    auto* quantity = new ParamQuantity();
+    return configureParamQuantity(id, quantity, minimum, maximum, initial, name, unit, displayBase, displayMultiplier, displayOffset);
   }
   ParamQuantity* configParam(int id, float minimum, float maximum, float initial) {
     return configParam(id, minimum, maximum, initial, "");
@@ -1537,9 +1944,12 @@ struct Module {
   ParamQuantity* configParam(int id, float minimum, float maximum, float initial, const std::string& name, const char* unit = "", float displayBase = 0.f, float displayMultiplier = 1.f, float displayOffset = 0.f) {
     return configParam(id, minimum, maximum, initial, name.c_str(), unit, displayBase, displayMultiplier, displayOffset);
   }
+  ParamQuantity* configParam(int id, float minimum, float maximum, float initial, const std::string& name, const std::string& unit, float displayBase = 0.f, float displayMultiplier = 1.f, float displayOffset = 0.f) {
+    return configParam(id, minimum, maximum, initial, name.c_str(), unit.c_str(), displayBase, displayMultiplier, displayOffset);
+  }
   template <typename Quantity>
   Quantity* configParam(int id, float minimum, float maximum, float initial, const char* name, const char* unit = "", float displayBase = 0.f, float displayMultiplier = 1.f, float displayOffset = 0.f) {
-    if (id < 0 || id >= 256) return nullptr;
+    if (id < 0 || id >= rackWebMaxParams) return nullptr;
     if (paramQuantities[id] != &quantities[id]) delete paramQuantities[id];
     auto* quantity = new Quantity();
     configureParamQuantity(id, quantity, minimum, maximum, initial, name, unit, displayBase, displayMultiplier, displayOffset);
@@ -1552,6 +1962,10 @@ struct Module {
   template <typename Quantity>
   Quantity* configParam(int id, float minimum, float maximum, float initial, const std::string& name, const char* unit = "", float displayBase = 0.f, float displayMultiplier = 1.f, float displayOffset = 0.f) {
     return configParam<Quantity>(id, minimum, maximum, initial, name.c_str(), unit, displayBase, displayMultiplier, displayOffset);
+  }
+  template <typename Quantity>
+  Quantity* configParam(int id, float minimum, float maximum, float initial, const std::string& name, const std::string& unit, float displayBase = 0.f, float displayMultiplier = 1.f, float displayOffset = 0.f) {
+    return configParam<Quantity>(id, minimum, maximum, initial, name.c_str(), unit.c_str(), displayBase, displayMultiplier, displayOffset);
   }
 };
 
@@ -1572,6 +1986,13 @@ inline Param* ParamQuantity::getParam() {
 }
 inline const Param* ParamQuantity::getParam() const {
   return module && paramId >= 0 ? &module->getParam(paramId) : nullptr;
+}
+inline void ParamQuantity::setValue(float next) {
+  // Rack modules sometimes intentionally reverse min/max so the control turns
+  // in the opposite direction. Clamp against the numeric bounds without
+  // destroying that orientation in getMinValue()/getMaxValue().
+  value = std::clamp(next, std::min(minValue, maxValue), std::max(minValue, maxValue));
+  if (Param* param = getParam()) param->setValue(value);
 }
 inline void engine::Engine::setParamValue(::rack::Module* module, int paramId, float value) {
   if (module) module->getParam(paramId).setValue(value);
@@ -1623,7 +2044,11 @@ inline void engine::Engine::updateParamHandle(ParamHandle* paramHandle, int64_t 
 }
 
 inline int eucMod(int value, int base) { int result = value % base; return result < 0 ? result + base : result; }
-inline float sgn(float value) { return value > 0.f ? 1.f : value < 0.f ? -1.f : 0.f; }
+template <typename Value, std::enable_if_t<std::is_floating_point_v<Value>, int> = 0>
+inline Value eucMod(Value value, Value base) {
+  return value - base * std::floor(value / base);
+}
+using simd::sgn;
 template <typename Value, typename Minimum, typename Maximum>
 Value clampSafe(Value value, Minimum minimum, Maximum maximum) {
   if constexpr (std::is_floating_point_v<Value>) if (!std::isfinite(value)) value = static_cast<Value>(minimum);
@@ -1646,7 +2071,18 @@ constexpr auto clamp(const Value& value, const Minimum& minimum, const Maximum& 
 template <typename Value>
 constexpr auto clamp(const Value& value) { return rack::clamp(value, Value(0), Value(1)); }
 template <typename Value, typename InputMinimum, typename InputMaximum, typename OutputMinimum, typename OutputMaximum>
-auto rescale(const Value& value, const InputMinimum& inputMinimum, const InputMaximum& inputMaximum, const OutputMinimum& outputMinimum, const OutputMaximum& outputMaximum) { return outputMinimum + (value - inputMinimum) / (inputMaximum - inputMinimum) * (outputMaximum - outputMinimum); }
+auto rescale(const Value& value, const InputMinimum& inputMinimum, const InputMaximum& inputMaximum, const OutputMinimum& outputMinimum, const OutputMaximum& outputMaximum) {
+  if constexpr (std::is_arithmetic_v<Value> && std::is_arithmetic_v<InputMinimum> && std::is_arithmetic_v<InputMaximum> && std::is_arithmetic_v<OutputMinimum> && std::is_arithmetic_v<OutputMaximum>) {
+    using Result = std::common_type_t<Value, InputMinimum, InputMaximum, OutputMinimum, OutputMaximum>;
+    return static_cast<Result>(outputMinimum)
+      + (static_cast<Result>(value) - static_cast<Result>(inputMinimum))
+      / (static_cast<Result>(inputMaximum) - static_cast<Result>(inputMinimum))
+      * (static_cast<Result>(outputMaximum) - static_cast<Result>(outputMinimum));
+  }
+  else {
+    return outputMinimum + (value - inputMinimum) / (inputMaximum - inputMinimum) * (outputMaximum - outputMinimum);
+  }
+}
 template <typename First, typename Second, typename Mix>
 auto crossfade(const First& first, const Second& second, const Mix& mix) { using Result = std::common_type_t<First, Second, Mix>; return static_cast<Result>(first) + (static_cast<Result>(second) - static_cast<Result>(first)) * static_cast<Result>(mix); }
 
@@ -1735,6 +2171,7 @@ auto log2(T value) { return std::log2(value); }
 }
 using math::Vec;
 using math::Rect;
+using math::normalizeZero;
 inline constexpr float MM_PER_IN = 25.4f;
 inline constexpr float SVG_DPI = 75.f;
 inline constexpr float _PI = 3.14159265358979323846f;
@@ -1801,6 +2238,10 @@ inline void blackmanHarrisWindow(float* values, int length) {
 
 template <typename T>
 T quadraticBipolar(T value) { return simd::sgn(value) * value * value; }
+template <typename T>
+T exponentialBipolar(T base, T value) {
+  return (simd::pow(base, value) - simd::pow(base, -value)) / (base - T(1) / base);
+}
 template <typename T>
 T sqrtBipolar(T value) { return simd::sgn(value) * simd::sqrt(value); }
 template <typename T>
@@ -1975,9 +2416,10 @@ struct SampleRateConverter {
   int channels = MAX_CHANNELS;
   int inRate = 44100;
   int outRate = 44100;
+  int quality = 0;
   double phase = 0.0;
   void setChannels(int next) { channels = std::clamp(next, 0, MAX_CHANNELS); }
-  void setQuality(int) {}
+  void setQuality(int next) { quality = next; }
   void setRates(int nextInRate, int nextOutRate) { inRate = std::max(1, nextInRate); outRate = std::max(1, nextOutRate); }
   void process(const float* input, int inputStride, int* inputFrames, float* output, int outputStride, int* outputFrames) {
     const int available = std::max(0, *inputFrames), capacity = std::max(0, *outputFrames);int produced = 0;const double step = static_cast<double>(inRate) / outRate;
@@ -1993,6 +2435,7 @@ struct RingBuffer {
   size_t end = 0;
   T data[S]{};
   void push(T value) { data[end % S] = value; end++; }
+  void pushBuffer(const T* values, size_t count) { for (size_t index = 0; index < count; index++) push(values[index]); }
   T shift() { return data[start++ % S]; }
   void shiftBuffer(T* target, size_t count) { for (size_t index = 0; index < count; index++) target[index] = shift(); }
   void clear() { start = end; }
@@ -2027,17 +2470,107 @@ struct DoubleRingBuffer {
   void startIncr(size_t count) { start += count; }
 };
 
+// Rack-compatible uniformly partitioned overlap-add convolution. The desktop
+// runtime delegates this to PFFFT; the standalone browser runtime keeps the
+// same block contract with an allocation-free radix-2 FFT after construction.
+struct RealTimeConvolver {
+  using Complex = std::complex<float>;
+
+  size_t blockSize = 0;
+  size_t fftSize = 0;
+  size_t kernelBlocks = 0;
+  size_t inputPos = 0;
+  std::vector<std::vector<Complex>> kernelFfts;
+  std::vector<std::vector<Complex>> inputFfts;
+  std::vector<Complex> scratch;
+  std::vector<Complex> accumulated;
+  std::vector<float> outputTail;
+
+  explicit RealTimeConvolver(size_t nextBlockSize)
+      : blockSize(nextBlockSize),
+        fftSize(nextBlockSize * 2),
+        scratch(fftSize),
+        accumulated(fftSize),
+        outputTail(blockSize) {}
+
+  static void transform(std::vector<Complex>& values, bool inverse) {
+    const size_t count = values.size();
+    for (size_t index = 1, reversed = 0; index < count; ++index) {
+      size_t bit = count >> 1;
+      for (; reversed & bit; bit >>= 1) reversed ^= bit;
+      reversed ^= bit;
+      if (index < reversed) std::swap(values[index], values[reversed]);
+    }
+    for (size_t length = 2; length <= count; length <<= 1) {
+      const float angle = (inverse ? 2.f : -2.f) * 3.14159265358979323846f / static_cast<float>(length);
+      const Complex step(std::cos(angle), std::sin(angle));
+      for (size_t offset = 0; offset < count; offset += length) {
+        Complex twiddle(1.f, 0.f);
+        for (size_t index = 0; index < length / 2; ++index) {
+          const Complex even = values[offset + index];
+          const Complex odd = values[offset + index + length / 2] * twiddle;
+          values[offset + index] = even + odd;
+          values[offset + index + length / 2] = even - odd;
+          twiddle *= step;
+        }
+      }
+    }
+    if (inverse) {
+      const float scale = 1.f / static_cast<float>(count);
+      for (Complex& value : values) value *= scale;
+    }
+  }
+
+  void setKernel(const float* kernel, size_t length) {
+    kernelBlocks = kernel && length ? (length - 1) / blockSize + 1 : 0;
+    inputPos = 0;
+    kernelFfts.assign(kernelBlocks, std::vector<Complex>(fftSize));
+    inputFfts.assign(kernelBlocks, std::vector<Complex>(fftSize));
+    std::fill(outputTail.begin(), outputTail.end(), 0.f);
+    for (size_t block = 0; block < kernelBlocks; ++block) {
+      auto& frequency = kernelFfts[block];
+      const size_t offset = block * blockSize;
+      const size_t available = std::min(blockSize, length - offset);
+      for (size_t index = 0; index < available; ++index) frequency[index] = Complex(kernel[offset + index], 0.f);
+      transform(frequency, false);
+    }
+  }
+
+  void processBlock(const float* input, float* output) {
+    if (!kernelBlocks) {
+      std::fill(output, output + blockSize, 0.f);
+      return;
+    }
+    inputPos = (inputPos + 1) % kernelBlocks;
+    std::fill(scratch.begin(), scratch.end(), Complex{});
+    for (size_t index = 0; index < blockSize; ++index) scratch[index] = Complex(input[index], 0.f);
+    transform(scratch, false);
+    inputFfts[inputPos] = scratch;
+
+    std::fill(accumulated.begin(), accumulated.end(), Complex{});
+    for (size_t block = 0; block < kernelBlocks; ++block) {
+      const size_t position = (inputPos + kernelBlocks - block) % kernelBlocks;
+      for (size_t bin = 0; bin < fftSize; ++bin) accumulated[bin] += kernelFfts[block][bin] * inputFfts[position][bin];
+    }
+    transform(accumulated, true);
+    for (size_t index = 0; index < blockSize; ++index) {
+      output[index] = accumulated[index].real() + outputTail[index];
+      outputTail[index] = accumulated[index + blockSize].real();
+    }
+  }
+};
+
 template <typename T = float>
 struct TRCFilter {
-  T cutoff = 0.f;
-  T x = 0.f;
-  T y = 0.f;
-  void reset() { x = 0.f; y = 0.f; }
-  void setCutoff(T radians) { cutoff = 2.f / radians; }
+  T c = 0.f;
+  T xstate[1]{};
+  T ystate[1]{};
+  void reset() { xstate[0] = 0.f; ystate[0] = 0.f; }
+  void setCutoff(T radians) { c = 2.f / radians; }
   void setCutoffFreq(T frequency) { setCutoff(T(6.2831853071795864769) * frequency); }
-  void process(T input) { const T next = (input + x - y * (T(1) - cutoff)) / (T(1) + cutoff); x = input; y = next; }
-  T lowpass() const { return y; }
-  T highpass() const { return x - y; }
+  void process(T input) { const T output = (input + xstate[0] - ystate[0] * (T(1) - c)) / (T(1) + c); xstate[0] = input; ystate[0] = output; }
+  T lowpass() const { return ystate[0]; }
+  T highpass() const { return xstate[0] - ystate[0]; }
 };
 using RCFilter = TRCFilter<float>;
 
@@ -2200,11 +2733,17 @@ struct TSchmittTrigger<simd::float_4> {
   TSchmittTrigger<float> lanes[4]{};
   simd::float_4 process(const simd::float_4& voltage, float low = 0.1f, float highThreshold = 1.f) {
     simd::float_4 result;
-    for (int index = 0; index < 4; index++) result[index] = lanes[index].process(voltage[index], low, highThreshold) ? 1.f : 0.f;
+    for (int index = 0; index < 4; index++)
+      result[index] = simd::rackWebFloatMask(lanes[index].process(voltage[index], low, highThreshold));
     return result;
   }
   void reset() { for (auto& lane : lanes) lane.reset(); }
-  simd::float_4 isHigh() const { simd::float_4 result; for (int index = 0; index < 4; index++) result[index] = lanes[index].isHigh() ? 1.f : 0.f; return result; }
+  simd::float_4 isHigh() const {
+    simd::float_4 result;
+    for (int index = 0; index < 4; index++)
+      result[index] = simd::rackWebFloatMask(lanes[index].isHigh());
+    return result;
+  }
 };
 
 using SchmittTrigger = TSchmittTrigger<float>;
@@ -2231,12 +2770,15 @@ struct PulseGenerator {
   bool isHigh() const { return remaining > 0.f; }
 };
 
-struct Timer {
-  float time = 0.f;
+template <typename T = float>
+struct TTimer {
+  T time = T(0);
   void reset() { time = 0.f; }
-  float process(float deltaTime) { time += deltaTime; return time; }
-  float getTime() const { return time; }
+  T process(T deltaTime) { time += deltaTime; return time; }
+  T getTime() const { return time; }
 };
+
+using Timer = TTimer<>;
 
 struct ClockDivider {
   int division = 1;
@@ -2248,14 +2790,22 @@ struct ClockDivider {
   bool process() { if (++clock < division) return false; clock = 0; return true; }
 };
 
-struct SlewLimiter {
-  float out = 0.f;
-  float rise = 0.f;
-  float fall = 0.f;
-  void reset() { out = 0.f; }
-  void setRiseFall(float nextRise, float nextFall) { rise = nextRise; fall = nextFall; }
-  float process(float deltaTime, float input) { out = std::clamp(input, out - fall * deltaTime, out + rise * deltaTime); return out; }
+template <typename T = float>
+struct TSlewLimiter {
+  T out = T(0.f);
+  T rise = T(0.f);
+  T fall = T(0.f);
+  void reset() { out = T(0.f); }
+  void setRise(T nextRise) { rise = nextRise; }
+  void setFall(T nextFall) { fall = nextFall; }
+  void setRiseFall(T nextRise, T nextFall) { rise = nextRise; fall = nextFall; }
+  T process(float deltaTime, T input) {
+    out = simd::clamp(input, out - fall * deltaTime, out + rise * deltaTime);
+    return out;
+  }
 };
+
+using SlewLimiter = TSlewLimiter<float>;
 
 template <typename T = float>
 struct TExponentialFilter {
@@ -2410,6 +2960,10 @@ inline std::string trim(const std::string& value) {
   return value.substr(first, last - first + 1);
 }
 inline std::string lowercase(std::string value) { for (char& character : value) character = static_cast<char>(std::tolower(static_cast<unsigned char>(character))); return value; }
+inline std::string filename(const std::string& path) {
+  const auto separator = path.find_last_of("/\\");
+  return separator == std::string::npos ? path : path.substr(separator + 1);
+}
 inline std::string toBase64(const void* data, std::size_t size) {
   static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   const auto* bytes = static_cast<const uint8_t*>(data);
@@ -2473,13 +3027,22 @@ using rack::dsp::DoubleRingBuffer;
 using rack::dsp::Frame;
 using rack::dsp::RCFilter;
 using rack::dsp::SampleRateConverter;
+#ifndef RACK_WEB_NO_GLOBAL_SCHMITT_TRIGGER_ALIAS
 using rack::dsp::SchmittTrigger;
+#endif
 using rack::simd::float_4;
-namespace dsp = rack::dsp;
+namespace rack::ui {
+struct Menu {};
+}
 using namespace rack;
+using GLuint = unsigned int;
+struct FramebufferWidget {};
+struct ImageData;
 using std::abs;
+#ifndef RACK_WEB_NO_GLOBAL_STD_MIN_MAX
 using std::max;
 using std::min;
+#endif
 using std::to_string;
 
 template <typename Left, typename Right, std::enable_if_t<std::is_arithmetic_v<Left> && std::is_arithmetic_v<Right> && !std::is_same_v<Left, Right>, int> = 0>

@@ -93,6 +93,7 @@ struct ModernModule : Module, FixtureMeterInterface {
     (void) color::BLACK_TRANSPARENT.a;
     config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
     configParam<EditableQuantity>(RATE_PARAM, std::log2(1e-3f), std::log2(8.f), std::log2(0.125f), "Rate");
+    getParamQuantity(RATE_PARAM)->snapEnabled = true;
     (void) getParamQuantity(RATE_PARAM)->getSmoothValue();
     (void) sizeof(FixtureSwitch::ON_OFF_NAMES);
     const int configSwitch = 1;
@@ -154,6 +155,14 @@ struct ModernModule : Module, FixtureMeterInterface {
     simd::float_4 packed(1.f, 2.f, 3.f, 4.f);
     packed = _mm_shuffle_ps(packed.v, packed.v, _MM_SHUFFLE(2, 1, 0, 3));
     packed = _mm_move_ss(packed.v, simd::float_4(5.f).v);
+    float scalarRescale = simd::rescale(0.5f, 0.0, 1.0, -1.0, 1.0);
+    typedef float FixtureV4sf __attribute__((vector_size(16)));
+    typedef int FixtureV4si __attribute__((vector_size(16)));
+    FixtureV4sf shuffleFirst = {1.f, 2.f, 3.f, 4.f};
+    FixtureV4sf shuffleSecond = {5.f, 6.f, 7.f, 8.f};
+    FixtureV4si shuffleMask = {1, 2, 3, 4};
+    FixtureV4sf shuffled = __builtin_shuffle(shuffleFirst, shuffleSecond, shuffleMask);
+    packed += simd::float_4(scalarRescale + shuffled[0] - 2.f);
     unionState.lanes[0] = smoother.process(1.f / 48000.f, packed);
     unionState.lanes[1] = exponentialSlew.process(1.f / 48000.f, packed);
     float oversampled[2]{};

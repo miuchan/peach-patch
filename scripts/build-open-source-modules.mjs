@@ -23,11 +23,14 @@ const value = (name) => {
 const limit = value("--limit") ? Number(value("--limit")) : Number.POSITIVE_INFINITY;
 const pluginFilter = value("--plugin");
 const modelFilter = value("--model");
+const sourceDirOverride = value("--source-dir") ? path.resolve(value("--source-dir")) : undefined;
 const retry = process.argv.includes("--retry");
 const force = process.argv.includes("--force");
 const keepSource = process.argv.includes("--keep-source");
 const keepBuild = process.argv.includes("--keep-build");
 const concurrency = Math.max(1, Math.min(8, Number(value("--concurrency") || Math.min(4, os.availableParallelism()))));
+if (sourceDirOverride && (!pluginFilter || !modelFilter))
+  throw new Error("--source-dir requires one explicit --plugin and --model target");
 
 if (!fs.existsSync(queuePath)) throw new Error("Run npm run registry:discover first");
 const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
@@ -39,6 +42,22 @@ function persist() {
   fs.mkdirSync(path.dirname(statePath), { recursive: true });
   fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
   fs.writeFileSync(catalogPath, `${JSON.stringify([...definitions.values()].sort((a, b) => a.key.localeCompare(b.key)), null, 2)}\n`);
+}
+
+function sourceFailureAssessment(error, item) {
+  const message = [
+    error instanceof Error ? error.message : String(error),
+    typeof error?.stderr === "string" ? error.stderr : "",
+  ].filter(Boolean).join("\n");
+  if (/repository (?:not found|does not exist)|could not read from remote repository/i.test(message)) {
+    return {
+      strategy: "source-unavailable",
+      compileEligible: false,
+      requiresReview: true,
+      blockers: [{ kind: "source-unavailable", sourceUrl: item.sourceUrl }],
+    };
+  }
+  return undefined;
 }
 
 for (const item of queue.moduleRecords) {
@@ -95,20 +114,232 @@ async function processItem(item) {
   started += 1;
   process.stderr.write(`[${started}/${candidates.length}] ${item.key}\n`);
   try {
-    const { stdout } = await execute(process.execPath, [
+    const scaffoldArguments = [
       path.join(projectDir, "scripts", "scaffold-library-module.mjs"),
       item.libraryUrl,
       "--source-cache-dir", sourceCacheDir,
       "--output", buildDir,
       "--compile",
-    ], { cwd: projectDir, timeout: 15 * 60 * 1000, maxBuffer: 32 * 1024 * 1024 });
+    ];
+    if (sourceDirOverride) scaffoldArguments.push("--source-dir", sourceDirOverride);
+    const { stdout } = await execute(process.execPath, scaffoldArguments, { cwd: projectDir, timeout: 15 * 60 * 1000, maxBuffer: 32 * 1024 * 1024 });
     const result = JSON.parse(stdout);
     const runtime = JSON.parse(fs.readFileSync(path.join(buildDir, "runtime.json"), "utf8"));
     const destination = path.join(projectDir, "public", "dynamic-plugins", item.plugin, item.model);
     fs.mkdirSync(destination, { recursive: true });
     fs.copyFileSync(result.artifact, path.join(destination, "module.wasm"));
+    if (item.plugin === "MSM") {
+      const componentSource = path.join(sourceCacheDir, item.plugin, result.source?.commit || "", "res"),
+        componentDestination = path.join(projectDir, "public", "rack-components", "msm");
+      for (const directory of ["Knobs", "Switch", "Button", "Slider", "Port"]) {
+        const source = path.join(componentSource, directory);
+        if (!fs.existsSync(source)) continue;
+        fs.cpSync(source, path.join(componentDestination, directory), {
+          recursive: true,
+          filter: (entry) => fs.statSync(entry).isDirectory() || /\.svg$/i.test(entry),
+        });
+      }
+    }
+    if (item.plugin === "ImpromptuModular") {
+      const componentSource = path.join(
+          sourceCacheDir,
+          item.plugin,
+          result.source?.commit || "",
+          "res",
+          "comp",
+          "complib",
+        ),
+        componentDestination = path.join(
+          projectDir,
+          "public",
+          "rack-components",
+          "impromptu",
+        );
+      for (const name of ["Trimpot.svg", "Trimpot_bg.svg", "Rogan1PWhite_fg.svg", "Rogan1S.svg", "Rogan1PSWhite_fg.svg"]) {
+        const source = path.join(componentSource, name);
+        if (!fs.existsSync(source)) continue;
+        fs.mkdirSync(componentDestination, { recursive: true });
+        fs.copyFileSync(source, path.join(componentDestination, name));
+      }
+      const segmentFont = path.join(
+        sourceCacheDir,
+        item.plugin,
+        result.source?.commit || "",
+        "res",
+        "fonts",
+        "Segment14.ttf",
+      );
+      if (fs.existsSync(segmentFont)) {
+        fs.mkdirSync(componentDestination, { recursive: true });
+        fs.copyFileSync(segmentFont, path.join(componentDestination, "Segment14.ttf"));
+      }
+    }
+    if (item.key === "ModularMooch/Wolfram") {
+      const fontSource = path.join(
+          sourceCacheDir,
+          item.plugin,
+          result.source?.commit || "",
+          "res",
+          "fonts",
+          "wolfram.ttf",
+        ),
+        componentSource = path.join(
+          sourceCacheDir,
+          item.plugin,
+          result.source?.commit || "",
+          "res",
+          "components",
+        ),
+        componentDestination = path.join(
+          projectDir,
+          "public",
+          "rack-components",
+          "modular-mooch",
+        );
+      fs.mkdirSync(componentDestination, { recursive: true });
+      if (fs.existsSync(fontSource))
+        fs.copyFileSync(fontSource, path.join(componentDestination, "wolfram.ttf"));
+      for (const name of [
+        "M1900hBlackEncoder.svg",
+        "M1900hBlackKnob.svg",
+        "M1900hKnob_fg.svg",
+        "RectangleLuckyLight.svg",
+      ]) {
+        const source = path.join(componentSource, name);
+        if (fs.existsSync(source))
+          fs.copyFileSync(source, path.join(componentDestination, name));
+      }
+    }
+    if (item.plugin === "Leviathan") {
+      const componentSource = path.join(
+          sourceCacheDir,
+          item.plugin,
+          result.source?.commit || "",
+          "res",
+          "icon",
+        ),
+        componentDestination = path.join(
+          projectDir,
+          "public",
+          "rack-components",
+          "leviathan",
+        );
+      for (const name of ["HaloKnob2Back.svg", "HaloKnobCenter.svg", "HaloKnobCenterLit.svg", "Eclipse2Knob.svg", "gear_knob_tiny.svg", "gold_button.svg", "PlasmaSwitchSmall.png"]) {
+        const source = path.join(componentSource, name);
+        if (!fs.existsSync(source)) continue;
+        fs.mkdirSync(componentDestination, { recursive: true });
+        fs.copyFileSync(source, path.join(componentDestination, name));
+      }
+    }
+    if (item.plugin === "LifeFormModular") {
+      const componentSource = path.join(
+          sourceCacheDir,
+          item.plugin,
+          result.source?.commit || "",
+          "res",
+        ),
+        componentDestination = path.join(
+          projectDir,
+          "public",
+          "rack-components",
+          "lifeform",
+        );
+      for (const name of [
+        "LFMKnob.svg",
+        "LFMNuKnob.svg",
+        "LFMTinyKnob.svg",
+        "LFMSlider.svg",
+        "LFMSliderWhiteHandle.svg",
+        "MS_0.svg",
+        "MS_1.svg",
+        "LFMSwitch_0.svg",
+        "LFMSwitch_1.svg",
+        "LFMSwitch_2.svg",
+      ]) {
+        const source = path.join(componentSource, name);
+        if (!fs.existsSync(source)) continue;
+        fs.mkdirSync(componentDestination, { recursive: true });
+        fs.copyFileSync(source, path.join(componentDestination, name));
+      }
+    }
+    if (item.plugin === "LomasModules") {
+      const componentSource = path.join(
+          sourceCacheDir,
+          item.plugin,
+          result.source?.commit || "",
+          "res",
+          "Components",
+        ),
+        componentDestination = path.join(
+          projectDir,
+          "public",
+          "rack-components",
+          "lomas",
+        );
+      for (const name of [
+        "RubberButton.svg",
+        "RubberButton1.svg",
+        "RubberSmallButton.svg",
+        "RubberSmallButton1.svg",
+        "RoundGrayKnob.svg",
+        "RoundSmallGrayKnob.svg",
+        "RoundBigGrayKnob.svg",
+      ]) {
+        const source = path.join(componentSource, name);
+        if (!fs.existsSync(source)) continue;
+        fs.mkdirSync(componentDestination, { recursive: true });
+        fs.copyFileSync(source, path.join(componentDestination, name));
+      }
+    }
+    if (item.plugin === "LyraeModules") {
+      const componentSource = path.join(
+          sourceCacheDir,
+          item.plugin,
+          result.source?.commit || "",
+          "res",
+        ),
+        componentDestination = path.join(
+          projectDir,
+          "public",
+          "rack-components",
+          "lyrae",
+        );
+      for (const name of [
+        "HexKnob.svg",
+        "MedHexKnob.svg",
+        "SmallHexKnob.svg",
+        "SmallHexKnobInverted.svg",
+        "Jack.svg",
+      ]) {
+        const source = path.join(componentSource, name);
+        if (!fs.existsSync(source)) continue;
+        fs.mkdirSync(componentDestination, { recursive: true });
+        fs.copyFileSync(source, path.join(componentDestination, name));
+      }
+    }
+    if (item.key === "Interrobang/ScribbleStrip") {
+      const source = path.join(
+          sourceCacheDir,
+          item.plugin,
+          result.source?.commit || "",
+          "res",
+          "mad-midnight-marker-font",
+          "MadMidnightMarker-na91.ttf",
+        ),
+        destination = path.join(
+          projectDir,
+          "public",
+          "rack-components",
+          "interrobang",
+          "MadMidnightMarker-na91.ttf",
+        );
+      if (fs.existsSync(source)) {
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        fs.copyFileSync(source, destination);
+      }
+    }
     runtime.wasmUrl = `/dynamic-plugins/${item.plugin}/${item.model}/module.wasm`;
-    runtime.runtime = { ...(runtime.runtime || {}), strategy: "direct-rack-source-adapter" };
+    runtime.runtime = { ...(runtime.runtime || {}), strategy: result.assessment?.strategy || "direct-rack-source-adapter" };
     runtime.localBuild = {
       builtAt: new Date().toISOString(),
       sourceCommit: result.source?.commit || null,
@@ -119,7 +350,7 @@ async function processItem(item) {
     succeeded += 1;
   } catch (error) {
     const assessmentFile = path.join(buildDir, "adapter.json");
-    let assessment = previousState?.assessment;
+    let assessment = sourceFailureAssessment(error, item) ?? previousState?.assessment;
     try { assessment = JSON.parse(fs.readFileSync(assessmentFile, "utf8")).assessment; } catch {}
     state.modules[item.key] = {
       status: "failed",

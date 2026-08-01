@@ -1,17 +1,55 @@
-"use client";
-
-import { useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import type { ModuleInstance } from "../../lib/patch-types";
 import { resolvedModulePortPosition } from "../../lib/patch-operations";
-import { registerRackParamPress, type RackParamPress } from "../../lib/rack-param-interaction";
+import { rackParamResetValue, registerRackParamPress, type RackParamPress } from "../../lib/rack-param-interaction";
 import type { ParamSpec, PortSpec, WebPluginModule } from "../../lib/web-plugin-registry";
+import { rackParamIsVisible } from "../../lib/rack-param-visibility";
 import { STROKE_SPECIAL_MODES, strokeSpecialModeLabel } from "../../lib/stroke-host";
 import { RackScopeDisplay } from "./rack-scope-display";
 import { RackParamVisual, rackParamControlSize, rackParamInteraction, rackParamSwitchFrames } from "./rack-param-visual";
 import { RackSegmentDisplay } from "./rack-segment-display";
+import { RackParamNumericDisplay } from "./rack-param-numeric-display";
 import { RackLightVisual } from "./rack-light-visual";
 import { RackAudioDisplay } from "./rack-audio-display";
 import { RackMultiMeterDisplay } from "./rack-multi-meter-display";
+import { RackSpectrumDisplay } from "./rack-spectrum-display";
+import { CellaFrequencyAnalyzerDisplay } from "./cella-frequency-analyzer-display";
+import { RackCvNoteDisplay } from "./rack-cv-note-display";
+import { RackNoteMeterDisplay } from "./rack-note-meter-display";
+import { RackBpmDisplay } from "./rack-bpm-display";
+import { RackLightMatrixDisplay } from "./rack-light-matrix-display";
+import { RackHexLooperDisplay } from "./rack-hex-looper-display";
+import { RackWavetableDisplay } from "./rack-wavetable-display";
+import { RackElementaryCaDisplay } from "./rack-elementary-ca-display";
+import { RackPianoKeyboard } from "./rack-piano-keyboard";
+import { RackFourViewDisplay } from "./rack-four-view-display";
+import { RackNoteEchoDisplay } from "./rack-note-echo-display";
+import { RackNoteLoopDisplay } from "./rack-note-loop-display";
+import { RackPhraseSeqDisplay } from "./rack-phrase-seq-display";
+import { RackBouncyBallsDisplay } from "./rack-bouncy-balls-display";
+import { RackFullScopeDisplay } from "./rack-full-scope-display";
+import { RackMadzineScopeDisplay } from "./rack-madzine-scope-display";
+import { RackMadzineWaveformDisplay } from "./rack-madzine-waveform-display";
+import { RackUniversalRhythmDisplay } from "./rack-universal-rhythm-display";
+import { RackMadzineLaunchpad } from "./rack-madzine-launchpad";
+import { RackTheKickSample } from "./rack-the-kick-sample";
+import { RackMadzineManual, type MadzineManualTarget } from "./rack-madzine-manual";
+import { RackMlArpeggiatorDisplay } from "./rack-ml-arpeggiator-display";
+import { RackCorrupterDisplay } from "./rack-corrupter-display";
+import { RackTapestryDisplay } from "./rack-tapestry-display";
+import { RackXYPadDisplay } from "./rack-xy-pad-display";
+import { RackWavetableEditor } from "./rack-wavetable-editor";
+import { RackNesScreenDisplay } from "./rack-nes-screen-display";
+import { RackSpeckSpectrumDisplay } from "./rack-speck-spectrum-display";
+import { RackIntegralFluxPreview } from "./rack-integral-flux-preview";
+import { RackTemporalDeckDisplay } from "./rack-temporal-deck-display";
+import { RackTdScopeDisplay } from "./rack-td-scope-display";
+import { RackUndertowPreview } from "./rack-undertow-preview";
+import { RackLomasSamplerDisplay } from "./rack-lomas-sampler-display";
+import { RackWolframDisplay } from "./rack-wolfram-display";
+import { RackOctobirDisplay } from "./rack-octobir-display";
+import { RackRkdDividers } from "./rack-rkd-dividers";
+import { RackKlokSpidDmd } from "./rack-klokspid-dmd";
 
 type PortClick = { moduleId: string; direction: "in" | "out"; portId: number };
 
@@ -24,6 +62,15 @@ function rackKeyFromEvent(event: KeyboardEvent) {
 
 function rackModifiersFromEvent(event: KeyboardEvent) {return (event.shiftKey?1:0)|(event.ctrlKey?2:0)|(event.altKey?4:0)|(event.metaKey?8:0);}
 function strokeKeyLabel(key:number,mods:number){if(key<0)return"Map key";const modifier=[mods&8?"⌘":"",mods&2?"Ctrl+":"",mods&4?"Alt+":"",mods&1?"Shift+":""].join(""),named:Record<number,string>={256:"Esc",257:"Enter",258:"Tab",259:"Backspace",260:"Insert",261:"Delete",262:"→",263:"←",264:"↓",265:"↑",266:"Page Up",267:"Page Down",268:"Home",269:"End",283:"Print",284:"Pause"},label=named[key]??(key>=290&&key<=314?`F${key-289}`:String.fromCharCode(key));return `${modifier}${label}`;}
+function rackMidiLogText(values:number[]|undefined,rows:number,columns:number){
+  if(!values?.length)return"";
+  const count=Math.max(0,Math.min(rows,Math.round(values[0]??0))),lines:string[]=[];
+  for(let row=0;row<count;row++){
+    const offset=1+row*(columns+1),length=Math.max(0,Math.min(columns,Math.round(values[offset]??0)));
+    lines.push(String.fromCharCode(...values.slice(offset+1,offset+1+length).map(value=>Math.max(0,Math.min(255,Math.round(value))))));
+  }
+  return lines.join("\n");
+}
 
 async function boundedResponse(response:Response,maxBytes=16*1024*1024,maxMilliseconds=12_000){
   if(!response.ok)throw new Error(`Audio URL returned HTTP ${response.status}`);
@@ -94,8 +141,11 @@ export function ModulePanel({
   onModuleHover,
   onFocus,
   onParam,
+  onParamReset,
   onMomentary,
   onParamHover,
+  onPortHover,
+  manualHelpTarget,
   onState,
   onData,
   onPolyphony,
@@ -113,6 +163,7 @@ export function ModulePanel({
   onRemove,
   onReplaceDrop,
   inputSignalLevels,
+  connectedInputIds,
   outputSignalLevels,
   scopeSamples,
   lightValues,
@@ -128,8 +179,11 @@ export function ModulePanel({
   onModuleHover: (hovered: boolean) => void;
   onFocus: () => void;
   onParam: (id: number, value: number) => void;
+  onParamReset: (id: number, value: number) => void;
   onMomentary: (id: number, active: boolean) => void;
   onParamHover: (id: number | null) => void;
+  onPortHover: (direction:"in"|"out",id:number|null) => void;
+  manualHelpTarget:MadzineManualTarget|null;
   onState: (updates: Array<[id: number, value: number]>) => void;
   onData: (data: Record<string, unknown>) => void;
   onPolyphony: (channels: number) => void;
@@ -147,14 +201,31 @@ export function ModulePanel({
   onRemove: () => void;
   onReplaceDrop: (key: string) => void;
   inputSignalLevels: Record<number, number>;
+  connectedInputIds: ReadonlySet<number>;
   outputSignalLevels: Record<number, number>;
   scopeSamples?: number[][];
   lightValues?: number[];
   audioRunning: boolean;
 }) {
   const [dropTarget, setDropTarget] = useState(false);
-  const paramDragRef=useRef<{pointerId:number;paramId:number;startCoordinate:number;startValue:number;min:number;max:number;snap:boolean;axis:"x"|"y"}|null>(null);
+  const [paramNotice,setParamNotice]=useState<{id:number;serial:number}|null>(null);
+  useEffect(()=>{
+    if(!paramNotice)return;
+    const timer=window.setTimeout(()=>setParamNotice(current=>current?.serial===paramNotice.serial?null:current),3_000);
+    return()=>window.clearTimeout(timer);
+  },[paramNotice]);
+  const updateParam=(id:number,value:number)=>{
+    if(module.key==="ImpromptuModular/NoteEcho"&&((id>=4&&id<=15)||(id>=22&&id<=25)))
+      setParamNotice({id,serial:performance.now()});
+    onParam(id,value);
+  };
+  const paramDragRef=useRef<{pointerId:number;paramId:number;startCoordinate:number;startValue:number;min:number;max:number;snap:boolean;unbounded:boolean;axis:"x"|"y"}|null>(null);
   const lastParamPressRef=useRef<RackParamPress|null>(null);
+  const assetInputRef=useRef<HTMLInputElement|null>(null);
+  const pendingAssetSlotRef=useRef<number|null>(null);
+  const assetPickerTimerRef=useRef<number|null>(null);
+  const suppressAssetPickerRef=useRef(false);
+  useEffect(()=>()=>{if(assetPickerTimerRef.current!==null)window.clearTimeout(assetPickerTimerRef.current);},[]);
   const inputs: PortSpec[] =
     definition?.inputs.filter((port)=>!port.hidden) ??
     Array.from({ length: 2 }, (_, id) => ({
@@ -170,7 +241,7 @@ export function ModulePanel({
       kind: "cv" as const,
     }));
   const params: ParamSpec[] =
-    definition?.params.filter((param)=>!param.hidden) ??
+    definition?.params.filter((param)=>!param.hidden&&!param.contextOnly&&rackParamIsVisible(param,definition.stateKeys,module.state,connectedInputIds)) ??
     module.params.map((value, id) => ({
       id,
       name: `PARAM ${id + 1}`,
@@ -214,7 +285,7 @@ export function ModulePanel({
     if(!param.position||!definition)return undefined;
     const position=param.position,size=rackParamControlSize(param),scale=module.width/definition.width,
       centerX=position.x+(position.centered?0:size.width/2),centerY=position.y+(position.centered?0:size.height/2);
-    return {left:`${centerX/definition.width*100}%`,top:`${centerY/380*100}%`,width:size.width*scale,height:size.height,transform:"translate(-50%, -50%)"} as CSSProperties;
+    return {left:`${centerX/definition.width*100}%`,top:`${centerY/380*100}%`,width:size.width*scale,height:size.height,zIndex:position.zIndex,transform:"translate(-50%, -50%)"} as CSSProperties;
   };
   const rackPortStyle=(port:PortSpec,direction:"in"|"out")=>{
     const position=resolvedModulePortPosition(module,direction,port.id,direction==="in"?inputs:outputs,definition?.width??module.width);
@@ -332,7 +403,6 @@ export function ModulePanel({
       {module.screenshotUrl ? (
         <>
           {/* The official Library raster is the canonical fully assembled module. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             className="pw-module-image"
             src={module.screenshotUrl}
@@ -360,8 +430,92 @@ export function ModulePanel({
           top={visual.y}
         />
       ))}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="octobir-display").map((visual,index)=>(
+        <RackOctobirDisplay
+          key={`octobir-display-${index}`}
+          values={scopeSamples?.[0]?.slice(visual.offset)}
+          filenames={[module.assets?.[0]?.name,module.assets?.[1]?.name]}
+          dynamic={(module.params[6]??0)>.5}
+          threshold={scopeSamples?.[0]?.[visual.offset+4]??module.params[8]??-30}
+          range={scopeSamples?.[0]?.[visual.offset+5]??module.params[9]??20}
+          scaleX={module.width/definition.width}
+          onLoad={(slot)=>{pendingAssetSlotRef.current=slot;assetInputRef.current?.click();}}
+        />
+      ))}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="rkd-dividers").map((visual,index)=>(
+        <RackRkdDividers key={`rkd-dividers-${index}`} values={scopeSamples?.[0]?.slice(visual.offset)} scaleX={module.width/definition.width}/>
+      ))}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="klokspid-dmd").map((visual,index)=>(
+        <RackKlokSpidDmd key={`klokspid-dmd-${index}`} values={scopeSamples?.[0]?.slice(visual.offset)} scaleX={module.width/definition.width}/>
+      ))}
       {definition?.runtime?.visuals?.filter(visual=>visual.kind==="multi-meter").map((visual,index)=><RackMultiMeterDisplay key={`multi-meter-${index}`} samples={scopeSamples} mode={module.params[visual.modeParam]??0} channelsMode={module.params[visual.channelsParam]??0} refs={module.params.slice(2,18)} x={visual.x*module.width/definition.width} y={visual.y} width={visual.width*module.width/definition.width} height={visual.height}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="spectrum-analyzer"||visual.kind==="spectrogram").map((visual,index)=><RackSpectrumDisplay key={`${visual.kind}-${index}`} kind={visual.kind} samples={scopeSamples} params={module.params} state={module.state} running={(renderedLightValues[0]??1)>.5} x={visual.x*module.width/definition.width} y={visual.y} width={visual.width*module.width/definition.width} height={visual.height}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="cella-frequency-analyzer").map((visual,index)=><CellaFrequencyAnalyzerDisplay key={`cella-frequency-analyzer-${index}`} samples={scopeSamples} params={module.params} state={module.state} x={visual.x*module.width/definition.width} y={visual.y} width={visual.width*module.width/definition.width} height={visual.height}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="cv-note").map((visual,index)=><RackCvNoteDisplay key={`cv-note-${index}`} samples={scopeSamples?.[0]} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="note-meter").map((visual,index)=><RackNoteMeterDisplay key={`note-meter-${index}`} samples={scopeSamples} params={module.params} x={visual.x} y={visual.y} width={visual.width} height={visual.height} rowHeight={visual.rowHeight} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="bpm-display").map((visual,index)=><RackBpmDisplay key={`bpm-display-${index}`} samples={scopeSamples?.[0]} params={module.params} styleParam={visual.styleParam} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="midi-log").map((visual,index)=><pre key={`midi-log-${index}`} className="pw-midi-log" aria-label="MIDI log" style={{left:visual.x*module.width/definition.width,top:visual.y,width:visual.width*module.width/definition.width,height:visual.height}}>{rackMidiLogText(scopeSamples?.[0],visual.rows,visual.columns)}</pre>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="light-matrix").map((visual,index)=><RackLightMatrixDisplay key={`light-matrix-${index}`} values={renderedLightValues} lightStart={visual.lightStart} columns={visual.columns} rows={visual.rows} channels={visual.channels} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="hex-looper").map((visual,index)=><RackHexLooperDisplay key={`hex-looper-${index}`} values={scopeSamples?.[0]} radius={visual.radius} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="wavetable-display").map((visual,index)=><RackWavetableDisplay key={`wavetable-display-${index}`} values={scopeSamples?.[0]} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="wolfram-display").map((visual,index)=><RackWolframDisplay key={`wolfram-display-${index}`} values={scopeSamples?.[0]} {...visual} scaleX={module.width/definition.width}/>)}
       {definition?.runtime?.visuals?.filter(visual=>visual.kind==="segment").map((visual,index)=><RackSegmentDisplay key={`segment-${index}`} value={module.params[visual.param]??0} values={visual.values} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="param-numeric-display").map((visual,index)=><RackParamNumericDisplay key={`param-numeric-display-${index}`} value={module.params[visual.param]??0} digits={visual.digits} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="elementary-ca").map((visual,index)=><RackElementaryCaDisplay key={`elementary-ca-${index}`} samples={scopeSamples} params={module.params} {...visual} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="piano-keyboard").map((visual,index)=><RackPianoKeyboard key={`piano-keyboard-${index}`} {...visual} values={renderedLightValues} scaleX={module.width/definition.width} onMomentary={onMomentary}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="four-view-display").map((visual,index)=><RackFourViewDisplay key={`four-view-display-${index}`} {...visual} values={scopeSamples?.[0]} params={module.params} state={module.state} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="note-echo-display").map((visual,index)=><RackNoteEchoDisplay key={`note-echo-display-${index}`} {...visual} params={module.params} wetOnly={(renderedLightValues[0]??0)>.5} notifiedParam={paramNotice?.id??null} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="note-loop-display").map((visual,index)=><RackNoteLoopDisplay key={`note-loop-display-${index}`} value={module.params[visual.param]??0} {...visual} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="phrase-seq-display").map((visual,index)=><RackPhraseSeqDisplay key={`phrase-seq-display-${index}`} values={scopeSamples?.[0]} {...visual} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="scribble-strip").map((visual,index)=>{
+        const text=String(rackData[visual.dataKey]??visual.defaultText),fromTop=Boolean(module.state?.[visual.orientationState]??definition.stateKeys?.[visual.orientationState]?.default??0);
+        return <div key={`scribble-strip-${index}`} className={`pw-scribble-strip-display ${fromTop?"from-top":"from-bottom"}`} aria-label={`ScribbleStrip label: ${text}`} style={{left:visual.x*module.width/definition.width,top:visual.y,width:visual.width*module.width/definition.width,height:visual.height}}><span>{text}</span></div>;
+      })}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="bouncy-balls").map((visual,index)=><RackBouncyBallsDisplay key={`bouncy-balls-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width} onState={onState} onMomentary={onMomentary}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="full-scope").map((visual,index)=><RackFullScopeDisplay key={`full-scope-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="madzine-scope").map((visual,index)=><RackMadzineScopeDisplay key={`madzine-scope-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="madzine-waveform").map((visual,index)=><RackMadzineWaveformDisplay key={`madzine-waveform-${index}`} {...visual} values={scopeSamples?.[0]} loopEnd={module.params[visual.loopEndParam]??definition.params[visual.loopEndParam]?.default??1} scaleX={module.width/definition.width} onLoopEnd={value=>updateParam(visual.loopEndParam,value)} onLoopEndReset={()=>onParamReset(visual.loopEndParam,definition.params[visual.loopEndParam]?.default??1)}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="universal-rhythm").map((visual,index)=><RackUniversalRhythmDisplay key={`universal-rhythm-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="song-mode-sequence").map((visual,index)=>(
+        <input
+          key={`song-mode-sequence-${index}`}
+          className="pw-song-mode-sequence"
+          aria-label="Playback sequence"
+          type="text"
+          spellCheck={false}
+          value={String(rackData[visual.dataKey]??visual.defaultText)}
+          style={{left:visual.x*module.width/definition.width,top:visual.y,width:visual.width*module.width/definition.width,height:visual.height}}
+          onPointerDown={(event)=>event.stopPropagation()}
+          onDoubleClick={(event)=>event.stopPropagation()}
+          onKeyDown={(event)=>event.stopPropagation()}
+          onKeyUp={(event)=>event.stopPropagation()}
+          onChange={(event)=>onData({[visual.dataKey]:event.target.value})}
+        />
+      ))}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="madzine-launchpad").map((visual,index)=><RackMadzineLaunchpad key={`madzine-launchpad-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width} onMomentary={onMomentary}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="the-kick-sample").map((visual,index)=><RackTheKickSample key={`the-kick-sample-${index}`} {...visual} scaleX={module.width/definition.width} loaded={Boolean(selectedAsset)||Boolean(rackData.hasSample)} mode={Number(module.state?.[2]??rackData.modeValue??0)} filename={selectedAsset?.name??String(rackData.samplePath??"Sample")} onLoad={()=>assetInputRef.current?.click()} onMomentary={onMomentary}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="madzine-manual").map((visual,index)=><RackMadzineManual key={`madzine-manual-${index}`} {...visual} help={definition.runtime?.manualHelp??{}} target={manualHelpTarget} languageValue={Number(rackData.language??1)} fontSizeValue={Number(rackData.fontSize??20)} scaleX={module.width/definition.width} onData={onData}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="ml-arpeggiator").map((visual,index)=><RackMlArpeggiatorDisplay key={`ml-arpeggiator-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="corrupter-display").map((visual,index)=><RackCorrupterDisplay key={`corrupter-display-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="tapestry-display").map((visual,index)=><RackTapestryDisplay key={`tapestry-display-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width} onMomentary={onMomentary}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="xy-pad").map((visual,index)=><RackXYPadDisplay key={`xy-pad-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width} onParam={updateParam} onMomentary={onMomentary}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="wavetable-editor").map((visual,index)=><RackWavetableEditor key={`wavetable-editor-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width} onMomentary={onMomentary}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="racknes-screen").map((visual,index)=><RackNesScreenDisplay key={`racknes-screen-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="speck-spectrum").map((visual,index)=><RackSpeckSpectrumDisplay key={`speck-spectrum-${index}`} {...visual} values={scopeSamples?.[0]} params={module.params} linLog={(renderedLightValues[1]??0)>.5} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="integral-flux-preview").map((visual,index)=><RackIntegralFluxPreview key={`integral-flux-preview-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="proc-preview").map((visual,index)=><RackIntegralFluxPreview key={`proc-preview-${index}`} {...visual} channel={1} label="Proc" values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="temporal-deck").map((visual,index)=><RackTemporalDeckDisplay key={`temporal-deck-${index}`} {...visual} values={scopeSamples?.[0]} lights={renderedLightValues} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="td-scope").map((visual,index)=><RackTdScopeDisplay key={`td-scope-${index}`} {...visual} values={scopeSamples?.[0]} state={module.state} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="undertow-preview").map((visual,index)=><RackUndertowPreview key={`undertow-preview-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="lomas-sampler").map((visual,index)=><RackLomasSamplerDisplay key={`lomas-sampler-${index}`} {...visual} values={scopeSamples?.[0]} scaleX={module.width/definition.width}/>)}
+      {definition?.runtime?.visuals?.filter(visual=>visual.kind==="less-mess-labels").map((visual,index)=>(
+        <div key={`less-mess-labels-${index}`} className="pw-less-mess-labels" style={{left:visual.x*module.width/definition.width,top:visual.y,width:visual.width*module.width/definition.width}}>
+          {Array.from({length:visual.rows},(_,row)=>{
+            const key=`${visual.dataKeyPrefix}${row}`;
+            return <input key={key} aria-label={`Cable label ${row+1}`} type="text" value={String(rackData[key]??"")} style={{top:row*visual.rowHeight,height:visual.height}} onPointerDown={(event)=>event.stopPropagation()} onDoubleClick={(event)=>event.stopPropagation()} onChange={(event)=>onData({[key]:event.target.value})}/>;
+          })}
+        </div>
+      ))}
       {definition?.runtime?.visuals?.filter(visual=>visual.kind==="audio-display").map((visual,index)=><RackAudioDisplay key={`audio-display-${index}`} audio={audioData} running={audioRunning} channels={visual.channels} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
       {definition?.lightWidgets?.map((light)=><RackLightVisual key={`light-${light.id}`} light={light} values={renderedLightValues} moduleWidth={module.width} sourceWidth={module.width} param={light.paramId===undefined?undefined:definition.params.find(param=>param.id===light.paramId)} paramValue={light.paramId===undefined?undefined:module.params[light.paramId]}/>)}
       {hasParamSourceLayout&&definition&&panelParams.map(param=><RackParamVisual key={`visual-${param.id}`} param={param} value={module.params[param.id]??param.default} moduleWidth={module.width} sourceWidth={module.width}/>)}
@@ -392,7 +546,17 @@ export function ModulePanel({
               onChange={(event) => onData({ text: event.target.value })}
             />
           ) : panelParams.map((param) => {
-            const interaction=rackParamInteraction(param),label=`${module.model} ${param.name}`;
+            const interaction=rackParamInteraction(param),label=`${module.model} ${param.name}`,
+              resetParam=()=>window.requestAnimationFrame(()=>onParamReset(param.id,rackParamResetValue(param,module.params))),
+              opensAssetPicker=Boolean(definition?.runtime?.asset&&param.position?.widget==="LoadButton"),
+              queueAssetPicker=()=>{
+                if(!opensAssetPicker||suppressAssetPickerRef.current)return;
+                if(assetPickerTimerRef.current!==null)window.clearTimeout(assetPickerTimerRef.current);
+                assetPickerTimerRef.current=window.setTimeout(()=>{
+                  assetPickerTimerRef.current=null;
+                  assetInputRef.current?.click();
+                },220);
+              };
             return <label
               key={param.id}
               className={`rack-control-${interaction} ${param.position?.control === "selector" ? "rack-selector" : ""}`}
@@ -405,48 +569,86 @@ export function ModulePanel({
                 className="pw-param-button"
                 aria-label={label}
                 onPointerDown={(event)=>{
+                  if(event.button>0)return;
                   event.preventDefault();event.stopPropagation();
+                  const press=registerRackParamPress(lastParamPressRef.current,param.id,event.pointerType,performance.now());
+                  lastParamPressRef.current=press.next;
+                  if(event.detail>1||press.doubleClick){
+                    if(assetPickerTimerRef.current!==null){window.clearTimeout(assetPickerTimerRef.current);assetPickerTimerRef.current=null;}
+                    suppressAssetPickerRef.current=true;
+                    onMomentary(param.id,false);
+                    resetParam();
+                    return;
+                  }
+                  suppressAssetPickerRef.current=false;
                   event.currentTarget.setPointerCapture(event.pointerId);onParamHover(param.id);onMomentary(param.id,true);
                 }}
                 onPointerUp={(event)=>{
                   if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
                   onMomentary(param.id,false);
+                  queueAssetPicker();
+                  suppressAssetPickerRef.current=false;
                 }}
-                onPointerCancel={()=>onMomentary(param.id,false)}
+                onPointerCancel={()=>{suppressAssetPickerRef.current=false;onMomentary(param.id,false);}}
                 onKeyDown={(event)=>{if((event.key===" "||event.key==="Enter")&&!event.repeat){event.preventDefault();onMomentary(param.id,true);}}}
-                onKeyUp={(event)=>{if(event.key===" "||event.key==="Enter"){event.preventDefault();onMomentary(param.id,false);}}}
+                onKeyUp={(event)=>{if(event.key===" "||event.key==="Enter"){event.preventDefault();onMomentary(param.id,false);if(opensAssetPicker)assetInputRef.current?.click();}}}
+                onDoubleClick={(event)=>{event.preventDefault();event.stopPropagation();if(assetPickerTimerRef.current!==null){window.clearTimeout(assetPickerTimerRef.current);assetPickerTimerRef.current=null;}suppressAssetPickerRef.current=true;onMomentary(param.id,false);resetParam();}}
                 onBlur={()=>{onParamHover(null);onMomentary(param.id,false);}}
               >{param.name}</button> : interaction==="switch" ? <button
                 type="button"
                 className="pw-param-switch"
                 aria-label={`${label}: ${module.params[param.id]??param.default}`}
-                onPointerDown={(event)=>event.stopPropagation()}
-                onClick={()=>{
+                onPointerDown={(event)=>{
+                  if(event.button>0)return;
+                  event.stopPropagation();
+                  const press=registerRackParamPress(lastParamPressRef.current,param.id,event.pointerType,performance.now());
+                  lastParamPressRef.current=press.next;
+                  if(event.detail>1||press.doubleClick){
+                    event.preventDefault();
+                    resetParam();
+                  }
+                }}
+                onDoubleClick={(event)=>{event.preventDefault();event.stopPropagation();resetParam();}}
+                onClick={(event)=>{
+                  if(event.detail>1)return;
                   const frames=rackParamSwitchFrames(param),current=module.params[param.id]??param.default,
                     normalized=param.max===param.min?0:(current-param.min)/(param.max-param.min),
                     nextFrame=(Math.round(normalized*(frames-1))+1)%frames;
-                  onParam(param.id,param.min+nextFrame/(frames-1)*(param.max-param.min));
+                  updateParam(param.id,param.min+nextFrame/(frames-1)*(param.max-param.min));
                 }}
               >{param.name}</button> : <input
                 aria-label={label}
                 type="range"
-                min={param.min}
-                max={param.max}
+                min={Math.min(param.min,param.max)}
+                max={Math.max(param.min,param.max)}
                 step={param.snap?1:"any"}
                 value={module.params[param.id]??param.default}
                 onPointerDown={(event)=>{
-                  if(event.button!==0)return;
+                  if(event.button>0)return;
                   event.preventDefault();event.stopPropagation();
-                  const press=registerRackParamPress(lastParamPressRef.current,param.id,event.pointerType,event.timeStamp);
+                  const press=registerRackParamPress(lastParamPressRef.current,param.id,event.pointerType,performance.now());
                   lastParamPressRef.current=press.next;
-                  if(press.doubleClick){
+                  if(event.detail>1||press.doubleClick){
                     paramDragRef.current=null;
-                    onParam(param.id,param.default);
+                    resetParam();
                     return;
                   }
                   const axis=interaction==="selector"?"x":"y",startCoordinate=axis==="x"?event.clientX:event.clientY;
-                  paramDragRef.current={pointerId:event.pointerId,paramId:param.id,startCoordinate,startValue:module.params[param.id]??param.default,min:param.min,max:param.max,snap:Boolean(param.snap),axis};
+                  paramDragRef.current={pointerId:event.pointerId,paramId:param.id,startCoordinate,startValue:module.params[param.id]??param.default,min:param.min,max:param.max,snap:Boolean(param.snap),unbounded:Boolean(param.unbounded),axis};
                   event.currentTarget.setPointerCapture(event.pointerId);onParamHover(param.id);
+                }}
+                onMouseDown={(event)=>{
+                  if(event.button>0)return;
+                  // A real mouse press dispatches pointerdown before its compatibility
+                  // mousedown. The pointer handler already owns this drag, so do not
+                  // register the same press twice and accidentally classify it as a
+                  // double-click/reset.
+                  if(paramDragRef.current?.paramId===param.id)return;
+                  const press=registerRackParamPress(lastParamPressRef.current,param.id,"mouse",performance.now());
+                  lastParamPressRef.current=press.next;
+                  if(event.detail>1||press.doubleClick){
+                    event.preventDefault();event.stopPropagation();paramDragRef.current=null;resetParam();
+                  }
                 }}
                 onPointerMove={(event)=>{
                   const drag=paramDragRef.current;
@@ -454,8 +656,9 @@ export function ModulePanel({
                   event.preventDefault();
                   const coordinate=drag.axis==="x"?event.clientX:event.clientY,direction=drag.axis==="x"?1:-1,sensitivity=event.shiftKey?600:140,
                     raw=drag.startValue+(coordinate-drag.startCoordinate)*direction*(drag.max-drag.min)/sensitivity,
-                    next=Math.min(drag.max,Math.max(drag.min,drag.snap?Math.round(raw):raw));
-                  onParam(param.id,next);
+                    stepped=drag.snap?Math.round(raw):raw,
+                    next=drag.unbounded?stepped:Math.min(Math.max(drag.min,drag.max),Math.max(Math.min(drag.min,drag.max),stepped));
+                  updateParam(param.id,next);
                 }}
                 onPointerUp={(event)=>{
                   const drag=paramDragRef.current;
@@ -468,19 +671,47 @@ export function ModulePanel({
                 onPointerLeave={()=>onParamHover(null)}
                 onFocus={()=>onParamHover(param.id)}
                 onBlur={()=>onParamHover(null)}
+                onDoubleClick={(event)=>{event.preventDefault();event.stopPropagation();paramDragRef.current=null;resetParam();}}
                 onKeyDown={(event)=>{
                   const current=module.params[param.id]??param.default;
-                  if(event.key==="Home"||event.key==="End"){event.preventDefault();onParam(param.id,event.key==="Home"?param.min:param.max);return;}
+                  if(event.key==="Home"||event.key==="End"){event.preventDefault();updateParam(param.id,event.key==="Home"?param.min:param.max);return;}
                   const direction=event.key==="ArrowLeft"||event.key==="ArrowDown"?-1:event.key==="ArrowRight"||event.key==="ArrowUp"?1:0;
                   if(!direction)return;
                   event.preventDefault();
                   const increment=param.snap?1:(param.max-param.min)/(event.shiftKey?1000:100);
-                  onParam(param.id,Math.min(param.max,Math.max(param.min,current+direction*increment)));
+                  const next=current+direction*increment;
+                  updateParam(param.id,param.unbounded?next:Math.min(Math.max(param.min,param.max),Math.max(Math.min(param.min,param.max),next)));
                 }}
-                onChange={(event)=>onParam(param.id,Number(event.target.value))}
+                onChange={(event)=>updateParam(param.id,Number(event.target.value))}
               />}
             </label>;
           })}
+          {module.key === "FrankBuss/Formula" && (
+            <div className="pw-formula-editors">
+              <textarea
+                aria-label="Formula output expression"
+                spellCheck={false}
+                value={String(
+                  module.rack?.data && typeof module.rack.data === "object"
+                    ? (module.rack.data as Record<string, unknown>).text ?? ""
+                    : "",
+                )}
+                onPointerDown={(event) => event.stopPropagation()}
+                onChange={(event) => onData({ text: event.target.value })}
+              />
+              <input
+                aria-label="Formula frequency expression"
+                spellCheck={false}
+                value={String(
+                  module.rack?.data && typeof module.rack.data === "object"
+                    ? (module.rack.data as Record<string, unknown>).freq ?? ""
+                    : "",
+                )}
+                onPointerDown={(event) => event.stopPropagation()}
+                onChange={(event) => onData({ freq: event.target.value })}
+              />
+            </div>
+          )}
           {module.key === "Stoermelder-P1/Stroke" && (
             <div className="pw-stroke-map">
               {Array.from({ length: 10 }, (_, slot) => {
@@ -560,31 +791,46 @@ export function ModulePanel({
           <button type="submit" disabled={!assetUrl.trim()}>Load URL</button>
           {urlStatus&&<small title={urlStatus}>{urlStatus}</small>}
         </form>}
-        <label className={`pw-sample-load ${definition.runtime.asset.url?"with-url":""}`}>
+        <label className={`pw-sample-load ${definition.runtime.asset.url?"with-url":""} ${definition.runtime.visuals?.some(visual=>visual.kind==="octobir-display")?"input-only":""}`}>
           <input
+            ref={assetInputRef}
             aria-label={`${module.model} ${definition.runtime.asset.type} asset`}
             type="file"
-            accept={definition.runtime.asset.type === "image" ? "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" : "audio/*,.wav,.aif,.aiff,.mp3,.m4a,.ogg,.flac"}
+            accept={definition.runtime.asset.type === "image" ? "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" : definition.runtime.asset.type === "binary" ? ".nes,application/octet-stream" : definition.runtime.asset.type === "midi" ? "audio/midi,audio/x-midi,.mid,.midi" : definition.runtime.asset.type === "script" ? "text/plain,text/x-lua,.lua,.luna,.lunaire,.anair" : "audio/*,.wav,.aif,.aiff,.mp3,.m4a,.ogg,.flac"}
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) onSample(file, assetSlot);
+              const targetSlot=pendingAssetSlotRef.current??assetSlot;
+              pendingAssetSlotRef.current=null;
+              if (file) onSample(file, targetSlot);
               event.target.value = "";
             }}
           />
-          <b>{selectedAsset ? `${assetSlots>1?`Channel ${assetSlot+1} · `:""}${selectedAsset.name}` : `${assetSlots>1?`Channel ${assetSlot+1} · `:""}${definition.runtime.asset.type === "image" ? "Load image" : "Load audio sample"}`}</b>
+          <b>{selectedAsset ? `${assetSlots>1?`Channel ${assetSlot+1} · `:""}${selectedAsset.name}` : `${assetSlots>1?`Channel ${assetSlot+1} · `:""}${definition.runtime.asset.type === "image" ? "Load image" : definition.runtime.asset.type === "binary" ? "Load NES ROM" : definition.runtime.asset.type === "midi" ? "Load MIDI file" : definition.runtime.asset.type === "script" ? "Load Lua script" : "Load audio sample"}`}</b>
           <small>
             {selectedAsset
               ? definition.runtime.asset.type === "image"
                 ? `${selectedAsset.sampleRate}×${Math.floor(selectedAsset.frames / selectedAsset.sampleRate)} RGBA`
-                : `${(selectedAsset.frames / selectedAsset.sampleRate).toFixed(1)}s · ${selectedAsset.channels === 2 ? "stereo" : "mono"}`
+                : definition.runtime.asset.type === "binary" || definition.runtime.asset.type === "midi" || definition.runtime.asset.type === "script"
+                  ? `${selectedAsset.frames.toLocaleString()} bytes · stored locally`
+                : definition.runtime.asset.maxSeconds > 0
+                  ? `${(selectedAsset.frames / selectedAsset.sampleRate).toFixed(1)}s · ${selectedAsset.channels === 2 ? "stereo" : "mono"}`
+                  : `${selectedAsset.frames.toLocaleString()} samples · ${selectedAsset.channels === 2 ? "stereo" : "mono"}`
               : definition.runtime.asset.type === "image"
                 ? "PNG, JPEG or WebP · decoded locally"
-                : `WAV, MP3, AIFF, M4A, OGG or FLAC · first ${definition.runtime.asset.maxSeconds}s`}
+                : definition.runtime.asset.type === "binary"
+                  ? `iNES .nes file · up to ${definition.runtime.asset.maxSamples.toLocaleString()} bytes`
+                : definition.runtime.asset.type === "midi"
+                  ? `Standard MIDI File · up to ${definition.runtime.asset.maxSamples.toLocaleString()} bytes`
+                : definition.runtime.asset.type === "script"
+                  ? `UTF-8 Lua script · up to ${definition.runtime.asset.maxSamples.toLocaleString()} bytes`
+                : definition.runtime.asset.maxSeconds > 0
+                  ? `WAV, MP3, AIFF, M4A, OGG or FLAC · first ${definition.runtime.asset.maxSeconds}s`
+                  : `WAV, MP3, AIFF, M4A, OGG or FLAC · up to ${definition.runtime.asset.maxSamples.toLocaleString()} samples`}
           </small>
         </label>
         </>
       )}
-      {definition?.runtime?.capture && (
+      {definition?.runtime?.capture && definition.runtime.capture.panelControlParam===undefined && (
         <button
           type="button"
           className={`pw-record ${recording ? "active" : ""}`}
@@ -592,7 +838,7 @@ export function ModulePanel({
           onClick={onCapture}
         >
           <i />
-          <span>{recording ? "Stop & download WAV" : "Record WAV"}</span>
+          <span>{recording ? `Stop & download ${definition.runtime.capture.format.toUpperCase()}` : `Record ${definition.runtime.capture.format.toUpperCase()}`}</span>
         </button>
       )}
       <div
@@ -638,6 +884,8 @@ export function ModulePanel({
               })
             }
             onDragEnd={onPortDragEnd}
+            onPointerEnter={()=>onPortHover("in",port.id)}
+            onPointerLeave={()=>onPortHover("in",null)}
           >
             <i />
             <span>{port.name}</span>
@@ -687,6 +935,8 @@ export function ModulePanel({
               })
             }
             onDragEnd={onPortDragEnd}
+            onPointerEnter={()=>onPortHover("out",port.id)}
+            onPointerLeave={()=>onPortHover("out",null)}
           >
             <i />
             <span>{port.name}</span>

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef } from "react";
 import segmentFontUrl from "../assets/fonts/braids-segment14/Segment14.ttf?url";
 

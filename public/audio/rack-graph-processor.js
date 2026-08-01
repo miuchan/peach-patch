@@ -5,6 +5,9 @@ function rackWebWasiImports(holder) {
   const unsupported = () => -52;
   return {
     env: {
+      emscripten_notify_memory_growth() {},
+      _emscripten_system: unsupported,
+      getnameinfo: unsupported, getaddrinfo: unsupported,
       __syscall_faccessat: missing, __syscall_fchmod: unsupported,
       __syscall_chmod: unsupported, __syscall_fchown32: unsupported,
       __syscall_ftruncate64: unsupported, __syscall_getdents64: missing,
@@ -14,8 +17,14 @@ function rackWebWasiImports(holder) {
       },
       __syscall_readlinkat: missing, __syscall_rmdir: missing,
       __syscall_unlinkat: missing, __syscall_utimensat: unsupported,
+      __syscall_bind: unsupported, __syscall_connect: unsupported,
+      _emscripten_lookup_name: unsupported, __syscall_getsockname: unsupported,
+      __syscall_recvfrom: unsupported, __syscall_sendto: unsupported,
+      __syscall_setsockopt: unsupported, __syscall_shutdown: unsupported,
+      __syscall_socket: unsupported,
     },
     wasi_snapshot_preview1: {
+      proc_exit() {},
       fd_write(_fd, iovecs, iovecCount, written) {
         const data = view(); if (!data) return 0; let bytes = 0;
         for (let index = 0; index < iovecCount; index++) bytes += data.getUint32(iovecs + index * 8 + 4, true);
@@ -119,6 +128,46 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         else {
           const boundary = this.audioBoundaries.get(data.moduleId);
           if (boundary) boundary.params[data.id] = data.value;
+        }
+      } else if (data.type === "reset-param") {
+        const rackModule = this.modules.get(data.moduleId),
+          id = Number(data.id),
+          value = Number(data.value);
+        if (
+          rackModule &&
+          Number.isInteger(id) &&
+          id >= 0 &&
+          id < rackModule.params.length &&
+          Number.isFinite(value)
+        ) {
+          rackModule.params[id] = value;
+          if (rackModule.runtime.rack_web_reset_param)
+            rackModule.runtime.rack_web_reset_param(id, value);
+          else rackModule.runtime.rack_web_set_param(id, value);
+        } else {
+          const boundary = this.audioBoundaries.get(data.moduleId);
+          if (
+            boundary &&
+            Number.isInteger(id) &&
+            id >= 0 &&
+            id < boundary.params.length &&
+            Number.isFinite(value)
+          )
+            boundary.params[id] = value;
+        }
+      } else if (data.type === "momentary-param") {
+        const rackModule = this.modules.get(data.moduleId),
+          id = Number(data.id);
+        if (
+          rackModule &&
+          Number.isInteger(id) &&
+          id >= 0 &&
+          id < rackModule.params.length
+        ) {
+          if (data.active) {
+            rackModule.params[id] = 1;
+            rackModule.momentaryReleases.delete(id);
+          } else rackModule.momentaryReleases.add(id);
         }
       } else if (data.type === "state") {
         const rackModule = this.modules.get(data.moduleId);
@@ -334,6 +383,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         key: item.key || "",
         runtime,
         params: item.params || [],
+        momentaryReleases: new Set(),
         bypassed: Boolean(item.bypassed),
         bypassRoutes: item.bypassRoutes || [],
         x: Number(item.x) || 0,
@@ -342,7 +392,10 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         rackId: Number(item.rackId ?? -1),
         snapParams: item.snapParams || [],
         expander: item.expander || null,
+        hostControl: item.hostControl || null,
+        hostControlState: null,
         visuals: item.visuals || [],
+        captureFormat: item.capture?.format === "midi" ? "midi" : "wav",
         outputConnections: item.outputConnections || [],
         expanderCapacity,
         messageCapacity: runtime.rack_web_message_capacity?.() || 0,
@@ -603,9 +656,20 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           Math.abs(candidate.x - (left.x + left.width)) <= 2,
       );
       if (!right) continue;
-      const messageContract =
-        left.expander?.transport === "message-buffer" ||
-        right.expander?.transport === "message-buffer";
+      const modelIndex = (module, neighbor) =>
+          module.expander?.transport === "message-buffer"
+            ? module.expander.models?.find((model) => model.key === neighbor.key)
+                ?.index ?? -1
+            : -1,
+        rootId = this.messageOwners.get(left.id) || left.id,
+        root = this.modules.get(rootId),
+        leftModelIndex = modelIndex(left, right),
+        rightModelIndex = modelIndex(right, left),
+        rootModelIndex = root && root !== left ? modelIndex(root, right) : -1,
+        messageContract =
+          leftModelIndex >= 0 ||
+          rightModelIndex >= 0 ||
+          rootModelIndex >= 0;
       if (
         !messageContract ||
         !left.messageCapacity ||
@@ -614,24 +678,18 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         !right.runtime.rack_web_set_message_neighbor
       )
         continue;
-      const modelIndex = (module, neighbor) =>
-        module.expander?.transport === "message-buffer"
-          ? module.expander.models?.find((model) => model.key === neighbor.key)
-              ?.index ?? -1
-          : -1;
       left.runtime.rack_web_set_message_neighbor(
         1,
-        modelIndex(left, right),
+        leftModelIndex,
         1,
       );
       right.runtime.rack_web_set_message_neighbor(
         0,
-        modelIndex(right, left),
+        rightModelIndex,
         1,
       );
       claimedRight.add(right.id);
-      const rootId = this.messageOwners.get(left.id) || left.id,
-        group = this.messageGroups.get(rootId) || [this.modules.get(rootId)];
+      const group = this.messageGroups.get(rootId) || [root];
       this.messageOwners.set(right.id, rootId);
       if (!group.some((module) => module.id === right.id)) group.push(right);
       this.messageGroups.set(rootId, group);
@@ -972,6 +1030,10 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           channel,
         );
     }
+    if (neighbor.lights && module.runtime.rack_web_get_neighbor_light_brightness)
+      for (let id = 0; id < neighbor.lightCount; id++)
+        neighbor.lights[id] =
+          module.runtime.rack_web_get_neighbor_light_brightness(side, id);
   }
 
   syncChainNeighborSnapshot(module, side, index, neighbor, frame) {
@@ -1040,6 +1102,17 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           channel,
         );
     }
+    if (
+      neighbor.lights &&
+      runtime.rack_web_get_chain_neighbor_light_brightness
+    )
+      for (let id = 0; id < neighbor.lightCount; id++)
+        neighbor.lights[id] =
+          runtime.rack_web_get_chain_neighbor_light_brightness(
+            side,
+            index,
+            id,
+          );
   }
 
   emitCaptureChunk(rackModule) {
@@ -1056,6 +1129,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         sampleRate,
         frames: rackModule.captureFrames,
         samples,
+        format: rackModule.captureFormat,
       },
       [samples.buffer],
     );
@@ -1087,7 +1161,16 @@ class RackGraphProcessor extends AudioWorkletProcessor {
 
   finishCapture(rackModule) {
     if (!rackModule.captureCapacity) return;
-    rackModule.runtime.rack_web_set_capture_enabled?.(0);
+    const runtime=rackModule.runtime;
+    runtime.rack_web_set_capture_enabled?.(0);
+    const channels=Math.max(1,Math.min(2,Number(runtime.rack_web_capture_channels?.())||1)),
+      available=Math.min(rackModule.captureCapacity,Math.max(0,Number(runtime.rack_web_capture_frames?.())||0));
+    if(available){
+      const pointer=Number(runtime.rack_web_capture_buffer?.())||0,
+        samples=new Float32Array(runtime.memory.buffer,pointer,available*channels);
+      this.appendCapture(rackModule,samples,available,channels);
+      runtime.rack_web_capture_consume?.(available);
+    }
     this.emitCaptureChunk(rackModule);
     if (rackModule.captureActive) {
       rackModule.captureActive = false;
@@ -1096,6 +1179,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         moduleId: rackModule.id,
         channels: rackModule.captureChannels || 1,
         sampleRate,
+        format: rackModule.captureFormat,
       });
     }
   }
@@ -1122,6 +1206,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           moduleId: rackModule.id,
           channels,
           sampleRate,
+          format: rackModule.captureFormat,
         });
       }
       if (available) {
@@ -1286,6 +1371,18 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     const scopes = {}, lights = {};
     for (const rackModule of this.modules.values()) for(const visual of rackModule.visuals||[]) {
       if(scopes[rackModule.id])continue;
+      if(visual.kind==="racknes-screen"){
+        rackModule.rackNesVisualTick=(rackModule.rackNesVisualTick||0)+1;
+        if(rackModule.rackNesVisualTick%4!==1)continue;
+        const count=rackModule.runtime.rack_web_visual_count?.()||0,pointer=count?rackModule.runtime.rack_web_visual_buffer?.()||0:0;
+        scopes[rackModule.id]=[pointer?Array.from(new Float32Array(rackModule.runtime.memory.buffer,pointer,count),value=>Number.isFinite(value)?value:0):[]];
+        continue;
+      }
+      if(visual.kind==="hex-looper"||visual.kind==="wavetable-display"||visual.kind==="four-view-display"||visual.kind==="phrase-seq-display"||visual.kind==="bouncy-balls"||visual.kind==="full-scope"||visual.kind==="madzine-scope"||visual.kind==="madzine-waveform"||visual.kind==="universal-rhythm"||visual.kind==="madzine-launchpad"||visual.kind==="ml-arpeggiator"||visual.kind==="corrupter-display"||visual.kind==="tapestry-display"||visual.kind==="xy-pad"||visual.kind==="wavetable-editor"||visual.kind==="speck-spectrum"||visual.kind==="td-scope"||visual.kind==="undertow-preview"||visual.kind==="octobir-display"||visual.kind==="rkd-dividers"||visual.kind==="klokspid-dmd"){
+        const count=rackModule.runtime.rack_web_visual_count?.()||0,pointer=count?rackModule.runtime.rack_web_visual_buffer?.()||0:0;
+        scopes[rackModule.id]=[pointer?Array.from(new Float32Array(rackModule.runtime.memory.buffer,pointer,count),value=>Number.isFinite(value)?value:0):[]];
+        continue;
+      }
       if(visual.kind==="multi-meter") {
         const [leftPort,rightPort,multiPort]=visual.inputs||[0,1,2],multiChannels=rackModule.inputChannels[multiPort]||0;
         scopes[rackModule.id]=Array.from({length:16},(_,channel)=>Array.from({length:64},(_,index)=>{
@@ -1295,11 +1392,22 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         }));
         continue;
       }
-      if(visual.kind!=="scope")continue;
+      if(visual.kind==="note-meter"){
+        const readings=Array.from({length:16},()=>[]);
+        for(const port of visual.inputs||[]){
+          const channels=Math.max(0,rackModule.inputChannels[port]||0);
+          for(let channel=0;channel<channels&&port+channel<readings.length;channel++)
+            readings[port+channel]=[rackModule.inputs[(channel*rackModule.inputCount+port)*128+Math.max(0,frames-1)]||0];
+        }
+        scopes[rackModule.id]=readings;
+        continue;
+      }
+      if(!["scope","spectrum-analyzer","cella-frequency-analyzer","spectrogram","cv-note","bpm-display","elementary-ca"].includes(visual.kind))continue;
       scopes[rackModule.id] = (visual.inputs||[]).map((port) =>
-        Array.from({ length: 64 }, (_, index) => {
-          if (port >= rackModule.inputCount || !rackModule.inputChannels[port]) return 0;
-          return rackModule.inputs[port * 128 + Math.min(frames - 1, index * 2)] || 0;
+        Array.from({ length: visual.kind==="cv-note"||visual.kind==="bpm-display"||visual.kind==="elementary-ca"?1:visual.kind==="scope"?64:128 }, (_, index) => {
+          if (port >= rackModule.inputCount || !rackModule.inputChannels[port]) return visual.kind==="elementary-ca"?Number.NaN:0;
+          const frame=visual.kind==="cv-note"||visual.kind==="bpm-display"||visual.kind==="elementary-ca"?Math.max(0,frames-1):visual.kind==="scope"?Math.min(frames-1,index*2):Math.min(frames-1,index);
+          return rackModule.inputs[port * 128 + frame] || 0;
         }),
       );
     }
@@ -1309,7 +1417,38 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           rackModule.lights,
           (brightness) => Number.isFinite(brightness) ? brightness : 0,
         );
-    this.port.postMessage({ type: "visual-signals", cables, plugs, scopes, lights });
+    this.port.postMessage({ type: "visual-signals", cables, plugs, scopes, lights, hostControl:this.rackViewHostControl(frames) });
+  }
+
+  rackViewHostControl(frames) {
+    const rackModule=[...this.modules.values()].find(module=>module.hostControl==="rack-view");
+    if(!rackModule)return null;
+    const connected=id=>Boolean(rackModule.inputChannels[id]),
+      voltage=id=>connected(id)?Number(rackModule.inputs[id*128+Math.max(0,frames-1)])||0:0,
+      previous=rackModule.hostControlState||{gates:[false,false,false,false],active:[false,false,false,false,false],values:[0,0,0,0,0]},
+      gates=[0,1,2,3].map(id=>connected(id)&&voltage(id)>=1),
+      jumps=gates.map((high,id)=>high&&!previous.gates[id]),
+      continuous=[4,5,6,7,8],
+      values=continuous.map(voltage),
+      changed=continuous.map((id,index)=>connected(id)&&previous.active[index]&&Math.abs(values[index]-previous.values[index])>1e-6),
+      active=continuous.map(connected);
+    rackModule.hostControlState={gates,active,values};
+    return{
+      moduleId:rackModule.id,
+      jumpUp:jumps[0],jumpDown:jumps[1],jumpLeft:jumps[2],jumpRight:jumps[3],
+      ...(changed[0]?{x:Math.max(0,Math.min(1,values[0]/10))}:{}),
+      ...(changed[1]?{y:Math.max(0,Math.min(1,values[1]/10))}:{}),
+      ...(changed[2]?{zoom:Math.pow(2,Math.max(-2,Math.min(2,values[2]/2.5-2)))}:{}),
+      ...(changed[3]?{opacity:Math.max(0,Math.min(1,values[3]/10))}:{}),
+      ...(changed[4]?{tension:Math.max(0,Math.min(1,values[4]/10))}:{}),
+      padding:Number(rackModule.params[0])||0,
+      xStep:Number(rackModule.params[1])||0,
+      yStep:Number(rackModule.params[2])||0,
+      lockX:Number(rackModule.params[3])>=.5,
+      lockY:Number(rackModule.params[4])>=.5,
+      upConnected:connected(0),downConnected:connected(1),leftConnected:connected(2),rightConnected:connected(3),
+      xConnected:connected(4),yConnected:connected(5)
+    }
   }
 
   processMessageGroup(group, frames, frameOffset = 0) {
@@ -1567,9 +1706,14 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     }
     this.drainCaptures();
     this.drainMidiOutputs();
-    this.emitMonitoredPortPeaks(frames);
-    this.emitVisualSignals(frames);
-    return true;
+      this.emitMonitoredPortPeaks(frames);
+      this.emitVisualSignals(frames);
+      for (const rackModule of this.modules.values())
+        for (const id of rackModule.momentaryReleases) {
+          rackModule.params[id] = 0;
+          rackModule.momentaryReleases.delete(id);
+        }
+      return true;
   }
 }
 

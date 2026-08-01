@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo } from "react";
 import rackMonoUrl from "../../Rack/res/fonts/ShareTechMono-Regular.ttf?url";
 

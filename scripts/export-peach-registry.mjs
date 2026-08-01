@@ -11,6 +11,7 @@ const argument = (name, fallback) => {
   return index >= 0 ? process.argv[index + 1] : fallback;
 };
 const outputDir = path.resolve(argument("--output", path.join(projectDir, "..", "peach-patch-registry")));
+const targetKey = argument("--key", null);
 const marker = path.join(outputDir, ".peach-registry");
 const packagesDir = path.join(outputDir, "packages");
 const dynamicCatalogPath = path.join(projectDir, "public", "dynamic-plugins", "catalog.json");
@@ -38,14 +39,22 @@ if (fs.existsSync(outputDir) && !fs.existsSync(marker)) {
 }
 fs.mkdirSync(outputDir, { recursive: true });
 fs.writeFileSync(marker, "Peach Patch registry generated directory\n");
-fs.rmSync(packagesDir, { recursive: true, force: true });
+if (!targetKey) fs.rmSync(packagesDir, { recursive: true, force: true });
 
 const dynamic = JSON.parse(fs.readFileSync(dynamicCatalogPath, "utf8"));
-const modules = [
+const allModules = [
   ...new Map([...WEB_PLUGIN_REGISTRY, ...dynamic].map((item) => [item.key, item])).values(),
 ].sort((a, b) => a.key.localeCompare(b.key));
-const packages = [];
-let totalBytes = 0;
+const modules = targetKey
+  ? allModules.filter((item) => item.key === targetKey)
+  : allModules;
+if (targetKey && modules.length !== 1) throw new Error(`Unknown registry key ${targetKey}`);
+const existingIndexPath = path.join(outputDir, "index.json");
+const existingPackages = targetKey && fs.existsSync(existingIndexPath)
+  ? JSON.parse(fs.readFileSync(existingIndexPath, "utf8")).packages
+  : [];
+const packages = existingPackages.filter((item) => item.key !== targetKey);
+let totalBytes = packages.reduce((sum, item) => sum + item.artifact.size, 0);
 
 for (const source of modules) {
   const plugin = safeSegment(source.plugin, "plugin slug");
@@ -87,6 +96,7 @@ for (const source of modules) {
   writeJson(path.join(outputDir, relativeManifest), manifest);
   packages.push(module);
 }
+packages.sort((a, b) => a.key.localeCompare(b.key));
 
 const index = {
   schemaVersion: 1,

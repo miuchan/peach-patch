@@ -52,3 +52,31 @@ export function hydrateModuleWithDefinition(
     state: stateFromData(module.key, rackData(module), definition.stateKeys),
   };
 }
+
+export function hydrateModulesWithDefinitions(
+  modules: ModuleInstance[],
+  definitions: WebPluginModule[],
+) {
+  const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
+  let changed = false;
+  const hydrated = modules.map((module) => {
+    if (module.key === "Core/Blank") return module;
+    const definition = byKey.get(module.key);
+    if (!definition) return module;
+    if (module.status !== "ready") {
+      changed = true;
+      return hydrateModuleWithDefinition(module, definition);
+    }
+    const moduleStateKeys = module.stateKeys?.map((item) => item.key) ?? [],
+      definitionStateKeys = definition.stateKeys?.map((item) => item.key) ?? [],
+      definitionMatches =
+        Math.abs(module.width - definition.width) < 0.001 &&
+        module.params.length === definition.params.length &&
+        moduleStateKeys.length === definitionStateKeys.length &&
+        moduleStateKeys.every((key, index) => key === definitionStateKeys[index]);
+    if (definitionMatches) return module;
+    changed = true;
+    return hydrateModuleWithDefinition(module, definition);
+  });
+  return changed ? hydrated : modules;
+}

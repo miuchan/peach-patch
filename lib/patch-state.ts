@@ -1,4 +1,4 @@
-type StateKey={key:string;type:"integer"|"real"|"boolean"|"string-enum";values?:string[];index?:number;path?:Array<number|string>};
+type StateKey={key:string;type:"integer"|"real"|"boolean"|"string-enum";values?:string[];index?:number;path?:Array<number|string>;default?:number};
 
 function itemPath(item:StateKey){return item.path??(item.index===undefined?[]:[item.index]);}
 function nestedValue(value:unknown,path:Array<number|string>):unknown{return path.reduce<unknown>((current,segment)=>typeof segment==="number"&&Array.isArray(current)?current[segment]:typeof segment==="string"&&current!==null&&typeof current==="object"?(current as Record<string,unknown>)[segment]:undefined,value);}
@@ -6,13 +6,14 @@ function setNestedValue(value:unknown,path:Array<number|string>,next:unknown):un
 
 function stateValue(data:Record<string,unknown>,item:StateKey){
   const path=itemPath(item),source=path.length?nestedValue(data[item.key],path):data[item.key];
+  if(source===undefined)return item.default??0;
   if(item.type==="boolean")return source?1:0;
   if(item.type==="string-enum")return Math.max(0,item.values?.indexOf(String(source??""))??0);
-  return Number(source??0);
+  return Number(source);
 }
 
 export function stateFromData(key:string,data:Record<string,unknown>|undefined,stateKeys?:StateKey[]):number[]{
-  if(!data)return[];
+  if(!data)return stateKeys?.some(item=>item.default!==undefined)?stateKeys.map(item=>item.default??0):[];
   if(stateKeys?.length)return stateKeys.map(item=>stateValue(data,item));
   if(key==="Fundamental/SEQ3")return [data.running?1:0,data.clockPassthrough?1:0,...(Array.isArray(data.gates)?data.gates.map(value=>value?1:0):[])];
   if(key==="AudibleInstruments/Branches")return Array.isArray(data.modes)?data.modes.map(value=>value?1:0):[];

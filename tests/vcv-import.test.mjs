@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 import { parseVcvArchive } from "../lib/vcv-patch.ts";
 import { WEB_PLUGIN_BY_KEY } from "../lib/web-plugin-registry.ts";
 import { dataFromState, stateFromData } from "../lib/patch-state.ts";
-import { hydrateModuleWithDefinition } from "../lib/patch-hydrate.ts";
+import {
+  hydrateModuleWithDefinition,
+  hydrateModulesWithDefinitions,
+} from "../lib/patch-hydrate.ts";
 import { serializeVcvPatch } from "../lib/vcv-patch-serialize.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -67,16 +70,19 @@ test("Rack Core browser boundaries keep their source jack geometry",()=>{
 
 test("the new runtime imports .vcv files and resolves missing models", () => {
   const source = fs.readFileSync(path.join(here, "..", "app", "rack-web-studio.tsx"), "utf8");
+  const library = fs.readFileSync(path.join(here, "..", "app", "components", "rack-studio-library.tsx"), "utf8");
+  const contextMenus = fs.readFileSync(path.join(here, "..", "app", "components", "rack-studio-context-menus.tsx"), "utf8");
+  const quickAdd = fs.readFileSync(path.join(here, "..", "app", "components", "rack-studio-quick-add.tsx"), "utf8");
   assert.match(source, /parseVcvArchive/);
   assert.match(source, /hydrateMissing/);
   assert.match(source, /accept="\.vcv"/);
   assert.doesNotMatch(source, /Find module in patch/);
   assert.doesNotMatch(source, /Trace cables/);
   assert.match(source, /fittedPatchViewport/);
-  assert.match(source, /Replace from Library/);
-  assert.match(source, /Quick add module/);
+  assert.match(contextMenus, /Replace from Library/);
+  assert.match(quickAdd, /Quick add module/);
   assert.match(source, /touchPointsRef/);
-  assert.match(source, /application\/x-patchwork-module/);
+  assert.match(library, /application\/x-patchwork-module/);
   assert.match(source, /setLibraryOpen\(restoredPatch\.modules\.length < 12\)/);
 });
 
@@ -116,6 +122,24 @@ test("late plugin hydration preserves saved params and decodes array state",()=>
   const definition={key:"Fixture/Late",plugin:"Fixture",model:"Late",name:"Late",brand:"Fixture",version:"2.0.0",license:"MIT",sourceUrl:"https://example.com/source",libraryUrl:"https://library.vcvrack.com/Fixture/Late",screenshotUrl:"https://example.com/panel.webp",wasmUrl:"/late.wasm",width:180,description:"Late module",params:[{id:0,name:"A",min:0,max:1,default:.25},{id:1,name:"B",min:0,max:1,default:.5}],inputs:[],outputs:[],lights:0,stateKeys:[{key:"steps",type:"boolean",index:0},{key:"steps",type:"boolean",index:1}]};
   const hydrated=hydrateModuleWithDefinition(unresolved,definition);
   assert.deepEqual(hydrated.params,[.25,.75]);assert.deepEqual(hydrated.state,[1,0]);assert.deepEqual(hydrated.stateKeys,definition.stateKeys);assert.equal(hydrated.width,180);assert.equal(hydrated.status,"ready");
+});
+
+test("a registry catalog hydrates an existing source-required module in place",()=>{
+  const unresolved={id:"module-placeholder",key:"Fixture/Late",plugin:"Fixture",model:"Late",x:30,y:380,width:240,params:[],status:"source-required",error:"Local compiler unavailable"};
+  const ready={key:"Fixture/Late",plugin:"Fixture",model:"Late",name:"Late",brand:"Fixture",version:"2.0.0",license:"MIT",sourceUrl:"https://example.com/source",libraryUrl:"https://library.vcvrack.com/Fixture/Late",screenshotUrl:"https://example.com/panel.webp",wasmUrl:"https://example.com/late.wasm",width:180,description:"Late module",params:[{id:0,name:"Tune",min:-1,max:1,default:.25}],inputs:[{id:0,name:"CV"}],outputs:[],lights:0};
+  const modules=hydrateModulesWithDefinitions([unresolved],[ready]);
+  assert.equal(modules.length,1);assert.equal(modules[0].id,unresolved.id);assert.equal(modules[0].x,30);assert.equal(modules[0].y,380);assert.equal(modules[0].status,"ready");assert.equal(modules[0].width,180);assert.deepEqual(modules[0].params,[.25]);
+});
+
+test("a late exact definition replaces a same-width ready fallback module",()=>{
+  const fallback={id:"module-placeholder",key:"Interrobang/ScribbleStrip",plugin:"Interrobang",model:"ScribbleStrip",x:30,y:20,width:45,params:[],stateKeys:[],state:[],status:"ready",rack:{data:{labelText:"FILTER BANK",writeTextFromTop:true}}};
+  const exact={key:"Interrobang/ScribbleStrip",plugin:"Interrobang",model:"ScribbleStrip",name:"Scribble Strip",brand:"Interrobang",version:"2.0.1",license:"GPL-3.0-or-later",sourceUrl:"https://example.com/source",libraryUrl:"https://library.vcvrack.com/Interrobang/ScribbleStrip",screenshotUrl:"https://example.com/panel.webp",wasmUrl:"/scribble.wasm",width:45,params:[],inputs:[],outputs:[],lights:0,stateKeys:[{key:"writeTextFromTop",type:"boolean",default:0,contextOnly:true}]};
+  const [hydrated]=hydrateModulesWithDefinitions([fallback],[exact]);
+  assert.notEqual(hydrated,fallback);
+  assert.equal(hydrated.width,45);
+  assert.deepEqual(hydrated.stateKeys,exact.stateKeys);
+  assert.deepEqual(hydrated.state,[1]);
+  assert.equal(hydrated.rack.data.labelText,"FILTER BANK");
 });
 
 test("browser MIDI learn targets become Rack module ids on export",()=>{

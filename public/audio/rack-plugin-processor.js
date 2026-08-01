@@ -5,6 +5,9 @@ function rackWebWasiImports(holder) {
   const unsupported = () => -52;
   return {
     env: {
+      emscripten_notify_memory_growth() {},
+      _emscripten_system: unsupported,
+      getnameinfo: unsupported, getaddrinfo: unsupported,
       __syscall_faccessat: missing, __syscall_fchmod: unsupported,
       __syscall_chmod: unsupported, __syscall_fchown32: unsupported,
       __syscall_ftruncate64: unsupported, __syscall_getdents64: missing,
@@ -14,8 +17,14 @@ function rackWebWasiImports(holder) {
       },
       __syscall_readlinkat: missing, __syscall_rmdir: missing,
       __syscall_unlinkat: missing, __syscall_utimensat: unsupported,
+      __syscall_bind: unsupported, __syscall_connect: unsupported,
+      _emscripten_lookup_name: unsupported, __syscall_getsockname: unsupported,
+      __syscall_recvfrom: unsupported, __syscall_sendto: unsupported,
+      __syscall_setsockopt: unsupported, __syscall_shutdown: unsupported,
+      __syscall_socket: unsupported,
     },
     wasi_snapshot_preview1: {
+      proc_exit() {},
       fd_write(_fd, iovecs, iovecCount, written) {
         const data = view(); if (!data) return 0; let bytes = 0;
         for (let index = 0; index < iovecCount; index++) bytes += data.getUint32(iovecs + index * 8 + 4, true);

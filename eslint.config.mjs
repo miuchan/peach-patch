@@ -1,21 +1,47 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+import js from "@eslint/js";
+import reactHooks from "eslint-plugin-react-hooks";
+import reactRefresh from "eslint-plugin-react-refresh";
+import globals from "globals";
+import tseslint from "typescript-eslint";
 
 const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
   globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
     "out/**",
+    "dist/**",
     "build/**",
+    "Rack/**",
     ".rack-web-cache/**",
     ".cache/**",
     ".tmp/**",
-    "next-env.d.ts",
+    ".wrangler/**",
   ]),
+  {
+    files: ["**/*.{js,mjs,cjs}"],
+    ...js.configs.recommended,
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+    },
+  },
+  ...tseslint.configs.recommended,
+  {
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node, ...globals.worker },
+    },
+    plugins: {
+      "react-hooks": reactHooks,
+      "react-refresh": reactRefresh,
+    },
+    rules: {
+      ...reactHooks.configs.flat.recommended.rules,
+      ...reactRefresh.configs.vite.rules,
+      "@typescript-eslint/no-unused-expressions": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react-refresh/only-export-components": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

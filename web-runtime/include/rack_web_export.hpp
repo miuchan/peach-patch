@@ -24,6 +24,8 @@ struct RackWebModuleTraits<ModuleType, std::void_t<decltype(ModuleType::rackWebP
 // one fixed symbol table per translation unit. Buffers are port-major blocks.
 #define RACK_WEB_EXPORTS(ModuleType) \
   static ModuleType rackWebModule; \
+  static rack::plugin::Model rackWebModel{"Rack Web"}; \
+  static bool rackWebModelAttached = (static_cast<rack::Module&>(rackWebModule).model = rackWebModule.rackWebSelfModel() ? rackWebModule.rackWebSelfModel() : &rackWebModel, true); \
   static constexpr int rackWebBlockSize = 128; \
   static constexpr int rackWebMaxChannels = 16; \
   static constexpr int rackWebMaxExpanderPorts = 16; \
@@ -39,21 +41,22 @@ struct RackWebModuleTraits<ModuleType, std::void_t<decltype(ModuleType::rackWebP
   static void rackWebProcessFrameAt(int frame, float sampleRate) { \
     if (frame < 0 || frame >= rackWebBlockSize) return; \
     rack::rackWebEngine.sampleRate = sampleRate; \
+    rack::settings::sampleRate = sampleRate; \
     if (!rackWebAdded) { rackWebAdded = true; rack::rackWebEngine.rackWebAttachModule(&rackWebModule); AddEvent event{}; static_cast<rack::Module&>(rackWebModule).onAdd(event); } \
     if (rackWebSampleRate != sampleRate) { rackWebSampleRate = sampleRate; SampleRateChangeEvent event{sampleRate, 1.f / sampleRate}; static_cast<rack::Module&>(rackWebModule).onSampleRateChange(event); rackWebModule.rackWebNotifyNeighborSampleRateChange(event); } \
     ProcessArgs args{sampleRate, 1.f / sampleRate, rackWebFrameCounter++}; \
     rack::rackWebEngine.frame = args.frame; \
     for (int port = 0; port < RackWebModuleTraits<ModuleType>::inputCount; port++) { \
-      rackWebModule.inputs[port].setChannels(rackWebInputChannels[port]); \
-      for (int channel = 0; channel < rackWebInputChannels[port]; channel++) rackWebModule.inputs[port].setVoltage(rackWebInputBuffer[(channel * RackWebModuleTraits<ModuleType>::inputCount + port) * rackWebBlockSize + frame], channel); \
+      static_cast<rack::Module&>(rackWebModule).inputs[port].setChannels(rackWebInputChannels[port]); \
+      for (int channel = 0; channel < rackWebInputChannels[port]; channel++) static_cast<rack::Module&>(rackWebModule).inputs[port].setVoltage(rackWebInputBuffer[(channel * RackWebModuleTraits<ModuleType>::inputCount + port) * rackWebBlockSize + frame], channel); \
     } \
     if (rackWebExpanderInputBuffer) rackWebModule.rackWebSyncExpanderFrame(frame, rackWebExpanderInputBuffer, rackWebBlockSize); \
     rackWebModule.rackWebProcessNeighbors(args); \
     rack::midi::rackWebActivateModule(&rackWebModule); \
-    rackWebModule.process(args); \
+    static_cast<rack::Module&>(rackWebModule).process(args); \
     if (rackWebExpanderOutputBuffer) rackWebModule.rackWebCopyExpanderOutputFrame(frame, rackWebExpanderOutputBuffer, rackWebBlockSize); \
-    for (int port = 0; port < RackWebModuleTraits<ModuleType>::outputCount; port++) for (int channel = 0; channel < rackWebMaxChannels; channel++) rackWebOutputBuffer[(channel * RackWebModuleTraits<ModuleType>::outputCount + port) * rackWebBlockSize + frame] = channel < rackWebModule.outputs[port].getChannels() ? rackWebModule.outputs[port].getVoltage(channel) : 0.f; \
-    for (int id = 0; id < RackWebModuleTraits<ModuleType>::lightCount; id++) rackWebLightBuffer[id] = rackWebModule.lights[id].getBrightness(); \
+    for (int port = 0; port < RackWebModuleTraits<ModuleType>::outputCount; port++) for (int channel = 0; channel < rackWebMaxChannels; channel++) rackWebOutputBuffer[(channel * RackWebModuleTraits<ModuleType>::outputCount + port) * rackWebBlockSize + frame] = channel < static_cast<rack::Module&>(rackWebModule).outputs[port].getChannels() ? static_cast<rack::Module&>(rackWebModule).outputs[port].getVoltage(channel) : 0.f; \
+    for (int id = 0; id < RackWebModuleTraits<ModuleType>::lightCount; id++) rackWebLightBuffer[id] = static_cast<rack::Module&>(rackWebModule).lights[id].getBrightness(); \
   } \
   extern "C" { \
   __attribute__((used)) int rack_web_param_count() { return RackWebModuleTraits<ModuleType>::paramCount; } \
@@ -64,14 +67,17 @@ struct RackWebModuleTraits<ModuleType, std::void_t<decltype(ModuleType::rackWebP
   __attribute__((used)) float* rack_web_input_buffer() { return rackWebInputBuffer; } \
   __attribute__((used)) float* rack_web_output_buffer() { return rackWebOutputBuffer; } \
   __attribute__((used)) float* rack_web_light_buffer() { return rackWebLightBuffer; } \
-  __attribute__((used)) void rack_web_set_param(int id, float value) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::paramCount) rackWebModule.params[id].setValue(value); } \
-  __attribute__((used)) float rack_web_get_param(int id) { return id >= 0 && id < RackWebModuleTraits<ModuleType>::paramCount ? rackWebModule.params[id].getValue() : 0.f; } \
+  __attribute__((used)) int rack_web_visual_count() { return rackWebModule.rackWebVisualCount(); } \
+  __attribute__((used)) float* rack_web_visual_buffer() { return rackWebModule.rackWebVisualBuffer(); } \
+  __attribute__((used)) void rack_web_set_param(int id, float value) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::paramCount) { if (auto* quantity = rackWebModule.getParamQuantity(id)) { quantity->setValue(value); static_cast<rack::Module&>(rackWebModule).params[id].setValue(quantity->getValue()); } else static_cast<rack::Module&>(rackWebModule).params[id].setValue(value); } } \
+  __attribute__((used)) void rack_web_reset_param(int id, float value) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::paramCount) rackWebModule.rackWebResetParam(id, value); } \
+  __attribute__((used)) float rack_web_get_param(int id) { return id >= 0 && id < RackWebModuleTraits<ModuleType>::paramCount ? static_cast<rack::Module&>(rackWebModule).params[id].getValue() : 0.f; } \
   __attribute__((used)) float rack_web_get_param_min(int id) { auto* quantity = rackWebModule.getParamQuantity(id); return quantity ? quantity->getMinValue() : 0.f; } \
   __attribute__((used)) float rack_web_get_param_max(int id) { auto* quantity = rackWebModule.getParamQuantity(id); return quantity ? quantity->getMaxValue() : 1.f; } \
-  __attribute__((used)) void rack_web_set_input_connected(int id, int connected) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::inputCount) { bool next = connected != 0; bool changed = rackWebModule.inputs[id].connected != next; rackWebModule.inputs[id].connected = next; if (next && rackWebInputChannels[id] == 0) rackWebInputChannels[id] = 1; if (changed) rackWebModule.onPortChange(typename ModuleType::PortChangeEvent{next, rack::Port::INPUT, id}); } } \
-  __attribute__((used)) void rack_web_set_output_connected(int id, int connected) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::outputCount) { bool next = connected != 0; bool changed = rackWebModule.outputs[id].connected != next; rackWebModule.outputs[id].connected = next; if (changed) rackWebModule.onPortChange(typename ModuleType::PortChangeEvent{next, rack::Port::OUTPUT, id}); } } \
+  __attribute__((used)) void rack_web_set_input_connected(int id, int connected) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::inputCount) { bool next = connected != 0; bool changed = static_cast<rack::Module&>(rackWebModule).inputs[id].connected != next; static_cast<rack::Module&>(rackWebModule).inputs[id].connected = next; if (next && rackWebInputChannels[id] == 0) rackWebInputChannels[id] = 1; if (changed) rackWebModule.onPortChange(typename ModuleType::PortChangeEvent{next, rack::Port::INPUT, id}); } } \
+  __attribute__((used)) void rack_web_set_output_connected(int id, int connected) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::outputCount) { bool next = connected != 0; bool changed = static_cast<rack::Module&>(rackWebModule).outputs[id].connected != next; static_cast<rack::Module&>(rackWebModule).outputs[id].connected = next; if (changed) rackWebModule.onPortChange(typename ModuleType::PortChangeEvent{next, rack::Port::OUTPUT, id}); } } \
   __attribute__((used)) void rack_web_set_input_channels(int id, int channels) { if (id >= 0 && id < RackWebModuleTraits<ModuleType>::inputCount) rackWebInputChannels[id] = channels < 0 ? 0 : (channels > rackWebMaxChannels ? rackWebMaxChannels : channels); } \
-  __attribute__((used)) int rack_web_get_output_channels(int id) { return id >= 0 && id < RackWebModuleTraits<ModuleType>::outputCount ? rackWebModule.outputs[id].getChannels() : 0; } \
+  __attribute__((used)) int rack_web_get_output_channels(int id) { return id >= 0 && id < RackWebModuleTraits<ModuleType>::outputCount ? static_cast<rack::Module&>(rackWebModule).outputs[id].getChannels() : 0; } \
   __attribute__((used)) void rack_web_set_polyphony(int channels) { rackWebModule.polyphony = channels < 1 ? 1 : (channels > rackWebMaxChannels ? rackWebMaxChannels : channels); } \
   __attribute__((used)) void rack_web_set_state(int id, float value) { static_cast<rack::Module&>(rackWebModule).setState(id, value); } \
   __attribute__((used)) uint8_t* rack_web_state_buffer(int bytes) { return rackWebModule.rackWebStateBuffer(bytes); } \
@@ -115,16 +121,21 @@ struct RackWebModuleTraits<ModuleType, std::void_t<decltype(ModuleType::rackWebP
   __attribute__((used)) void rack_web_set_message_chain_neighbor(int side, int index, int modelIndex, int connected) { rackWebModule.rackWebSetMessageChainNeighbor(side, index, modelIndex, connected != 0); } \
   __attribute__((used)) void rack_web_set_chain_neighbor_bypassed(int side, int index, int bypassed) { rackWebModule.rackWebSetChainNeighborBypassed(side, index, bypassed != 0); } \
   __attribute__((used)) void rack_web_set_chain_neighbor_param(int side, int index, int id, float value) { rackWebModule.rackWebSetChainNeighborParam(side, index, id, value); } \
+  __attribute__((used)) float rack_web_get_chain_neighbor_param(int side, int index, int id) { return rackWebModule.rackWebChainNeighborParam(side, index, id); } \
   __attribute__((used)) void rack_web_set_chain_neighbor_input(int side, int index, int id, int channels, int channel, float value) { rackWebModule.rackWebSetChainNeighborInput(side, index, id, channels, channel, value); } \
+  __attribute__((used)) int rack_web_get_chain_neighbor_input_channels(int side, int index, int id) { return rackWebModule.rackWebChainNeighborInputChannels(side, index, id); } \
+  __attribute__((used)) float rack_web_get_chain_neighbor_input_voltage(int side, int index, int id, int channel) { return rackWebModule.rackWebChainNeighborInputVoltage(side, index, id, channel); } \
   __attribute__((used)) void rack_web_set_chain_neighbor_output_connected(int side, int index, int id, int connected) { rackWebModule.rackWebSetChainNeighborOutputConnected(side, index, id, connected != 0); } \
   __attribute__((used)) int rack_web_get_chain_neighbor_output_channels(int side, int index, int id) { return rackWebModule.rackWebChainNeighborOutputChannels(side, index, id); } \
   __attribute__((used)) float rack_web_get_chain_neighbor_output_voltage(int side, int index, int id, int channel) { return rackWebModule.rackWebChainNeighborOutputVoltage(side, index, id, channel); } \
+  __attribute__((used)) float rack_web_get_chain_neighbor_light_brightness(int side, int index, int id) { return rackWebModule.rackWebChainNeighborLightBrightness(side, index, id); } \
   __attribute__((used)) void rack_web_set_neighbor_bypassed(int side, int bypassed) { rackWebModule.rackWebSetNeighborBypassed(side, bypassed != 0); } \
   __attribute__((used)) void rack_web_set_neighbor_param(int side, int id, float value) { rackWebModule.rackWebSetNeighborParam(side, id, value); } \
   __attribute__((used)) void rack_web_set_neighbor_input(int side, int id, int channels, int channel, float value) { rackWebModule.rackWebSetNeighborInput(side, id, channels, channel, value); } \
   __attribute__((used)) void rack_web_set_neighbor_output_connected(int side, int id, int connected) { rackWebModule.rackWebSetNeighborOutputConnected(side, id, connected != 0); } \
   __attribute__((used)) int rack_web_get_neighbor_output_channels(int side, int id) { return rackWebModule.rackWebNeighborOutputChannels(side, id); } \
   __attribute__((used)) float rack_web_get_neighbor_output_voltage(int side, int id, int channel) { return rackWebModule.rackWebNeighborOutputVoltage(side, id, channel); } \
+  __attribute__((used)) float rack_web_get_neighbor_light_brightness(int side, int id) { return rackWebModule.rackWebNeighborLightBrightness(side, id); } \
   __attribute__((used)) uint8_t* rack_web_message_buffer(int side, int neighbor, int consumer) { return static_cast<uint8_t*>(rackWebModule.rackWebMessagePointer(side, neighbor != 0, consumer != 0)); } \
   __attribute__((used)) int rack_web_message_flip_requested(int side, int neighbor) { return rackWebModule.rackWebMessageFlipRequested(side, neighbor != 0) ? 1 : 0; } \
   __attribute__((used)) void rack_web_finish_message_flip(int side, int neighbor) { rackWebModule.rackWebFinishMessageFlip(side, neighbor != 0); } \

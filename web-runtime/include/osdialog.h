@@ -13,3 +13,6 @@ inline void osdialog_filters_free(osdialog_filters*) {}
 inline char* osdialog_file(osdialog_file_action, const char*, const char*, osdialog_filters*) { return nullptr; }
 inline int osdialog_message(osdialog_message_level, osdialog_message_buttons, const char*) { return 0; }
 inline char* osdialog_prompt(int, const char*, const char*) { return nullptr; }
+#ifndef OSDIALOG_FREE
+#define OSDIALOG_FREE(path) do { (void)(path); } while (0)
+#endif

@@ -16,16 +16,40 @@ export type RackAudioStats = {
 };
 
 export type RackPlugSignal = { voltage:number; rms:number; channels:number; rgb:[number,number,number] };
+export type RackHostControl = {
+  moduleId: string;
+  jumpUp: boolean;
+  jumpDown: boolean;
+  jumpLeft: boolean;
+  jumpRight: boolean;
+  x?: number;
+  y?: number;
+  zoom?: number;
+  opacity?: number;
+  tension?: number;
+  padding: number;
+  xStep: number;
+  yStep: number;
+  lockX: boolean;
+  lockY: boolean;
+  xConnected: boolean;
+  yConnected: boolean;
+  leftConnected: boolean;
+  rightConnected: boolean;
+  upConnected: boolean;
+  downConnected: boolean;
+};
 
 export type RackRecording = {
   moduleId: string;
   blob: Blob;
+  format: "wav"|"midi";
   frames: number;
   channels: number;
   sampleRate: number;
 };
 
-type RackAudioCallbacks = {
+export type RackAudioCallbacks = {
   onCaptureState?: (moduleId: string, active: boolean) => void;
   onRecordingComplete?: (recording: RackRecording) => void;
   onStateSnapshot?: (moduleId: string, data: Record<string, unknown>) => void;
@@ -33,6 +57,7 @@ type RackAudioCallbacks = {
   onMidiDevices?: (inputs: string[], outputs: string[]) => void;
   onMidiMessage?: (inputName: string, bytes: number[]) => void;
   onAutomationComplete?: () => void;
+  onHostControl?: (control: RackHostControl) => void;
   onPortPeaks?: (
     moduleId: string,
     inputs: number[],
@@ -53,6 +78,7 @@ type RecordingParts = {
   frames: number;
   channels: number;
   sampleRate: number;
+  format: "wav"|"midi";
 };
 
 export class RackAudioEngine {
@@ -100,11 +126,13 @@ export class RackAudioEngine {
     const moduleId = String(data.moduleId || "");
     if (!moduleId) return;
     if (data.type === "capture-start") {
+      const format=data.format==="midi"?"midi":"wav";
       this.recordings.set(moduleId, {
         parts: [],
         frames: 0,
         channels: Math.max(1, Math.min(2, Number(data.channels) || 1)),
         sampleRate: Math.max(1, Number(data.sampleRate) || 48000),
+        format,
       });
       this.callbacks.onCaptureState?.(moduleId, true);
       return;
@@ -115,13 +143,15 @@ export class RackAudioEngine {
             ? data.samples
             : new Float32Array(data.samples as ArrayBuffer),
         channels = Math.max(1, Math.min(2, Number(data.channels) || 1)),
+        format=data.format==="midi"?"midi":"wav",
         recording = this.recordings.get(moduleId) ?? {
           parts: [],
           frames: 0,
           channels,
           sampleRate: Math.max(1, Number(data.sampleRate) || 48000),
+          format,
         };
-      recording.parts.push(floatPcm16Part(samples));
+      recording.parts.push(recording.format==="midi"?Uint8Array.from(samples,(sample)=>Math.max(0,Math.min(255,Math.round(sample)))):floatPcm16Part(samples));
       recording.frames += Math.min(
         Number(data.frames) || 0,
         Math.floor(samples.length / channels),
@@ -137,10 +167,11 @@ export class RackAudioEngine {
       if (recording)
         this.callbacks.onRecordingComplete?.({
           moduleId,
+          format: recording.format,
           frames: recording.frames,
           channels: recording.channels,
           sampleRate: recording.sampleRate,
-          blob: createWavBlob(
+          blob: recording.format==="midi"?new Blob(recording.parts,{type:"audio/midi"}):createWavBlob(
             recording.parts,
             recording.frames,
             recording.channels,
@@ -160,7 +191,9 @@ export class RackAudioEngine {
     await this.stop();
     const context = new AudioContext({ latencyHint: "interactive" });
     this.context = context;
-    await context.audioWorklet.addModule("/audio/rack-graph-processor.js");
+    await context.audioWorklet.addModule(
+      "/audio/rack-graph-processor.js?abi=0.4",
+    );
 
     const outgoing = new Set(
       patch.cables.map((cable) => `${cable.fromModule}:${cable.fromPort}`),
@@ -177,6 +210,7 @@ export class RackAudioEngine {
           Boolean(definition.runtime?.capture) ||
           Boolean(definition.runtime?.midi?.input) ||
           Boolean(definition.runtime?.midi?.output) ||
+          Boolean(definition.runtime?.hostControl) ||
           Boolean(definition.runtime?.visuals?.length))
       );
     });
@@ -235,7 +269,9 @@ export class RackAudioEngine {
           rackId: Number(instance.rack?.id ?? -1),
           snapParams: definition.params.map((param) => Boolean(param.snap)),
           expander: definition.runtime?.expander,
+          hostControl: definition.runtime?.hostControl,
           visuals: definition.runtime?.visuals ?? [],
+          capture: definition.runtime?.capture,
           outputConnections: definition.outputs.map((port) =>
             outgoing.has(`${instance.id}:${port.id}`),
           ),
@@ -451,6 +487,8 @@ export class RackAudioEngine {
                   )
                 : {};
           this.callbacks.onVisualSignals?.(cables, scopes, plugs, lights);
+          if(data.hostControl&&typeof data.hostControl==="object")
+            this.callbacks.onHostControl?.(data.hostControl as RackHostControl);
         } else if (
           data?.type === "capture-start" ||
           data?.type === "capture-data" ||
@@ -501,6 +539,24 @@ export class RackAudioEngine {
 
   setParam(moduleId: string, id: number, value: number) {
     this.node?.port.postMessage({ type: "param", moduleId, id, value });
+  }
+
+  resetParam(moduleId: string, id: number, value: number) {
+    this.node?.port.postMessage({
+      type: "reset-param",
+      moduleId,
+      id,
+      value,
+    });
+  }
+
+  setMomentaryParam(moduleId: string, id: number, active: boolean) {
+    this.node?.port.postMessage({
+      type: "momentary-param",
+      moduleId,
+      id,
+      active,
+    });
   }
 
   setState(moduleId: string, id: number, value: number) {

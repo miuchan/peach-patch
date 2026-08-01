@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="10mm"
+   height="10mm"
+   viewBox="0 0 10 10"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4 (86a8ad7, 2024-10-11)"
+   sodipodi:docname="By6Off.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="11.313708"
+     inkscape:cx="15.335379"
+     inkscape:cy="33.278214"
+     inkscape:window-width="1920"
+     inkscape:window-height="1009"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1">
+    <rect
+       x="6.0987963"
+       y="11.313709"
+       width="29.127077"
+       height="22.079614"
+       id="rect9" />
+    <rect
+       x="4.2426407"
+       y="27.311999"
+       width="29.168155"
+       height="23.953242"
+       id="rect8" />
+    <rect
+       x="2.997212"
+       y="26.275558"
+       width="34.798064"
+       height="28.473514"
+       id="rect7" />
+    <rect
+       x="3.4967473"
+       y="26.075744"
+       width="33.768588"
+       height="23.178439"
+       id="rect6" />
+    <rect
+       x="7.0710678"
+       y="12.020815"
+       width="45.608388"
+       height="36.062446"
+       id="rect5" />
+    <rect
+       x="5.3033009"
+       y="7.7781746"
+       width="27.577164"
+       height="21.566757"
+       id="rect4" />
+    <rect
+       x="6.3932074"
+       y="7.8685629"
+       width="24.589259"
+       height="22.130333"
+       id="rect3" />
+    <rect
+       x="7.3767777"
+       y="9.3439184"
+       width="23.113904"
+       height="22.130333"
+       id="rect2" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="fill:#668000;stroke-width:0.465"
+       id="rect1"
+       width="10"
+       height="10"
+       x="0"
+       y="0"
+       ry="3.3122709"
+       rx="2.8625996" />
+    <path
+       d="M 15.551449,16.107443 9.5631573,29.013717 q -0.227865,0.483073 -0.410157,0.628907 -0.2369796,0.191407 -0.5742198,0.191407 -0.3828132,0 -0.6653658,-0.273438 -0.273438,-0.273438 -0.273438,-0.619793 0,-0.246094 0.2187504,-0.720054 L 13.865248,15.323588 q 0.227865,-0.483074 0.401043,-0.628908 0.246094,-0.191406 0.57422,-0.191406 0.382813,0 0.656251,0.273438 0.273438,0.264323 0.273438,0.610678 0,0.246094 -0.218751,0.720053 z m 5.596365,5.195322 q 0.67448,-0.565105 1.285158,-0.820314 0.610679,-0.264323 1.303388,-0.264323 1.467451,0 2.570317,1.166669 1.102867,1.166668 1.102867,2.925786 0,1.631514 -1.02995,2.643234 -1.020835,1.002606 -2.779953,1.002606 -1.46745,0 -2.415369,-0.683595 -0.947918,-0.683595 -1.430992,-2.105472 -0.483074,-1.421878 -0.483074,-3.171881 0,-2.096358 0.957033,-3.481777 0.957033,-1.394534 2.251306,-2.16016 1.294273,-0.765627 2.73438,-0.765627 1.139325,0 1.768233,0.446616 0.410157,0.300781 0.410157,0.765626 0,0.410157 -0.273438,0.69271 -0.273438,0.273438 -0.656252,0.273438 -0.21875,0 -0.628907,-0.218751 -0.246094,-0.127604 -0.473959,-0.127604 -0.893231,0 -1.850264,0.510417 -0.957033,0.501303 -1.658857,1.549482 -0.483074,0.729168 -0.701824,1.82292 z m 0.273438,2.889328 q 0.291667,1.093752 0.783855,1.494795 0.501303,0.401042 1.421878,0.401042 0.920574,0 1.412763,-0.483074 0.501303,-0.483073 0.501303,-1.312502 0,-0.947918 -0.57422,-1.576826 -0.565105,-0.628907 -1.276044,-0.628907 -0.565105,0 -1.212242,0.55599 -0.638022,0.555991 -1.057293,1.549482 z"
+       id="text1"
+       style="font-weight:bold;font-size:18.6667px;font-family:'Courier New';-inkscape-font-specification:'Courier New Bold';white-space:pre;fill:#ccff00;stroke-width:1.75748"
+       transform="matrix(0.26458333,0,0,0.26458333,0.41871221,-0.86545583)"
+       aria-label="/6" />
+  </g>
+</svg>
