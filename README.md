@@ -1,102 +1,124 @@
 # Peach Patch
 
-Peach Patch is an independent, GPL-licensed browser runtime for open-source Rack modules and `.vcv` patch files. Module metadata and immutable WASM artifacts are loaded from the Peach Patch registry.
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPLv3%2B-blue.svg)](LICENSE)
+[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
 
-It is not made by or endorsed by VCV. VCV Rack is a trademark of VCV. The official VCV name and logo are intentionally not used as this project's identity.
+Peach Patch is a browser-native modular synthesizer and Rack patch runtime. Open `.vcv` patches, place and connect modules, play them through Web Audio, and save the result back to a Rack-compatible patch file—without installing a native audio application.
 
-## Current runtime
+Module metadata and immutable WebAssembly artifacts are loaded from the [Peach Patch Registry](https://github.com/miuchan/peach-patch-registry). This repository contains the browser application and runtime; source discovery, WebAssembly builds, artifact publication, and registry governance live in the companion registry repository.
 
-- Reads Rack 2 zstd/tar and legacy JSON `.vcv` patches without uploading them, and saves Rack-readable JSON `.vcv` files.
-- On browsers with the File System Access API, Open retains the chosen handle and Save writes back in place after the browser's permission flow; other browsers keep the file-input and download fallback.
-- Resolves official `https://library.vcvrack.com/Plugin/Model` pages through a hostname-restricted metadata endpoint.
-- Starts a localhost-only source builder with the development server. For compatible DSP-only open-source modules, including template-specialized registrations, plugin-defined module base classes, out-of-line/nested DSP methods, referenced cross-file DSP dependencies, and recursively locked Git submodules, pasting a Library URL resolves the immutable official Library gitlink (or exact VCV version tag), isolates the non-widget class, compiles a standalone WASM reactor, and registers it without editing the bundled catalog. Explicit URLs prefer this official-source build even when a bundled adapter exists; the bundled implementation is only the safe fallback when the original class still needs unsupported host APIs.
-- A locally compiled definition replaces its same-key bundled fallback consistently in the Library shelf, Quick Add, patch hydration, replacement picker, and audio graph; it no longer appears only in runtime lookup while the UI keeps offering the authored adapter.
-- Preserves patch module IDs, positions, parameter values, port indices, cable colors, and connections.
-- Uses a standalone block-processing WebAssembly ABI inside one patch-wide AudioWorklet graph.
-- Topologically schedules the live graph in one audio thread, carries up to 16 voices per cable, uses prior-block buffers for feedback edges, and routes Rack Core Audio-8 to the browser output.
-- Exposes 261 browser-loadable build keys in the current local catalog: every model used by `Mattix.vcv`, plus dedicated Wavetable VCO, LFO, seven-color Noise, browser-persistent samplers and stereo Loopers, VCV Recorder with browser WAV export, the seven Rack Core MIDI/Web MIDI modules, all three Core Audio panels, editable Notes, and locally compiled official-source modules.
-- The Mattix model set is now split explicitly by runtime responsibility: 16 of its 19 distinct model keys use exact locked VCV source compiled to standalone WASM. `Core/AudioInterface` and `Core/Blank` are browser host boundaries, while `Befaco/SpringReverb` uses the tested browser dispersive-network adapter because the Rack implementation requires native impulse-response assets and filesystem APIs.
-- Every interactive Mattix panel now retains its official Rack widget coordinates: the compiler extracts every visible `createParam`, `createInput`, and `createOutput` from the 16 source-built models, while the Core Audio host boundary and Spring Reverb browser adapter use the same coordinates from their checked-out Rack sources. Peach Patch overlays accessible browser controls and enlarged transparent cable hit targets on the official panel image, and cable splines terminate at the same source-derived jack coordinates; removed ABI parameter slots stay hidden.
-- The six port-bearing Rack Core MIDI/Web MIDI panels use their official 12-port or 16-port layouts as well; their device selector remains a web-native control instead of being squeezed into the jack overlay.
-- Audio files can be chosen from the Looper panel or dropped directly onto it; decoding, duration/memory bounds, IndexedDB storage, live graph refresh, and browser-local privacy follow the same path.
-- Connects Rack Core `MIDI-CV`, `MIDI-CC`, `MIDI-Gate`, `MIDI-Map`, `CV-MIDI`, `CV-CC`, and `CV-Gate` to Web MIDI without blocking audio startup on permission. Original port indices, polyphony, note allocation, transport pulses, learned maps, JSON state, 200 Hz CC limiting, patch save, and live parameter synchronization are covered by WASM/worklet tests.
-- After Web MIDI permission is available, every Core MIDI panel enumerates connected input or output names directly on the module. Choosing a device updates the live routing table immediately and persists the Rack `data.midi.deviceName` field through autosave, presets, and `.vcv` export.
-- With a Core MIDI-Map module in the patch, the selected-module inspector can arm any compiled parameter for the next incoming MIDI CC. The mapping becomes live immediately, persists in module JSON, follows browser-local module identity while editing, and is translated to the final Rack numeric module ID on `.vcv` export.
-- Supports modifier multi-selection, Shift-drag screen-space marquee selection across panned/zoomed patches, group drag, copy/paste and one-step duplication with internal cables, direct cable selection/deletion, batch deletion, and a 100-state undo/redo history.
-- Ports support both click-to-patch and direct output/input dragging. Connecting to an occupied input follows Rack semantics by replacing that input cable in the same undoable edit.
-- Cable curves derive their endpoints from the rendered jack grid, including compact two-column layouts for high-I/O MIDI, mixer, and audio panels, instead of extrapolating ports below the panel.
-- Large patches automatically reclaim the fixed Library shelf and provide in-patch module search, one-click editable focus, selected-signal cable tracing, and a centered full-patch overview. `Mattix.vcv` is the permanent 87-module/142-cable navigation fixture.
-- The persistent footer reports ready/total WASM modules, cable count, and unresolved instances, so a restored or imported patch exposes its compatibility state without relying on a transient toast.
-- Selecting one cable turns compatible Library cards into `INSERT` actions that splice the chosen module between the existing endpoints in one undoable edit. A separate `Heal delete` command safely removes a strictly one-in/one-out module and reconnects the path; ambiguous fan-in/fan-out is refused.
-- The inspector can enter an explicit Library replacement mode. Replacing a module keeps its Rack identity and position, carries over exact-name parameter values within the new ranges, preserves every still-valid input/output cable, reports incompatible dropped cables, and remains one undo step.
-- The selected-module Inspector exposes every non-button parameter with a live numeric value and lazily opens typed Rack state slots as checkboxes, finite string selectors, or number fields. Advanced modulation values and module-specific JSON-backed options therefore remain editable even when the official panel intentionally shows only mutually exclusive overlays; these edits update live WASM, export back into nested `.vcv` data, and participate in undo/redo.
-- Library cards can also be dragged directly onto a panel to perform that replacement immediately; the target panel gets a live drop outline, and Perform mode rejects the drop.
-- Right-clicking empty rack space opens a keyboard-first Quick Add palette at that exact world position. Search results expose I/O counts, Enter chooses the first match, Escape closes it, collision avoidance still applies, and Perform mode blocks the operation.
-- Empty-space pointer dragging pans the rack. Mouse-wheel/trackpad zoom stays anchored beneath the pointer, zoom buttons preserve the rack center, and touch uses one-finger pan plus anchored two-finger pinch while enforcing the same 8–150% range.
-- The selected module inspector combines source metadata with low-overhead live voltage peaks and 32-sample Canvas waveforms for every input and output while audio is running. Only one module is monitored at a time, and telemetry is rate-limited in the AudioWorklet.
-- Right-clicking any module opens a Rack-style action menu for bypass/enable, duplicate, source-default initialization, range-aware randomization, cable disconnection, compatible replacement, and deletion. The same high-frequency actions are available in the inspector, with structural actions disabled by Perform mode.
-- Module actions can save Rack-compatible `.vcvm` presets and load them back into the exact matching plugin/model. Parameter values are clamped to the compiled source contract, typed module `data` state and bypass are restored, mismatched models are refused, and loading is one undo step.
-- When the official Library exposes a panel image, the inspector offers a collapsible exact panel reference loaded from that validated HTTPS asset; generic controls remain interactive beneath it.
-- Perform mode keeps parameters and audio live while locking module movement, cable edits, destructive shortcuts, undo/redo, module loading, and patch replacement. It also collapses the Library and removes the editing grid until Edit mode is restored.
-- Patch-level automation recording captures panel gestures and MIDI-mapped parameter changes onto a bounded timeline, coalesces dense events, stores the clip in patch metadata, and plays it once with a single undo checkpoint. With audio running, scheduling moves into the AudioWorklet and applies events at their exact sample frame; without audio it retains a main-thread preview fallback. Export translates browser-local targets to restored `.vcv` IDs.
-- Automatically checks unresolved patch models against their public Library pages, attempts the same local source build with a two-job browser-side queue, reports live loaded/blocked progress, and exposes the repository plus a precise compatibility reason when host APIs still require a manual adapter.
-- Includes browser autosave, one-click patch fitting, live parameter updates, explicit audio start/stop, and browser-local processing.
-- Rebuilds the AudioWorklet graph automatically after modules or cables change while audio is running.
-- Supports Rack-compatible module bypass state with declared input/output routes, live toggling, autosave, `.vcv` persistence, undo, and redo.
-- Exposes 1/2/4/8/16-voice controls for polyphonic VCO, Wavetable VCO, LFO, ADSR, and VCA modules, with voice count preserved in autosave and exported patches.
-- Places newly loaded modules in the first free rack slot near the current viewport instead of stacking panels on top of each other.
-- Uses collision-resistant module IDs and repairs duplicate IDs from older autosaves before rendering or rebuilding audio.
-- Injects the complete original Rack module `data` JSON into WASM before the first audio block, including dynamically named keys, nested objects/arrays, strings, booleans, `null`, and large sequencer banks. Typed scalar slots remain available for live browser controls and late hydration. Browser-safe scalar fallbacks cover Rack's common four-lane SIMD arithmetic, comparisons, masks, lane shuffles/moves, transcendental functions, triggers, timers, pulses, meters, and seeded random sources.
-- Detects parameters consumed by Rack trigger processors and renders them as real momentary buttons. After an original DSP button mutates module data, the AudioWorklet serializes `dataToJson()` back into the patch, so save, autosave, undo, redo, and later graph rebuilds retain the edit.
-- Isolates same-file DSP helpers and transitive plugin bases, discovers uniquely matched headers inside recursively locked subrepositories, compiles mixed GNU C/Rack C++ dependencies, and preserves safe DSP headers without pulling unrelated UI files into the build. Parameter defaults come from the real compiled constructor; page-aligned memory starts with a 4 MiB heap reserve and doubles only on a constructor memory trap, up to 256 MiB. Browser worklets provide minimal WASI write and deterministic random contracts required by source-side diagnostics and entropy initialization, and verified source checkouts remain reusable when the Library network is temporarily unavailable.
-- The complete 20-model Audible Instruments 2.0.0 manifest (Braids, Plaits, Elements, Tides/Tides2, Clouds, Warps, Rings, Links, Kinks, Shades, Branches, Blinds, Veils, Frames, Stages, Marbles, Ripples, Shelves, and Streams) has been rebuilt from its immutable official revision. Every artifact instantiates without imports and passes finite-output processing at 44.1 and 48 kHz; gain/router modules also have active-signal coverage.
-- Befaco Iroi 2.11.0 now compiles from its exact official source plus locked Iroi/OwlProgram/DaisySP dependencies. Its 50-parameter, 12-input, stereo, 28-light DSP runs in an 8 MiB WASM instance and loads from its official Library URL as `WASM READY`.
-- Valley 2.4.5 now contributes Plateau, Topograph, uGraph, Feline, Amalgam, Interzone, Dexter, and Terrorform from one immutable Library gitlink, even though the official `.gitmodules` label differs from the plugin slug. Plateau retains its 30 live controls and exact Dattorro plate tail; the two Grids sequencers execute their legacy `step()` path; and the filter, combiner, monosynth, four-operator synth, and wavetable synth run their original SSE/SSE2 code as WebAssembly SIMD. Dexter's 35 banks and Terrorform's 64 banks are embedded from the locked binary ROMs instead of replaced with synthetic tables. Source-defined scalar coordinates, numeric arrays, and nested placement loops now recover every visible control and jack across the eight panels; two enum slots that Valley does not mount on a panel remain in the WASM ABI but stay hidden from the browser panel. Permanent regressions drive clocks, gates, audio, filters, envelopes, and both ROM oscillators while checking finite, nonzero output.
-- Source layout recovery also follows nearby widget headers, evaluates `RACK_GRID_WIDTH`/`RACK_GRID_HEIGHT`, `box.size` components, scalar and `std::array` constants, nested `mm2px()` expressions, range-for initializer lists, explicit column counters, defaulted helper arguments, plugin-owned static layout helpers, immutable `LayoutItem` knob descriptions, and sized rectangular selector factories. Surge XT Tuned Delay now places all two knobs, three inputs, and two outputs at its exact source coordinates while retaining its 20 MiB exact-source WASM and four-voice v/oct timing regression; Surge XT VCF recovers its five primary controls, horizontal filter type/subtype selectors, all six inputs, and both outputs from its shared layout system without module-specific coordinates. Modules with a partial source layout keep those primary controls on the official panel and expose every non-button advanced parameter in the selected-module Inspector instead of overlapping synthetic controls.
-- Bidoo `lATe`, 64-control `dTrOY`, dual-envelope `BanCau`, stereo ladder filter `lIMbO`, polyphonic sample player `eDsaroS`, stereo beat slicer `OUAIve`, recordable slice sampler `cANARd`, 16-channel sample players `POUPRE` and `MAGMA`, the 16-slot polyphonic sampler `OAI`, six-bank adder `SIGMA`, three-band filter `pErCO`, and 16×8 snapshot mixer `ACnE` 2.1.1 compile directly from their official Library URLs and immutable revision. Rack 2.6 `Timer::process()` now returns elapsed time exactly as the source expects, direct `<math.hpp>` SDK includes resolve to the browser math contract, nested free-function dependencies and the sampler's separate Laurent de Soras resampler translation units link transitively, unnamed controls and ports inherit readable enum-derived names, numbered CV labels, stereo audio types, and gate/CV types, and shared plugin registries no longer make an ordinary module look like a message expander. Filesystem sample loading is translated to the existing browser-local PCM picker/drop, IndexedDB, AudioWorklet asset ABI, and `.vcv` asset-reference flow; the selected source Channel chooses the browser sample slot, all 16 OAI slots persist independently, pure Rack path helpers survive patch restore, and native writes are safely suppressed. The browser Jansson contract now also preserves compact numeric pack/unpack tuples, allowing ACnE's full source snapshot matrices to round-trip. Regressions cover all of these DSP and state paths.
-- Bidoo `tOCAnTe`, `MU`, `RATEAU`, `MS`, `DilEMO`, `lambda`, `VOID`, and `mINIBar` are also source-compiled and smoke-tested at both 44.1 and 48 kHz. Legacy Rack 1 `Input.active` is retained as an exact alias of Rack 2 connection state, and compact enum identifiers such as step length, trigger distribution, and CV bridge receive readable browser labels without changing their DSP indices.
-- Bidoo `ChUTE`, `bordL`, `DIKTAT`, `TiARE`, `BAFIS`, `LoURdE`, `MOiRE`, and `PILOT` add another source-executed sequencer/controller/oscillator/effect batch. SVG panel widths with physical `mm` units are converted through Rack's 75 px/in scale, fixing PILOT from a clipped 152 px panel to its source-correct 450 px width.
-- Bidoo's 78-control `ZOUMAI` and `ENCORE` sequencers, `ForK` oscillator, and `baR` dynamics processor are source-executed too. Rack 1's unqualified linear-interpolation helper now forwards to the Rack 2 math contract, preserving the sequencers' slide curves without source patches.
-- Bidoo `FREIN`, `rabBIT`, `BISTROT`, and `HUITre` add source-executed filtering, routing, mixing, and logic modules with finite-output regression coverage at both 44.1 and 48 kHz.
-- Bidoo `ZOUMAI-Expander`, `ENCORE-Expander`, `ziNC`, and `SPORE` now compile unchanged too. The Rack web host provides scalar/vector trigonometry and the official Hann, Blackman, Blackman-Nuttall, and Blackman-Harris window formulas, while legacy unqualified `to_string` calls resolve as they did in the source translation unit. Both sequencer expanders retain their bidirectional 16 KiB message buffers.
-- Bidoo `dFUZE`, `REI`, and `HCTIP` link and execute their original vendored GVerb, Freeverb, and PFFFT C/C++ code. The compiler now preserves dependency include order, recursively follows sibling headers, adds companion translation units, and exposes their include directories instead of flattening away required constants and opaque types.
-- Bidoo `EMILE`, `dUKe`, and `fLAME` are source-executed as well. EMILE adds a browser-local image asset path: PNG, JPEG, and WebP are decoded to RGBA without upload, persisted in IndexedDB, transferred to the worklet, expanded to the module's original 16-bit spectral image layout, and synthesized by its official PFFFT engine.
-- Bidoo is now 49/49 browser-loadable: `antN` accepts direct HTTP(S) audio and M3U/PLS URLs through a bounded, browser-local decoder path while preserving its trigger, gain, stereo ports, and patch URL; `liMonADe` loads browser audio into the original 256-frame wavetable/PFFFT oscillator and keeps its source editing, morphing, normalization, windowing, smoothing, recording, and display controls.
-- C1 Channel Strip `ChanOut` 2.1.1 now compiles from exact official source with Rack 2.6 expander fields and secondary module interfaces intact. Without an adjacent CHO-X it follows Rack's disconnected-expander path; all four character engines produce finite stereo output, and its 10 context/state values remain patch-addressable.
-- Venom `Mix4`, `Mix4Stereo`, `VCAMix4`, and `VCAMix4Stereo` 2.15.0 compile their inherited mixer engine and Rack `TBiquadFilter` oversampling chain from exact source. Physical right-side adjacency now attaches `MixFade`, `MixFade2`, `MixMute`, `MixOffset`, `MixPan`, `MixSend`, and `MixSolo` through a host-snapshot object chain, including expander CV, bypass, and generated output ports.
-- The persisted exact-source catalog now includes 58 Venom models. A 35-model expansion covering oscillators, recursion, poly utilities, merges/splits, rhythm/control generators, 3D panning, wave multiplication, and additional expanders is exercised as a permanent finite-output regression at both 44.1 and 48 kHz. Rack producer/consumer message buffers, typed neighbor snapshots, and multi-panel proxy chains preserve exact-source expanders including LinearBeats, BernoulliSwitch, and `BenjolinOsc → Gates → Volts`.
-- VCV Recorder 2.0.3 preserves its official `VCV-Recorder/Recorder` patch identity, gain, gate/trigger, mono/stereo selection, and VU contract. Because an AudioWorklet cannot write an arbitrary native path, a bounded PCM capture ABI drains the real-time WASM module in 2,048-frame batches and the browser emits a standards-compliant 16-bit WAV when recording stops.
-- TC Wurl 2.0.1 now compiles its complete physical electric-piano model, oversampling, preamp/power-amp/speaker chain, chorus, tremolo, autopan, filter, 23 controls, eight inputs, stereo output, and six patch-state fields from the official locked source. Widget-only fonts/SVGs and `APP->window` calls are excluded without blocking module-side `APP->engine` sample-rate behavior.
-- Submarine TD-202 2.0.4 compiles from its official locked source as a zero-I/O visual module. Literal `config()` counts synthesize its 0/0/0/2 Rack ABI, Rack-compatible color serialization is available in WASM, and its string display data remains preserved by `.vcv` round trips.
-- Stoermelder PackOne Stroke 2.5.0 compiles its official templated module with 10 CV outputs, 40 lights, and 51 typed state slots. Nested Rack JSON arrays-of-objects round-trip through `.vcv`, its locked Codeberg submodule is validated by exact gitlink, and the browser panel maps ten keys to Trigger, Gate, or Toggle actions through the real-time-safe WASM host-action ABI. Portable host commands are translated too: parameter random/copy/paste, module focus, patch fit, zoom toggle, cable opacity/color/layer/visibility, module movement lock, random module add, preset download, and held-key rack panning. Imported desktop-only commands remain identifiable and report their browser limitation instead of failing silently.
-- Bogaudio VCO, VCF/LVCF, LFO, DADSRH, Arp, Analyzer, Additator, FFB, CVD, Blank3, PolyCon, Matrix88, and AddrSeq 2.6.47 compile from the same immutable official revision. Their regressions cover four-voice audio oscillation, both VCF bandwidth modes, six LFO waves with WASI-seeded randomness, a delayed envelope trigger, clocked pitch/gate output, a 64-block FFT run, additive synthesis, three filter-bank mixes, a one-sample CV delay, polyphonic constants, 8×8 matrix routing, addressable sequencing, and zero-output panels. Analyzer's worker loop is translated to equivalent synchronous block processing because standalone browser WASM cannot launch Rack's native analysis thread. The generic translator also preserves namespaces and constructor initializer lists from extracted implementation files, ignores comment braces during source isolation, resolves typedef/using aliases through template base arguments, orders dependent shared types after their inherited bases, collects local implementation helpers and out-of-class static data, preserves finite JSON string modes as numeric ABI state, distinguishes inherited presentation-only JSON from target DSP state, compiles conditionally specialized DSP implementation units with their original preprocessor branches, orders local headers topologically, and treats Rack's three-argument `config()` as an explicit zero-light contract even when unrelated dependencies use lights.
+> Peach Patch is an independent project. It is not made by, affiliated with, or endorsed by VCV. VCV Rack is a trademark of VCV.
 
-Native `.vcvplugin` packages contain OS-specific dynamic libraries and cannot execute in browser WebAssembly. Each open-source plugin needs a Web ABI build; closed-source/freeware plugins require a web build from their author.
+## What you can do
 
-## Build
+- Import and export Rack-compatible `.vcv` patches, including compressed Rack 2 patches.
+- Build and edit patches on an infinite canvas with pan, zoom, multi-select, copy/paste, undo/redo, cable replacement, module replacement, and signal-flow helpers.
+- Load modules from the registry with verified metadata, manifest, byte length, and SHA-256 checks.
+- Run compatible module DSP as WebAssembly inside a patch-wide AudioWorklet graph.
+- Use browser-local audio files, Web MIDI, MIDI-CV utilities, automation, presets, autosave, and live signal telemetry where supported by the module and browser.
+- Keep patch files and selected audio assets in the browser; the runtime does not need to upload a patch to play it locally.
 
-Requirements: Node.js 22+.
+## How it works
+
+```text
+                        immutable metadata + WASM
+Browser UI  ───────────► Peach Patch Registry
+    │                              │
+    │ local .vcv patch             ▼
+    └────────────────────► verified WASM modules
+                                   │
+                                   ▼
+                         AudioWorklet signal graph
+                                   │
+                                   ▼
+                            Web Audio output
+```
+
+The application is registry-only at runtime. Native `.vcvplugin` packages and their platform-specific dynamic libraries cannot execute directly in browser WebAssembly. A plugin must therefore have a compatible Web ABI build published in the registry; closed-source or otherwise unsupported plugins require a web build from their author.
+
+## Quick start
+
+### Requirements
+
+- Node.js 22.13 or newer
+- A modern browser with WebAssembly and Web Audio support
+
+### Run locally
 
 ```bash
+git clone https://github.com/miuchan/peach-patch.git
+cd peach-patch
 npm install
-npm run typecheck
-npm test
 npm run dev
 ```
 
-`Peach Patch` loads module metadata and immutable WASM artifacts from the GitHub registry at runtime. Source discovery, official-source adaptation, Emscripten builds, artifact publication, and registry governance live in the companion [peach-patch-registry](https://github.com/miuchan/peach-patch-registry) repository.
+Open the local URL printed by Vite, then choose a patch or create one from the Library. Audio starts only after the browser's user-gesture policy allows it.
 
-See [docs/WEB_RUNTIME.md](docs/WEB_RUNTIME.md) for the ABI, plugin pipeline, compatibility definition, and remaining Rack subsystems.
-See [docs/UX_COMPARISON.md](docs/UX_COMPARISON.md) for the same-patch VCV Rack evidence, official Bitwig Grid workflow comparison, and remaining interaction gaps.
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the UI, patch-domain, browser-adapter, and AudioWorklet dependency boundaries.
-Source discovery, official-source adaptation, Emscripten builds, artifact publication, and registry governance live in the companion [peach-patch-registry](https://github.com/miuchan/peach-patch-registry) repository.
+### Production build and preview
 
-## Licenses
+```bash
+npm run build
+npm run start
+```
 
-- Rack UI component assets: GPL-3.0-or-later; see `assets/rack/`.
-- Bruer SEQ1 web translation: GPL-3.0-or-later.
-- Fundamental web translations: GPL-3.0-or-later.
-- Audible Instruments web translations: GPL-3.0-or-later.
-- Peach Patch code: GPL-3.0-or-later.
+The registry endpoint can be changed by the runtime integration when deploying a compatible mirror or fork. The default registry is the `main` branch index at [miuchan/peach-patch-registry](https://github.com/miuchan/peach-patch-registry).
 
-Official plugin screenshots are loaded from their public Library URLs at runtime and are not redistributed in this repository.
+## Development
+
+Useful checks before opening a pull request:
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+```
+
+`npm test` runs the type check, production build, and the Node test suite. Keep browser-facing behavior covered at the domain, registry-client, AudioWorklet, or rendered-HTML boundary that owns it.
+
+### Project layout
+
+| Directory | Purpose |
+| --- | --- |
+| `app/` | React application, patch editor, Library, and browser UI |
+| `lib/` | Patch domain, registry client, runtime types, and browser adapters |
+| `public/audio/` | AudioWorklet processors used by the browser runtime |
+| `assets/rack/` | Small Rack-derived UI assets required locally by the application |
+| `server/` | Worker/API handlers for metadata and runtime support |
+| `tests/` | Type, registry, patch, runtime, and rendered-output tests |
+| `docs/` | Architecture, WebAssembly runtime, and UX documentation |
+
+Build inputs and published WebAssembly artifacts are intentionally maintained in the companion [peach-patch-registry](https://github.com/miuchan/peach-patch-registry), rather than duplicated in this application repository.
+
+## Registry integrity
+
+The runtime treats the registry index as the source of truth for available modules. For each artifact it:
+
+1. validates the registry schema and package metadata;
+2. resolves artifact and manifest URLs against the registry index;
+3. downloads the immutable WebAssembly artifact;
+4. verifies its declared byte length and SHA-256 digest before instantiation.
+
+This keeps application code, module metadata, and generated binaries independently reviewable while preventing a truncated or unexpected artifact from silently entering the audio graph.
+
+## Privacy and browser limits
+
+Patch editing and browser-selected audio processing are local to the browser. The application does need network access to load registry metadata and module artifacts, and some Library metadata or panel images may come from their public HTTPS URLs. Browser permissions still apply to Web MIDI, file access, and audio playback.
+
+Support depends on both the browser and the published module ABI. Native filesystem access, native threads, arbitrary OS paths, and platform-specific plugin binaries are not portable to this runtime.
+
+## Contributing
+
+Issues and pull requests are welcome. Before contributing:
+
+- read [Architecture](docs/ARCHITECTURE.md) to understand the UI, patch-domain, registry, adapter, and AudioWorklet boundaries;
+- read [Web Runtime](docs/WEB_RUNTIME.md) for the module ABI and compatibility rules;
+- run the checks above and describe any browser-specific verification;
+- send module source/build or artifact-publication changes to the [registry repository](https://github.com/miuchan/peach-patch-registry).
+
+For interaction goals and known gaps, see [UX Comparison](docs/UX_COMPARISON.md).
+
+## License and attribution
+
+Peach Patch is licensed under [GPL-3.0-or-later](LICENSE). The locally stored Rack UI assets in `assets/rack/` retain their applicable GPL licensing. Module translations and registry artifacts retain the licenses of their respective upstream projects; consult the registry metadata and upstream repositories before redistribution.
+
+Official plugin screenshots are referenced from their public Library URLs at runtime and are not redistributed here.
