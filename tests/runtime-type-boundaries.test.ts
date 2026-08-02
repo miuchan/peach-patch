@@ -19,6 +19,35 @@ test("VCV parser rejects JSON that does not contain a valid module graph", () =>
   );
 });
 
+test("VCV parser normalizes Rack 0.x modules, wires, parameters, and pixel coordinates", () => {
+  const patch = parseVcvArchive(new TextEncoder().encode(JSON.stringify({
+    version: "0.3.1",
+    modules: [
+      { plugin: "Fundamental", model: "VCO", pos: [30, 380], params: [0.25, 1] },
+      { plugin: "Core", model: "AudioInterface", pos: [180, 380], params: [], data: { audio: 0 } },
+    ],
+    wires: [
+      { outputModuleId: 0, outputId: 0, inputModuleId: 1, inputId: 0 },
+    ],
+  })));
+  assert.equal(patch.version, "0.3.1");
+  assert.deepEqual(patch.modules[0], {
+    plugin: "Fundamental",
+    model: "VCO",
+    id: 0,
+    pos: [2, 1],
+    params: [{ id: 0, value: 0.25 }, { id: 1, value: 1 }],
+  });
+  assert.deepEqual(patch.cables[0], {
+    id: 0,
+    outputModuleId: 0,
+    outputId: 0,
+    inputModuleId: 1,
+    inputId: 0,
+  });
+  assert.equal("wires" in patch, false);
+});
+
 test("registry parser rejects incomplete remote packages", () => {
   assert.throws(
     () => modulesFromRegistryIndex({ schemaVersion: 1, packages: [{ key: "Missing/Fields" }] }, "https://example.com/index.json"),

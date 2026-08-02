@@ -11,7 +11,7 @@ Module metadata and immutable WebAssembly artifacts are loaded from the [Peach P
 
 ## What you can do
 
-- Import and export Rack-compatible `.vcv` patches, including compressed Rack 2 patches.
+- Import and export Rack-compatible `.vcv` patches, including compressed Rack 2 patches and public PatchStorage links.
 - Build and edit patches on an infinite canvas with pan, zoom, multi-select, copy/paste, undo/redo, cable replacement, module replacement, and signal-flow helpers.
 - Load modules from the registry with verified metadata, manifest, byte length, and SHA-256 checks.
 - Run compatible module DSP as WebAssembly inside a patch-wide AudioWorklet graph.

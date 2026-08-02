@@ -11,6 +11,7 @@ export type RackStudioTopbarProps = {
   canRedo: boolean;
   onNewPatch: () => void;
   onOpenPatch: () => void;
+  onOpenPatchUrl: () => void;
   onSavePatch: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -30,6 +31,7 @@ export function RackStudioTopbar({
   canRedo,
   onNewPatch,
   onOpenPatch,
+  onOpenPatchUrl,
   onSavePatch,
   onUndo,
   onRedo,
@@ -45,6 +47,7 @@ export function RackStudioTopbar({
         <div className="pw-action-group" aria-label="File actions">
           <button type="button" disabled={modulesLocked} title="Create a new patch" onClick={onNewPatch}>New</button>
           <button type="button" onClick={onOpenPatch} disabled={modulesLocked || !registryReady} title="Open a .vcv patch">Open</button>
+          <button type="button" onClick={onOpenPatchUrl} disabled={modulesLocked || !registryReady} title="Open a patch from PatchStorage">Link</button>
           {fileInput}
           {presetInput}
           <button type="button" onClick={onSavePatch} title="Save the current .vcv patch">Save</button>

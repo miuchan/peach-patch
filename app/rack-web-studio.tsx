@@ -33,10 +33,13 @@ import {
 } from "../lib/rack-cable-layout";
 import { loadBrowserAsset } from "../lib/browser-asset-loader";
 import { importVcvPatch } from "../lib/vcv-patch-import";
+import {
+  assertVcvPatchModulesLoadable,
+  BlockedVcvPatchError,
+} from "../lib/vcv-patch-compatibility";
 import * as studioHelpers from "../lib/rack-studio-helpers";
 import * as wasmHost from "../lib/rack-wasm-host";
 import {
-  hydrateModuleWithDefinition,
   hydrateModulesWithDefinitions,
 } from "../lib/patch-hydrate";
 import { putSample } from "../lib/sample-store";
@@ -141,6 +144,10 @@ export function RackWebStudio() {
     "https://library.vcvrack.com/Bruer/SEQ1",
   );
   const [moduleQuery, setModuleQuery] = useState("");
+  const [patchUrl, setPatchUrl] = useState("");
+  const [patchUrlOpen, setPatchUrlOpen] = useState(false);
+  const [patchUrlError, setPatchUrlError] = useState("");
+  const [patchOpenError, setPatchOpenError] = useState<BlockedVcvPatchError | null>(null);
   const [replaceMode, setReplaceMode] = useState(false);
   const [quickAdd, setQuickAdd] = useState<RackStudioQuickAddState | null>(null);
   const [moduleMenu, setModuleMenu] = useState<{
@@ -510,96 +517,24 @@ export function RackWebStudio() {
     }
   };
 
-  const hydrateMissing = useCallback(
-    async (modules: ModuleInstance[]) => {
-      const missing = [
-        ...new Map(
-          modules
-            .filter((module) => module.status !== "ready")
-            .map((module) => [module.key, module]),
-        ).values(),
-      ];
-      if (!missing.length) {
-        setStatus("Patch opened · all modules ready");
-        return;
-      }
-      let completed = 0,
-        loaded = 0,
-        blocked = 0;
-      setStatus(`Resolving 0/${missing.length} missing plugin models…`);
-      await studioHelpers.runWithConcurrency(missing, 2, async (module) => {
-          try {
-            const runtime=getWebPlugin(module.key);
-            const result=runtime?null:await resolveModule(
-              `https://library.vcvrack.com/${module.plugin}/${module.model}`,
-            );
-            if(runtime)loaded++;else blocked++;
-            mutateHistory((current) => ({
-              ...current,
-              modules: current.modules.map((item) =>
-                item.key !== module.key
-                  ? item
-                  : runtime
-                    ? hydrateModuleWithDefinition(item, runtime)
-                    : {
-                      ...item,
-                      version: result?.version ?? item.version,
-                      status: "source-required",
-                      description: result?.description,
-                      screenshotUrl: result?.screenshotUrl,
-                      sourceUrl: result?.sourceUrl,
-                      license: result?.license,
-                      error:`${module.key} is not available in the GitHub registry`,
-                    },
-              ),
-            }));
-          } catch (error) {
-            blocked++;
-            mutateHistory((current) => ({
-              ...current,
-              modules: current.modules.map((item) =>
-                item.key === module.key
-                  ? {
-                      ...item,
-                      status: "error",
-                      error:
-                        error instanceof Error ? error.message : "Not found",
-                    }
-                  : item,
-              ),
-            }));
-          } finally {
-            completed++;
-            setStatus(
-              `Resolving ${completed}/${missing.length} missing plugin models · ${loaded} loaded · ${blocked} blocked`,
-            );
-          }
-        });
-      setStatus(
-        blocked
-          ? `Patch opened · ${loaded} missing models loaded · ${blocked} still need a browser adapter`
-          : `Patch opened · all ${loaded} missing plugin models loaded`,
-      );
-    },
-    [mutateHistory, resolveModule],
-  );
-
   const openPatch = async (file: File) => {
     if(registryState!=="ready"){
       setStatus(registryState==="error"?"GitHub registry is unavailable":"Wait for the GitHub registry to finish loading");
       return;
     }
-    for (const timer of automationTimersRef.current) window.clearTimeout(timer);
-    automationTimersRef.current = [];
-    automationBeforeRef.current = null;
-    automationRecordingRef.current = false;
-    setAutomationPlaying(false);
-    setAutomationRecording(false);
+    setPatchOpenError(null);
     setBusy(true);
     try {
       const raw = parseVcvArchive(await file.arrayBuffer());
+      assertVcvPatchModulesLoadable(raw, getWebPlugin);
+      for (const timer of automationTimersRef.current) window.clearTimeout(timer);
+      automationTimersRef.current = [];
+      automationBeforeRef.current = null;
+      automationRecordingRef.current = false;
+      setAutomationPlaying(false);
+      setAutomationRecording(false);
       const imported = importVcvPatch(raw, getWebPlugin, CABLES);
-      const { modules, cables, rack, rackOrigin, unresolved } = imported;
+      const { modules, cables, rack, rackOrigin } = imported;
       history.commit({ modules, cables, rack, rackOrigin });
       setSelectedIds(new Set());
       setSelectedCableIds(new Set());
@@ -618,11 +553,9 @@ export function RackWebStudio() {
       setZoom(fitted?.zoom ?? 0.55);
       setLibraryOpen(false);
       setPatchName(`${file.name.replace(/\.vcv$/i, "")}-web.vcv`);
-      setStatus(
-        `${file.name} · ${modules.length} modules · ${cables.length} cables · resolving plugins…`,
-      );
-      void hydrateMissing(unresolved);
+      setStatus(`${file.name} opened · ${modules.length} modules · ${cables.length} cables · all modules ready`);
     } catch (error) {
+      if (error instanceof BlockedVcvPatchError) setPatchOpenError(error);
       setStatus(error instanceof Error ? error.message : "Invalid .vcv patch");
     } finally {
       setBusy(false);
@@ -634,6 +567,40 @@ export function RackWebStudio() {
     // controllable by accessibility tools. showOpenFilePicker() bypasses the
     // DOM chooser event in several embedded browsers, leaving Open .vcv inert.
     fileRef.current?.click();
+  };
+
+  const openPatchStoragePatch = async () => {
+    const requested = patchUrl.trim();
+    if (!requested) return;
+    setBusy(true);
+    setPatchUrlError("");
+    setStatus("Loading patch from PatchStorage…");
+    try {
+      const response = await fetch(`/api/patchstorage?url=${encodeURIComponent(requested)}`);
+      if (!response.ok) {
+        let message = `PatchStorage import returned ${response.status}`;
+        try {
+          const result = (await response.json()) as { error?: unknown };
+          if (typeof result.error === "string") message = result.error;
+        } catch {
+          // Keep the status-based fallback when an upstream proxy returns non-JSON.
+        }
+        throw new Error(message);
+      }
+      const filename = response.headers.get("x-patch-filename") || "PatchStorage.vcv";
+      const file = new File([await response.arrayBuffer()], filename, {
+        type: "application/octet-stream",
+      });
+      patchFileHandleRef.current = null;
+      setPatchUrlOpen(false);
+      await openPatch(file);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not load the PatchStorage patch";
+      setPatchUrlError(message);
+      setStatus(message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const loadSample = async (module: ModuleInstance, file: File, slot = 0) => {
@@ -2412,6 +2379,10 @@ export function RackWebStudio() {
         canRedo={history.canRedo}
         onNewPatch={handleNewPatch}
         onOpenPatch={() => void choosePatchFile()}
+        onOpenPatchUrl={() => {
+          setPatchUrlError("");
+          setPatchUrlOpen(true);
+        }}
         onSavePatch={() => void savePatch()}
         onUndo={history.undo}
         onRedo={history.redo}
@@ -2420,6 +2391,101 @@ export function RackWebStudio() {
         fileInput={patchFileInput}
         presetInput={presetFileInput}
       />
+      {patchUrlOpen ? (
+        <div
+          className="pw-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !busy) setPatchUrlOpen(false);
+          }}
+        >
+          <form
+            className="pw-patch-url-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pw-patch-url-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void openPatchStoragePatch();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !busy) setPatchUrlOpen(false);
+            }}
+          >
+            <header>
+              <div>
+                <span>OPEN FROM LINK</span>
+                <b id="pw-patch-url-title">PatchStorage patch</b>
+              </div>
+              <button type="button" aria-label="Close" disabled={busy} onClick={() => setPatchUrlOpen(false)}>×</button>
+            </header>
+            <label htmlFor="pw-patch-url">Paste the public PatchStorage page link</label>
+            <input
+              id="pw-patch-url"
+              type="url"
+              value={patchUrl}
+              placeholder="https://patchstorage.com/meditation-patch/"
+              autoFocus
+              required
+              spellCheck={false}
+              onChange={(event) => {
+                setPatchUrl(event.target.value);
+                setPatchUrlError("");
+              }}
+            />
+            {patchUrlError ? <p role="alert">{patchUrlError}</p> : <small>The patch is downloaded from PatchStorage and opened in this browser.</small>}
+            <footer>
+              <button type="button" disabled={busy} onClick={() => setPatchUrlOpen(false)}>Cancel</button>
+              <button type="submit" disabled={busy || !patchUrl.trim()}>{busy ? "Loading…" : "Open patch"}</button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+      {patchOpenError ? (
+        <div
+          className="pw-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPatchOpenError(null);
+          }}
+        >
+          <section
+            className="pw-patch-url-dialog pw-patch-error-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="pw-patch-error-title"
+            aria-describedby="pw-patch-error-description"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setPatchOpenError(null);
+            }}
+          >
+            <header>
+              <div>
+                <span>PATCH BLOCKED</span>
+                <b id="pw-patch-error-title">Commercial or unavailable modules</b>
+              </div>
+              <button type="button" aria-label="Close" onClick={() => setPatchOpenError(null)}>×</button>
+            </header>
+            <p id="pw-patch-error-description">
+              Nothing was loaded. This patch contains {patchOpenError.instanceCount} module instance{patchOpenError.instanceCount === 1 ? "" : "s"} that the verified browser runtime cannot use.
+            </p>
+            <ul className="pw-patch-error-list">
+              {patchOpenError.blocked.map((module) => (
+                <li key={module.key}>
+                  <b>{module.key}</b>
+                  <span>
+                    {module.count > 1 ? `${module.count} instances · ` : ""}
+                    {module.reason === "commercial-license"
+                      ? `commercial license (${module.license})`
+                      : "not available in the verified browser registry"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <footer>
+              <button type="button" autoFocus onClick={() => setPatchOpenError(null)}>Keep current patch</button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
       <output className="pw-status-sr" aria-live="polite">
         {status}
       </output>
