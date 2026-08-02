@@ -21,6 +21,30 @@ export type RackCableDragPreview = {
   y: number;
 };
 
+export type RackCableDraft = {
+  moduleId: string;
+  direction: "in" | "out";
+  portId: number;
+  x: number;
+  y: number;
+  color: string;
+};
+
+export type RackCableDraftLayout = {
+  id: "cable-draft";
+  color: string;
+  anchorModuleId: string;
+  anchorDirection: "in" | "out";
+  anchorPortId: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  outputAngle: number;
+  inputAngle: number;
+  d: string;
+};
+
 type ModuleDefinition = Pick<WebPluginModule, "key" | "width" | "inputs" | "outputs">;
 
 function rankedPlugIds(patch: PatchDocument) {
@@ -51,6 +75,32 @@ function portPosition(
   return resolvedModulePortPosition(module, direction, portId, ports, definition?.width ?? module.width);
 }
 
+function cableGeometry(
+  output: { x: number; y: number },
+  input: { x: number; y: number },
+  tension: number,
+) {
+  const sag = Math.max(70, Math.abs(input.x - output.x) * 0.22) * (1.5 - tension);
+  const slumpX = (output.x + input.x) / 2;
+  const slumpY = (output.y + input.y) / 2 + sag;
+  const outputAngle = Math.atan2(slumpY - output.y, slumpX - output.x);
+  const inputAngle = Math.atan2(slumpY - input.y, slumpX - input.x);
+  const clearance = 14;
+  const startX = output.x + Math.cos(outputAngle) * clearance;
+  const startY = output.y + Math.sin(outputAngle) * clearance;
+  const endX = input.x + Math.cos(inputAngle) * clearance;
+  const endY = input.y + Math.sin(inputAngle) * clearance;
+  return {
+    x1: output.x,
+    y1: output.y,
+    x2: input.x,
+    y2: input.y,
+    outputAngle,
+    inputAngle,
+    d: `M${startX} ${startY} Q${slumpX} ${slumpY},${endX} ${endY}`,
+  };
+}
+
 export function layoutPatchCables(
   patch: PatchDocument,
   definitions: readonly ModuleDefinition[],
@@ -73,29 +123,37 @@ export function layoutPatchCables(
     const previewInput = dragPreview?.cableId === cable.id && dragPreview.side === "input"
       ? { x: dragPreview.x, y: dragPreview.y }
       : input;
-    const sag = Math.max(70, Math.abs(previewInput.x - previewOutput.x) * 0.22) * (1.5 - tension);
-    const slumpX = (previewOutput.x + previewInput.x) / 2;
-    const slumpY = (previewOutput.y + previewInput.y) / 2 + sag;
-    const outputAngle = Math.atan2(slumpY - previewOutput.y, slumpX - previewOutput.x);
-    const inputAngle = Math.atan2(slumpY - previewInput.y, slumpX - previewInput.x);
-    const clearance = 14;
-    const startX = previewOutput.x + Math.cos(outputAngle) * clearance;
-    const startY = previewOutput.y + Math.sin(outputAngle) * clearance;
-    const endX = previewInput.x + Math.cos(inputAngle) * clearance;
-    const endY = previewInput.y + Math.sin(inputAngle) * clearance;
     return [{
       ...cable,
-      x1: previewOutput.x,
-      y1: previewOutput.y,
-      x2: previewInput.x,
-      y2: previewInput.y,
-      outputAngle,
-      inputAngle,
+      ...cableGeometry(previewOutput, previewInput, tension),
       topOutputPlug: ranked.outputs.get(`${cable.fromModule}:${cable.fromPort}`)?.id === cable.id,
       topInputPlug: ranked.inputs.get(`${cable.toModule}:${cable.toPort}`)?.id === cable.id,
-      d: `M${startX} ${startY} Q${slumpX} ${slumpY},${endX} ${endY}`,
     }];
   });
+}
+
+export function layoutRackCableDraft(
+  patch: PatchDocument,
+  definitions: readonly ModuleDefinition[],
+  tension: number,
+  draft: RackCableDraft,
+): RackCableDraftLayout | undefined {
+  const module = patch.modules.find((candidate) => candidate.id === draft.moduleId);
+  if (!module) return undefined;
+  const definition = definitions.find((candidate) => candidate.key === module.key);
+  const anchor = portPosition(module, draft.direction, draft.portId, definition);
+  const pointer = { x: draft.x, y: draft.y };
+  const geometry = draft.direction === "out"
+    ? cableGeometry(anchor, pointer, tension)
+    : cableGeometry(pointer, anchor, tension);
+  return {
+    id: "cable-draft",
+    color: draft.color,
+    anchorModuleId: draft.moduleId,
+    anchorDirection: draft.direction,
+    anchorPortId: draft.portId,
+    ...geometry,
+  };
 }
 
 export function cableSignalLevels(

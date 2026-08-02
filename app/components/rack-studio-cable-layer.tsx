@@ -1,5 +1,5 @@
 import type { MouseEvent, PointerEvent } from "react";
-import type { RackCableLayout } from "../../lib/rack-cable-layout";
+import type { RackCableDraftLayout, RackCableLayout } from "../../lib/rack-cable-layout";
 import type { RackPlugSignal } from "../../lib/rack-audio-engine";
 import { RackCablePlug } from "./rack-cable-plug";
 
@@ -14,6 +14,7 @@ type RackSurface = {
 
 export type RackStudioCableLayerProps = {
   paths: RackCableLayout[];
+  draft?: RackCableDraftLayout;
   surface: RackSurface;
   visible: boolean;
   opacity: number;
@@ -34,6 +35,7 @@ export type CableSelectionEvent = {
 
 export function RackStudioCableLayer({
   paths,
+  draft,
   surface,
   visible,
   opacity,
@@ -106,6 +108,33 @@ export function RackStudioCableLayer({
           onPointerDown={(event) => onPlugPointerDown(path, "input", event)}
         />
       </g>)}
+      {draft && <g className="pw-cable-draft" aria-hidden="true">
+        <path d={draft.d} stroke={draft.color} />
+        <RackCablePlug
+          x={draft.x1}
+          y={draft.y1}
+          angle={draft.outputAngle}
+          color={draft.color}
+          top
+          gradientId="plug-draft-out"
+          cableId={draft.id}
+          moduleId={draft.anchorModuleId}
+          direction="out"
+          portId={draft.anchorPortId}
+        />
+        <RackCablePlug
+          x={draft.x2}
+          y={draft.y2}
+          angle={draft.inputAngle}
+          color={draft.color}
+          top
+          gradientId="plug-draft-in"
+          cableId={draft.id}
+          moduleId={draft.anchorModuleId}
+          direction="in"
+          portId={draft.anchorPortId}
+        />
+      </g>}
     </svg>
   </>;
 }

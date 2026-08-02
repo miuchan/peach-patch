@@ -9,7 +9,11 @@ import {
   repairDuplicateModuleIds,
   sampleAssetFromData,
 } from "../lib/rack-studio-helpers.ts";
-import { cableSignalLevels, layoutPatchCables } from "../lib/rack-cable-layout.ts";
+import {
+  cableSignalLevels,
+  layoutPatchCables,
+  layoutRackCableDraft,
+} from "../lib/rack-cable-layout.ts";
 import { loadBrowserAsset } from "../lib/browser-asset-loader.ts";
 import { importVcvPatch } from "../lib/vcv-patch-import.ts";
 import {
@@ -211,6 +215,44 @@ test("cable drag preview moves only the grabbed endpoint", () => {
   assert.deepEqual([preview.x1, preview.y1], [base.x1, base.y1]);
   assert.deepEqual([preview.x2, preview.y2], [180, 240]);
   assert.notEqual(preview.d, base.d);
+});
+
+test("new cable draft stays anchored to its jack and follows the pointer", () => {
+  const patch = {
+    modules: [
+      { id: "source", key: "source", x: 0, y: 0, width: 90 },
+      { id: "target", key: "target", x: 300, y: 0, width: 90 },
+    ],
+    cables: [],
+  };
+  const definitions = [
+    { key: "source", width: 90, inputs: [], outputs: [{ id: 0, name: "out", kind: "audio" }] },
+    { key: "target", width: 90, inputs: [{ id: 0, name: "in", kind: "audio" }], outputs: [] },
+  ];
+  const outputDraft = layoutRackCableDraft(patch, definitions, 0.5, {
+    moduleId: "source",
+    direction: "out",
+    portId: 0,
+    x: 210,
+    y: 140,
+    color: "#ef5265",
+  });
+  assert.ok(outputDraft);
+  assert.deepEqual([outputDraft.x2, outputDraft.y2], [210, 140]);
+  assert.notDeepEqual([outputDraft.x1, outputDraft.y1], [210, 140]);
+  assert.match(outputDraft.d, /^M-?\d/);
+
+  const inputDraft = layoutRackCableDraft(patch, definitions, 0.5, {
+    moduleId: "target",
+    direction: "in",
+    portId: 0,
+    x: 160,
+    y: 210,
+    color: "#43b5df",
+  });
+  assert.ok(inputDraft);
+  assert.deepEqual([inputDraft.x1, inputDraft.y1], [160, 210]);
+  assert.notDeepEqual([inputDraft.x2, inputDraft.y2], [160, 210]);
 });
 
 test("browser asset loader validates and normalizes byte-backed module assets", async () => {
