@@ -40,3 +40,4 @@ yarn-error.log*
 .rack-web-cache/
 public/dynamic-plugins/
 /Rack/
+/.tmp/
