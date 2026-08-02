@@ -7,8 +7,6 @@
   },
   "scripts": {
     "dev": "vite",
-    "wasm:build": "./scripts/build-web-runtime.sh",
-    "wasm:manifest": "node scripts/generate-web-runtime-manifest.ts",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite build",
     "typecheck": "tsc --noEmit --pretty false",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite preview",

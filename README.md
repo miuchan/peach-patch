@@ -1,6 +1,6 @@
 # Peach Patch
 
-Peach Patch is an independent, GPL-licensed browser runtime for open-source Rack modules and `.vcv` patch files. The repository includes the upstream Rack 2.6.6 source tree in `Rack/` as the compatibility reference.
+Peach Patch is an independent, GPL-licensed browser runtime for open-source Rack modules and `.vcv` patch files. Module metadata and immutable WASM artifacts are loaded from the Peach Patch registry.
 
 It is not made by or endorsed by VCV. VCV Rack is a trademark of VCV. The official VCV name and logo are intentionally not used as this project's identity.
 
@@ -75,23 +75,16 @@ Native `.vcvplugin` packages contain OS-specific dynamic libraries and cannot ex
 
 ## Build
 
-Requirements: Node.js 22+, Emscripten, and a POSIX shell.
+Requirements: Node.js 22+.
 
 ```bash
 npm install
-./scripts/build-web-runtime.sh
 npm run typecheck
 npm test
 npm run dev
 ```
 
-`lib/web-plugin-registry.ts` is the single authored module catalog. `web-runtime/modules.json` is generated from it, and a single bundled adapter can be rebuilt by Rack key:
-
-```bash
-npm run wasm:build -- Fundamental/VCA
-```
-
-`npm run dev` runs both the web app and the loopback builder on `127.0.0.1:4179`. Dynamic artifacts and their catalog are browser-local development outputs under `public/dynamic-plugins/` and `.rack-web-cache/`; a static deployment can use already bundled artifacts but cannot run Git/Emscripten itself.
+`Peach Patch` loads module metadata and immutable WASM artifacts from the GitHub registry at runtime. Source discovery, official-source adaptation, Emscripten builds, artifact publication, and registry governance live in the companion [peach-patch-registry](https://github.com/miuchan/peach-patch-registry) repository.
 
 See [docs/WEB_RUNTIME.md](docs/WEB_RUNTIME.md) for the ABI, plugin pipeline, compatibility definition, and remaining Rack subsystems.
 See [docs/UX_COMPARISON.md](docs/UX_COMPARISON.md) for the same-patch VCV Rack evidence, official Bitwig Grid workflow comparison, and remaining interaction gaps.
@@ -100,7 +93,7 @@ Source discovery, official-source adaptation, Emscripten builds, artifact public
 
 ## Licenses
 
-- Rack source: GPL-3.0-or-later; see `Rack/LICENSE.md`.
+- Rack UI component assets: GPL-3.0-or-later; see `assets/rack/`.
 - Bruer SEQ1 web translation: GPL-3.0-or-later.
 - Fundamental web translations: GPL-3.0-or-later.
 - Audible Instruments web translations: GPL-3.0-or-later.

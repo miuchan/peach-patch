@@ -40,8 +40,6 @@ test("ships product metadata and removes starter preview", async () => {
   assert.match(packageJson, /"react-router"/);
   assert.doesNotMatch(packageJson, /"(?:vinext|next|react-server-dom-webpack)"/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
-  await access(new URL("public/wasm/bruer-seq1.wasm", root));
-  await access(new URL("public/wasm/audible-elements.wasm", root));
   await access(new URL("public/audio/rack-plugin-processor.js", root));
   await access(new URL("public/audio/rack-graph-processor.js", root));
   await assert.rejects(access(new URL("app/_sites-preview/SkeletonPreview.tsx", root)));

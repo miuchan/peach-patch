@@ -39,3 +39,4 @@ yarn-error.log*
 /work/
 .rack-web-cache/
 public/dynamic-plugins/
+/Rack/

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import rackMonoUrl from "../../Rack/res/fonts/ShareTechMono-Regular.ttf?url";
+import rackMonoUrl from "../../assets/rack/fonts/ShareTechMono-Regular.ttf?url";
 
 let rackMonoPromise: Promise<void> | undefined;
 function loadRackMono() {

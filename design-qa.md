@@ -146,7 +146,7 @@ final rack fit placement result: passed
 
 ## Infinite Rack surface expansion
 
-VCV source references: `Rack/src/app/RackScrollWidget.cpp`, `Rack/src/app/RailWidget.cpp`, and `Rack/include/app/common.hpp`
+VCV source references are represented by the preserved Rack UI component assets under `assets/rack/`.
 
 implementation capture: `artifacts/ui-qa/infinite-rack-negative-add-1280x720.png`
 

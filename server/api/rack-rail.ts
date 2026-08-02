@@ -1,4 +1,4 @@
-import rail from "../../Rack/res/ComponentLibrary/Rail.svg?raw";
+import rail from "../../assets/rack/ComponentLibrary/Rail.svg?raw";
 
 export const dynamic = "force-static";
 

@@ -10,7 +10,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "dist/**",
     "build/**",
-    "Rack/**",
+    "assets/rack/**",
     ".rack-web-cache/**",
     ".cache/**",
     ".tmp/**",
