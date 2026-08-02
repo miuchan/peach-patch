@@ -33,6 +33,9 @@ import Rogan1PRedFg from "../../assets/rack/ComponentLibrary/Rogan1PRed_fg.svg?r
 import Rogan1PBlue from "../../assets/rack/ComponentLibrary/Rogan1PBlue.svg?raw";
 import Rogan1PBlueFg from "../../assets/rack/ComponentLibrary/Rogan1PBlue_fg.svg?raw";
 import Rogan1PWhite from "../../assets/rack/ComponentLibrary/Rogan1PWhite.svg?raw";
+import Rogan2PBg from "../../assets/rack/ComponentLibrary/Rogan2P_bg.svg?raw";
+import Rogan2PWhite from "../../assets/rack/ComponentLibrary/Rogan2PWhite.svg?raw";
+import Rogan2PWhiteFg from "../../assets/rack/ComponentLibrary/Rogan2PWhite_fg.svg?raw";
 import Rogan2PSBg from "../../assets/rack/ComponentLibrary/Rogan2PS_bg.svg?raw";
 import Rogan2SBg from "../../assets/rack/ComponentLibrary/Rogan2S_bg.svg?raw";
 import Rogan3PSBg from "../../assets/rack/ComponentLibrary/Rogan3PS_bg.svg?raw";
@@ -107,6 +110,7 @@ const assets:Record<string,string>={
   VCVButton0,VCVButton1,CKD60,CKD61,TL11050,TL11051,CKSS0,CKSS1,
   CKSSThree0,CKSSThree1,CKSSThree2,NKK0,NKK1,NKK2,
   Davies1900hWhite,Davies1900hWhiteBg,Rogan1PBg,Rogan1PRed,Rogan1PRedFg,Rogan1PBlue,Rogan1PBlueFg,Rogan1PWhite,
+  Rogan2PBg,Rogan2PWhite,Rogan2PWhiteFg,
   Rogan1PSBg,Rogan2PSBg,Rogan2SBg,Rogan3PSBg,Rogan3PBg,Rogan3PWhite,Rogan3PWhiteFg,
   Rogan1PSRed,Rogan1PSRedFg,Rogan1PSGreen,Rogan1PSGreenFg,Rogan1PSWhite,Rogan1PSWhiteFg,
   Rogan2PSRed,Rogan2PSRedFg,Rogan2PSGreen,Rogan2PSGreenFg,Rogan2PSWhite,Rogan2PSWhiteFg,

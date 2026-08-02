@@ -40,6 +40,7 @@ const KNOBS:Record<string,KnobAsset>={
   Rogan1PSRed:{name:"Rogan1PSRed",bg:"Rogan1PSBg",fg:"Rogan1PSRedFg",size:39.6836,angle:.83},
   Rogan1PSGreen:{name:"Rogan1PSGreen",bg:"Rogan1PSBg",fg:"Rogan1PSGreenFg",size:39.6836,angle:.83},
   Rogan1PSWhite:{name:"Rogan1PSWhite",bg:"Rogan1PSBg",fg:"Rogan1PSWhiteFg",size:39.6836,angle:.83},
+  Rogan2PWhite:{name:"Rogan2PWhite",bg:"Rogan2PBg",fg:"Rogan2PWhiteFg",size:34.29297,angle:.83},
   Rogan2PSRed:{name:"Rogan2PSRed",bg:"Rogan2PSBg",fg:"Rogan2PSRedFg",size:43.3476,angle:.83},
   Rogan2PSGreen:{name:"Rogan2PSGreen",bg:"Rogan2PSBg",fg:"Rogan2PSGreenFg",size:43.3476,angle:.83},
   Rogan2PSWhite:{name:"Rogan2PSWhite",bg:"Rogan2PSBg",fg:"Rogan2PSWhiteFg",size:43.3476,angle:.83},

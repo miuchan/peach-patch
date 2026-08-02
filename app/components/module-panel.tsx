@@ -3,6 +3,7 @@ import type { ModuleInstance } from "../../lib/patch-types";
 import { resolvedModulePortPosition } from "../../lib/patch-operations";
 import { rackParamResetValue, registerRackParamPress, type RackParamPress } from "../../lib/rack-param-interaction";
 import type { ParamSpec, PortSpec, WebPluginModule } from "../../lib/web-plugin-registry";
+import { rackUiGeometryIsTrustworthy } from "../../lib/rack-ui-geometry";
 import { rackParamIsVisible } from "../../lib/rack-param-visibility";
 import { STROKE_SPECIAL_MODES, strokeSpecialModeLabel } from "../../lib/stroke-host";
 import { RackScopeDisplay } from "./rack-scope-display";
@@ -212,15 +213,19 @@ export function ModulePanel({
   audioRunning: boolean;
 }) {
   const [dropTarget, setDropTarget] = useState(false);
+  const [failedPanelArtworkUrl,setFailedPanelArtworkUrl]=useState<string|null>(null);
   const [paramNotice,setParamNotice]=useState<{id:number;serial:number}|null>(null);
+  const paramNoticeSerialRef=useRef(0);
   useEffect(()=>{
     if(!paramNotice)return;
     const timer=window.setTimeout(()=>setParamNotice(current=>current?.serial===paramNotice.serial?null:current),3_000);
     return()=>window.clearTimeout(timer);
   },[paramNotice]);
   const updateParam=(id:number,value:number)=>{
-    if(module.key==="ImpromptuModular/NoteEcho"&&((id>=4&&id<=15)||(id>=22&&id<=25)))
-      setParamNotice({id,serial:performance.now()});
+    if(module.key==="ImpromptuModular/NoteEcho"&&((id>=4&&id<=15)||(id>=22&&id<=25))){
+      paramNoticeSerialRef.current+=1;
+      setParamNotice({id,serial:paramNoticeSerialRef.current});
+    }
     onParam(id,value);
   };
   const paramDragRef=useRef<{pointerId:number;paramId:number;startCoordinate:number;startValue:number;min:number;max:number;snap:boolean;unbounded:boolean;axis:"x"|"y"}|null>(null);
@@ -272,15 +277,27 @@ export function ModulePanel({
   const audioData=rackData.audio&&typeof rackData.audio==="object"&&!Array.isArray(rackData.audio)?rackData.audio as Record<string,unknown>:undefined,
     audioChannels=definition?.runtime?.audio?.channels,
     renderedLightValues=lightValues??(audioChannels?audioBoundaryLightValues(audioChannels,definition?.lights??0,audioRunning,inputSignalLevels):[]);
+  const hasDeclaredPanelArtwork=Boolean(module.screenshotUrl),
+    panelArtworkFailed=failedPanelArtworkUrl===module.screenshotUrl,
+    hasPanelArtwork=hasDeclaredPanelArtwork&&!panelArtworkFailed;
   const panelStyle = {
     left: module.x,
     top: module.y,
     width: module.width,
-    "--panel-image": module.screenshotUrl
+    "--panel-image": hasPanelArtwork
       ? `url(${module.screenshotUrl})`
       : "none",
   } as CSSProperties;
-  const sourcePorts=[...inputs,...outputs],positionedParams=params.filter(param=>param.position),hasParamSourceLayout=Boolean(definition&&positionedParams.length&&!definition.runtime?.midi),panelParams=hasParamSourceLayout?positionedParams:params,hasPortSourceLayout=Boolean(definition&&sourcePorts.length&&sourcePorts.every(port=>port.position)),hasSourceLayout=hasParamSourceLayout||hasPortSourceLayout,hasPanelArtwork=Boolean(module.screenshotUrl),
+  const sourcePorts=[...inputs,...outputs],
+    hasTrustworthySourceGeometry=rackUiGeometryIsTrustworthy(params,inputs,outputs),
+    allowSourceGeometry=!panelArtworkFailed&&hasTrustworthySourceGeometry,
+    positionedParams=allowSourceGeometry?params.filter(param=>param.position):[],
+    hasParamSourceLayout=Boolean(definition&&!definition.runtime?.midi&&(positionedParams.length||hasPanelArtwork)),
+    panelParams=hasParamSourceLayout?positionedParams:params,
+    panelInputs=hasPanelArtwork?(hasTrustworthySourceGeometry?inputs.filter(port=>port.position):[]):inputs,
+    panelOutputs=hasPanelArtwork?(hasTrustworthySourceGeometry?outputs.filter(port=>port.position):[]):outputs,
+    hasPortSourceLayout=Boolean(definition&&allowSourceGeometry&&(hasPanelArtwork||(sourcePorts.length&&sourcePorts.every(port=>port.position)))),
+    hasSourceLayout=hasPanelArtwork||hasParamSourceLayout||hasPortSourceLayout,
     assetSlots=definition?.runtime?.asset?.slots??1,
     assetSlotParam=assetSlots>1?definition?.params.find(param=>param.name.toLowerCase()==="channel"):undefined,
     assetSlot=Math.max(0,Math.min(assetSlots-1,Math.round(assetSlotParam?module.params[assetSlotParam.id]??0:0))),
@@ -404,7 +421,7 @@ export function ModulePanel({
           ×
         </button>
       </header>
-      {module.screenshotUrl ? (
+      {hasPanelArtwork ? (
         <>
           {/* The official Library raster is the canonical fully assembled module. */}
           <img
@@ -412,6 +429,7 @@ export function ModulePanel({
             src={module.screenshotUrl}
             alt=""
             draggable={false}
+            onError={()=>setFailedPanelArtworkUrl(module.screenshotUrl??null)}
           />
         </>
       ) : (
@@ -846,12 +864,12 @@ export function ModulePanel({
         </button>
       )}
       <div
-        className={`pw-ports inputs aligned-layout ${inputs.length > 5 ? "compact" : ""} ${hasPortSourceLayout?"source-layout":""}`}
+        className={`pw-ports inputs aligned-layout ${panelInputs.length > 5 ? "compact" : ""} ${hasPortSourceLayout?"source-layout":""}`}
         style={
-          { "--port-columns": inputs.length > 5 ? 2 : 1 } as CSSProperties
+          { "--port-columns": panelInputs.length > 5 ? 2 : 1 } as CSSProperties
         }
       >
-        {inputs.map((port) => (
+        {panelInputs.map((port) => (
           <button
             type="button"
             draggable
@@ -899,12 +917,12 @@ export function ModulePanel({
         ))}
       </div>
       <div
-        className={`pw-ports outputs aligned-layout ${outputs.length > 5 ? "compact" : ""} ${hasPortSourceLayout?"source-layout":""}`}
+        className={`pw-ports outputs aligned-layout ${panelOutputs.length > 5 ? "compact" : ""} ${hasPortSourceLayout?"source-layout":""}`}
         style={
-          { "--port-columns": outputs.length > 5 ? 2 : 1 } as CSSProperties
+          { "--port-columns": panelOutputs.length > 5 ? 2 : 1 } as CSSProperties
         }
       >
-        {outputs.map((port) => (
+        {panelOutputs.map((port) => (
           <button
             type="button"
             draggable

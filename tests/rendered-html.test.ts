@@ -62,6 +62,12 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.doesNotMatch(panel, /naturalWidth\s*\/\s*image\.naturalHeight/);
   assert.match(panel, /resolvedModulePortPosition\(module,direction,port\.id/);
   assert.match(panel, /pw-ports inputs aligned-layout/);
+  assert.match(panel, /hasTrustworthySourceGeometry=rackUiGeometryIsTrustworthy\(params,inputs,outputs\)/);
+  assert.match(panel, /allowSourceGeometry=!panelArtworkFailed&&hasTrustworthySourceGeometry/);
+  assert.match(panel, /panelInputs=hasPanelArtwork\?\(hasTrustworthySourceGeometry\?inputs\.filter\(port=>port\.position\):\[\]\):inputs/);
+  assert.match(panel, /panelOutputs=hasPanelArtwork\?\(hasTrustworthySourceGeometry\?outputs\.filter\(port=>port\.position\):\[\]\):outputs/);
+  assert.match(panel, /hasSourceLayout=hasPanelArtwork\|\|hasParamSourceLayout\|\|hasPortSourceLayout/);
+  assert.match(panel, /onError=\{\(\)=>setFailedPanelArtworkUrl\(module\.screenshotUrl\?\?null\)\}/);
   assert.match(panel, /paramDragRef/);
   assert.match(panel, /setPointerCapture/);
   assert.match(panel, /rackParamInteraction/);
@@ -96,6 +102,7 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(paramVisual, /RedLargeToggleKnob:\{name:"msm\/Knobs\/RedLargeKnob\.svg",size:47,angle:\.78\}/);
   assert.match(paramVisual, /GreenToggleKnobSmall:\{name:"msm\/Knobs\/GreenSmallKnob\.svg",size:32,angle:\.78\}/);
   assert.match(paramVisual, /VioM2Switch:\{name:"",size:\[14,20\.641106\],frames:2/);
+  assert.match(paramVisual, /Rogan2PWhite:\{name:"Rogan2PWhite",bg:"Rogan2PBg",fg:"Rogan2PWhiteFg",size:34\.29297/);
   assert.match(paramVisual, /FMSM/);
   assert.match(paramVisual, /msm\/Switch\/FMSM_3\.svg/);
   assert.match(paramVisual, /OSCiXEGG/);

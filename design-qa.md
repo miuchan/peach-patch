@@ -157,3 +157,51 @@ Module snapping and every add path now accept negative X and Y positions, so add
 Browser verification panned roughly 25,000 Rack pixels left and 16,000 pixels up from Mattix, then added Bruer/SEQ1. The new module landed at `x -25545 / y -15960`; the rack expanded to `left -30240 / top -18240` while retaining repeated rails across the viewport. Undo and Fit restored the original 87-module patch, and the browser reported zero console errors.
 
 final infinite Rack result: passed
+
+## Registry-wide module geometry and broken-artwork pass
+
+### Scope and source of truth
+
+- Viewport: 1280 × 720 in the Codex in-app browser.
+- Reference: official VCV Library ChordCV raster at
+  `artifacts/ui-qa/chordcv-official-source.png`.
+- Repaired implementation: local refreshed registry plus the current Peach
+  Patch frontend at `artifacts/ui-qa/chordcv-repaired-local-registry-1280x720.png`.
+- Combined comparison: official source on the left, repaired implementation on
+  the right at `artifacts/ui-qa/chordcv-source-vs-repaired.png`.
+- Safe fallback against the currently published registry:
+  `artifacts/ui-qa/chordcv-final-remote-safe-fallback-1280x720.png`.
+
+### Measured alignment
+
+The browser-reported control centers exactly matched the extracted Rack source
+coordinates on the 120 × 380 panel:
+
+- Parameters: `(60,95)`, `(60,140)`, `(46,180)`, `(74,180)`.
+- Inputs: `(20,95)`, `(20,140)`, `(18,180)`, `(102,180)`.
+- Outputs: `(32,253)`, `(32,299)`, `(88,253)`, `(88,299)`, `(60,332)`.
+
+The module raster loaded without broken images. The reference/implementation
+comparison shows the same panel proportions, component styles, spacing, and
+jack centers; only live parameter-state rendering can change a knob indicator.
+
+### Cross-module guards
+
+- Missing positions: official artwork remains canonical and arbitrary fallback
+  widgets are not drawn over it.
+- Collapsed, out-of-panel, or wrong-unit positions: source overlays are rejected.
+- Missing official raster: the broken image is removed and the functional
+  generated panel is used.
+- Registry audit: all 3,009 screenshot URLs checked; 2,749 returned 200 and 260
+  confirmed 404 entries were cleared. Transient failures are not cleared.
+
+### Rubric
+
+- Source fidelity: pass.
+- Layout and sizing: pass.
+- Typography and visual hierarchy: pass; inherited from the official raster.
+- Interaction geometry: pass for refreshed source geometry.
+- Failure states: pass for missing geometry, corrupt geometry, and broken raster.
+- Browser console and image loading: pass in the verified ChordCV state.
+
+No P0, P1, or P2 visual issues remain in the verified states.
