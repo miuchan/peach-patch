@@ -14,6 +14,13 @@ export type RackCableLayout = PatchDocument["cables"][number] & {
   d: string;
 };
 
+export type RackCableDragPreview = {
+  cableId: string;
+  side: "input" | "output";
+  x: number;
+  y: number;
+};
+
 type ModuleDefinition = Pick<WebPluginModule, "key" | "width" | "inputs" | "outputs">;
 
 function rankedPlugIds(patch: PatchDocument) {
@@ -48,6 +55,7 @@ export function layoutPatchCables(
   patch: PatchDocument,
   definitions: readonly ModuleDefinition[],
   tension: number,
+  dragPreview?: RackCableDragPreview,
 ): RackCableLayout[] {
   const definitionsByKey = new Map(definitions.map((definition) => [definition.key, definition]));
   const ranked = rankedPlugIds(patch);
@@ -59,22 +67,28 @@ export function layoutPatchCables(
     const toDefinition = definitionsByKey.get(to.key);
     const output = portPosition(from, "out", cable.fromPort, fromDefinition);
     const input = portPosition(to, "in", cable.toPort, toDefinition);
-    const sag = Math.max(70, Math.abs(input.x - output.x) * 0.22) * (1.5 - tension);
-    const slumpX = (output.x + input.x) / 2;
-    const slumpY = (output.y + input.y) / 2 + sag;
-    const outputAngle = Math.atan2(slumpY - output.y, slumpX - output.x);
-    const inputAngle = Math.atan2(slumpY - input.y, slumpX - input.x);
+    const previewOutput = dragPreview?.cableId === cable.id && dragPreview.side === "output"
+      ? { x: dragPreview.x, y: dragPreview.y }
+      : output;
+    const previewInput = dragPreview?.cableId === cable.id && dragPreview.side === "input"
+      ? { x: dragPreview.x, y: dragPreview.y }
+      : input;
+    const sag = Math.max(70, Math.abs(previewInput.x - previewOutput.x) * 0.22) * (1.5 - tension);
+    const slumpX = (previewOutput.x + previewInput.x) / 2;
+    const slumpY = (previewOutput.y + previewInput.y) / 2 + sag;
+    const outputAngle = Math.atan2(slumpY - previewOutput.y, slumpX - previewOutput.x);
+    const inputAngle = Math.atan2(slumpY - previewInput.y, slumpX - previewInput.x);
     const clearance = 14;
-    const startX = output.x + Math.cos(outputAngle) * clearance;
-    const startY = output.y + Math.sin(outputAngle) * clearance;
-    const endX = input.x + Math.cos(inputAngle) * clearance;
-    const endY = input.y + Math.sin(inputAngle) * clearance;
+    const startX = previewOutput.x + Math.cos(outputAngle) * clearance;
+    const startY = previewOutput.y + Math.sin(outputAngle) * clearance;
+    const endX = previewInput.x + Math.cos(inputAngle) * clearance;
+    const endY = previewInput.y + Math.sin(inputAngle) * clearance;
     return [{
       ...cable,
-      x1: output.x,
-      y1: output.y,
-      x2: input.x,
-      y2: input.y,
+      x1: previewOutput.x,
+      y1: previewOutput.y,
+      x2: previewInput.x,
+      y2: previewInput.y,
       outputAngle,
       inputAngle,
       topOutputPlug: ranked.outputs.get(`${cable.fromModule}:${cable.fromPort}`)?.id === cable.id,

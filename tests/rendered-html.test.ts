@@ -131,6 +131,7 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(studio, /rackSurfaceBounds\(/);
   assert.match(studio, /setManualHelpHover/);
   assert.match(studio, /onPortHover=/);
+  assert.doesNotMatch(studio, /choose a Library module to insert it on this cable/);
   assert.match(manual, /aria-label="Search MADZINE manual"/);
   assert.match(manual, /onData\(\{language:1\}\)/);
   assert.match(manual, /onData\(\{fontSize:20\}\)/);

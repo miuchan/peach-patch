@@ -25,7 +25,7 @@ import {
   parseAutosavedPatch,
   serializeAutosavePatch,
 } from "../lib/patch-autosave";
-import { cableSignalLevels, layoutPatchCables } from "../lib/rack-cable-layout";
+import { cableSignalLevels, layoutPatchCables, type RackCableDragPreview } from "../lib/rack-cable-layout";
 import { loadBrowserAsset } from "../lib/browser-asset-loader";
 import { importVcvPatch } from "../lib/vcv-patch-import";
 import * as studioHelpers from "../lib/rack-studio-helpers";
@@ -162,7 +162,8 @@ export function RackWebStudio() {
       () => new Set(),
     ),
     [pending, setPending] = useState<PortClick | null>(null),
-    [cableDrag, setCableDrag] = useState<CableDrag | null>(null);
+    [cableDrag, setCableDrag] = useState<CableDrag | null>(null),
+    [cableDragPoint, setCableDragPoint] = useState<{ x: number; y: number } | null>(null);
   const [manualHelpHover,setManualHelpHover]=useState<{
     moduleId:string;
     type:"module"|"param"|"in"|"out";
@@ -803,10 +804,18 @@ export function RackWebStudio() {
       ? { moduleId: path.fromModule, direction: "out" as const, portId: path.fromPort }
       : { moduleId: path.toModule, direction: "in" as const, portId: path.toPort };
     setCableDrag({ cableId: path.id, side, port });
+    const rack = rackRef.current;
+    if (rack) {
+      const rect = rack.getBoundingClientRect();
+      setCableDragPoint({
+        x: (event.clientX - rect.left - pan.x) / zoom,
+        y: (event.clientY - rect.top - pan.y) / zoom,
+      });
+    }
     setPending(port);
     setSelectedCableIds(new Set([path.id]));
     setStatus("Dragging cable end · release on another compatible port to reconnect, or empty rack to disconnect");
-  }, [modulesLocked]);
+  }, [modulesLocked, pan.x, pan.y, rackRef, zoom]);
 
   const startCableDragFromPort = useCallback((port: PortClick, event: React.PointerEvent<HTMLButtonElement>) => {
     if (modulesLocked) return;
@@ -826,6 +835,7 @@ export function RackWebStudio() {
     if (cableDrag.port.direction === target.direction || cableDrag.port.moduleId === target.moduleId) {
       setStatus("Cable end needs the opposite port on another module");
       setCableDrag(null);
+      setCableDragPoint(null);
       setPending(null);
       return true;
     }
@@ -835,13 +845,19 @@ export function RackWebStudio() {
       setStatus("Cable reconnected · existing competing cable replaced · undo is available");
     }
     setCableDrag(null);
+    setCableDragPoint(null);
     setPending(null);
     return true;
   }, [cableDrag, commitHistory, patch]);
 
   const cablePaths = useMemo(
-    () => layoutPatchCables(patch, registry, cableTension),
-    [cableTension, patch, registry],
+    () => {
+      const cableDragPreview: RackCableDragPreview | undefined = cableDrag && cableDragPoint
+        ? { cableId: cableDrag.cableId, side: cableDrag.side, ...cableDragPoint }
+        : undefined;
+      return layoutPatchCables(patch, registry, cableTension, cableDragPreview);
+    },
+    [cableDrag, cableDragPoint, cableTension, patch, registry],
   );
   const jackSignalLevels = useMemo(
     () => cableSignalLevels(patch.cables, visualSignals.cables),
@@ -2335,7 +2351,16 @@ export function RackWebStudio() {
         ref={rackRef}
         className={`pw-rack ${modulesLocked ? "modules-locked" : ""}`}
         aria-label="Peach Patch modular rack"
-        onPointerMove={pointerMove}
+        onPointerMove={(event) => {
+          if (cableDrag) {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setCableDragPoint({
+              x: (event.clientX - rect.left - pan.x) / zoom,
+              y: (event.clientY - rect.top - pan.y) / zoom,
+            });
+          }
+          pointerMove(event);
+        }}
         onPointerUp={(event) => {
           if (cableDrag) {
             if ((event.target as Element).closest(".pw-ports button")) return;
@@ -2344,6 +2369,7 @@ export function RackWebStudio() {
               cables: current.cables.filter((cable) => cable.id !== cableDrag.cableId),
             }));
             setCableDrag(null);
+            setCableDragPoint(null);
             setPending(null);
             setStatus("Cable disconnected · undo is available");
             return;
@@ -2726,7 +2752,7 @@ export function RackWebStudio() {
             aria-hidden="true"
           />
         )}
-        {(selectedIds.size > 1 || selectedCableIds.size > 0) && (
+        {selectedIds.size + selectedCableIds.size > 1 && (
           <div className="pw-selection-count">
             {selectedIds.size
               ? `${selectedIds.size} module${selectedIds.size === 1 ? "" : "s"}`
@@ -2735,9 +2761,7 @@ export function RackWebStudio() {
             {selectedCableIds.size
               ? `${selectedCableIds.size} cable${selectedCableIds.size === 1 ? "" : "s"}`
               : ""}{" "}
-            selected · {selectedCableIds.size === 1
-              ? "choose a Library module to insert it on this cable"
-              : "delete is undoable"}
+            selected · delete is undoable
           </div>
         )}
         {!patch.modules.length && (

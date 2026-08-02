@@ -187,6 +187,32 @@ test("cable layout owns plug ordering, geometry, and signal fan-out", () => {
   assert.equal(levels.get("target:in:0"), 0.75);
 });
 
+test("cable drag preview moves only the grabbed endpoint", () => {
+  const patch = {
+    modules: [
+      { id: "source", key: "source", x: 0, y: 0, width: 90 },
+      { id: "target", key: "target", x: 300, y: 0, width: 90 },
+    ],
+    cables: [
+      { id: "cable", fromModule: "source", fromPort: 0, toModule: "target", toPort: 0, color: "#fff" },
+    ],
+  };
+  const definitions = [
+    { key: "source", width: 90, inputs: [], outputs: [{ id: 0, name: "out", kind: "audio" }] },
+    { key: "target", width: 90, inputs: [{ id: 0, name: "in", kind: "audio" }], outputs: [] },
+  ];
+  const [base] = layoutPatchCables(patch, definitions, 0.5);
+  const [preview] = layoutPatchCables(patch, definitions, 0.5, {
+    cableId: "cable",
+    side: "input",
+    x: 180,
+    y: 240,
+  });
+  assert.deepEqual([preview.x1, preview.y1], [base.x1, base.y1]);
+  assert.deepEqual([preview.x2, preview.y2], [180, 240]);
+  assert.notEqual(preview.d, base.d);
+});
+
 test("browser asset loader validates and normalizes byte-backed module assets", async () => {
   const rom = new Uint8Array(16);
   rom.set([0x4e, 0x45, 0x53, 0x1a]);
