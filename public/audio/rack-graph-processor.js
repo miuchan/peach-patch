@@ -724,7 +724,6 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     rackModule.inputChannels.fill(0);
     for (const cable of this.incoming.get(rackModule.id) || []) {
       const source = this.modules.get(cable.fromModule),
-        buffer = cable.feedback ? source.previous : source.outputs,
         channels = cable.feedback
           ? source.previousChannels[cable.fromPort]
           : source.currentChannels[cable.fromPort];
@@ -732,14 +731,25 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         rackModule.inputChannels[cable.toPort],
         channels,
       );
-      for (let channel = 0; channel < channels; channel++)
+    }
+    for (const cable of this.incoming.get(rackModule.id) || []) {
+      const source = this.modules.get(cable.fromModule),
+        buffer = cable.feedback ? source.previous : source.outputs,
+        channels = cable.feedback
+          ? source.previousChannels[cable.fromPort]
+          : source.currentChannels[cable.fromPort],
+        inputChannels = rackModule.inputChannels[cable.toPort];
+      for (let channel = 0; channel < inputChannels; channel++) {
+        const sourceChannel = channels === 1 ? 0 : channel;
+        if (sourceChannel >= channels) continue;
         for (let frame = 0; frame < frames; frame++)
           rackModule.inputs[
             (channel * rackModule.inputCount + cable.toPort) * 128 + frame
           ] +=
             buffer[
-              (channel * source.outputCount + cable.fromPort) * 128 + frame
+              (sourceChannel * source.outputCount + cable.fromPort) * 128 + frame
             ];
+      }
     }
     for (let port = 0; port < rackModule.inputCount; port++) {
       rackModule.runtime.rack_web_set_input_connected(
@@ -762,7 +772,6 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         ] = 0;
     for (const cable of this.incoming.get(rackModule.id) || []) {
       const source = this.modules.get(cable.fromModule),
-        buffer = cable.feedback ? source.previous : source.outputs,
         channels = cable.feedback
           ? source.previousChannels[cable.fromPort]
           : source.currentChannels[cable.fromPort];
@@ -770,13 +779,24 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         rackModule.inputChannels[cable.toPort],
         channels,
       );
-      for (let channel = 0; channel < channels; channel++)
+    }
+    for (const cable of this.incoming.get(rackModule.id) || []) {
+      const source = this.modules.get(cable.fromModule),
+        buffer = cable.feedback ? source.previous : source.outputs,
+        channels = cable.feedback
+          ? source.previousChannels[cable.fromPort]
+          : source.currentChannels[cable.fromPort],
+        inputChannels = rackModule.inputChannels[cable.toPort];
+      for (let channel = 0; channel < inputChannels; channel++) {
+        const sourceChannel = channels === 1 ? 0 : channel;
+        if (sourceChannel >= channels) continue;
         rackModule.inputs[
           (channel * rackModule.inputCount + cable.toPort) * 128 + frame
         ] +=
           buffer[
-            (channel * source.outputCount + cable.fromPort) * 128 + frame
+            (sourceChannel * source.outputCount + cable.fromPort) * 128 + frame
           ];
+      }
     }
     for (let port = 0; port < rackModule.inputCount; port++) {
       rackModule.runtime.rack_web_set_input_connected(

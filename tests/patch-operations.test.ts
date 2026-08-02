@@ -318,7 +318,7 @@ test("disconnect removes every cable touching one module", () => {
   assert.deepEqual(result.patch.cables.map((cable) => cable.id), ["keep"]);
 });
 
-test("connecting a port replaces the existing cable on that input", () => {
+test("connecting ports preserves input stacks and rejects an exact duplicate", () => {
   const patch = {
     modules: [source, inserted, target],
     cables: [
@@ -335,8 +335,8 @@ test("connecting a port replaces the existing cable on that input", () => {
   );
 
   assert.ok(next);
-  assert.deepEqual(next.cables.map((cable) => cable.id), ["keep", "new"]);
-  assert.deepEqual(next.cables[1], {
+  assert.deepEqual(next.cables.map((cable) => cable.id), ["old", "keep", "new"]);
+  assert.deepEqual(next.cables[2], {
     id: "new",
     fromModule: "inserted",
     fromPort: 4,
@@ -344,9 +344,16 @@ test("connecting a port replaces the existing cable on that input", () => {
     toPort: 2,
     color: "green",
   });
+  assert.equal(connectPatchCable(
+    next,
+    { moduleId: "inserted", portId: 4 },
+    { moduleId: "target", portId: 2 },
+    "duplicate",
+    "purple",
+  ), null);
 });
 
-test("reconnecting a cable endpoint preserves its color and replaces the competing endpoint", () => {
+test("reconnecting a cable endpoint preserves its color and every existing port stack", () => {
   const patch = {
     modules: [source, target, { ...target, id: "other" }],
     cables: [
@@ -356,10 +363,19 @@ test("reconnecting a cable endpoint preserves its color and replaces the competi
   };
   assert.deepEqual(reconnectPatchCableEndpoint(patch, "move", "input", { moduleId: "other", portId: 4 }).cables, [
     { id: "move", fromModule: "source", fromPort: 0, toModule: "other", toPort: 4, color: "red" },
+    { id: "old", fromModule: "source", fromPort: 1, toModule: "other", toPort: 4, color: "blue" },
   ]);
   assert.deepEqual(reconnectPatchCableEndpoint(patch, "move", "output", { moduleId: "other", portId: 1 }).cables.find((cable) => cable.id === "move"), {
     id: "move", fromModule: "other", fromPort: 1, toModule: "target", toPort: 2, color: "red",
   });
+  const duplicate = {
+    ...patch,
+    cables: [
+      ...patch.cables,
+      { id: "same", fromModule: "source", fromPort: 0, toModule: "other", toPort: 4, color: "green" },
+    ],
+  };
+  assert.equal(reconnectPatchCableEndpoint(duplicate, "move", "input", { moduleId: "other", portId: 4 }), null);
 });
 
 test("Rack module presets restore matching controls and typed data only", () => {

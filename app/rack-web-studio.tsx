@@ -107,6 +107,9 @@ const CABLES = [
 type PortClick = { moduleId: string; direction: "in" | "out"; portId: number };
 type CableDrag = { cableId: string; side: "input" | "output"; port: PortClick };
 type CableDraft = { port: PortClick; color: string };
+type PatchOpenFailure =
+  | { kind: "blocked"; error: BlockedVcvPatchError }
+  | { kind: "invalid"; message: string };
 type ResolveResult = {
   key: string;
   plugin: string;
@@ -147,7 +150,7 @@ export function RackWebStudio() {
   const [patchUrl, setPatchUrl] = useState("");
   const [patchUrlOpen, setPatchUrlOpen] = useState(false);
   const [patchUrlError, setPatchUrlError] = useState("");
-  const [patchOpenError, setPatchOpenError] = useState<BlockedVcvPatchError | null>(null);
+  const [patchOpenFailure, setPatchOpenFailure] = useState<PatchOpenFailure | null>(null);
   const [replaceMode, setReplaceMode] = useState(false);
   const [quickAdd, setQuickAdd] = useState<RackStudioQuickAddState | null>(null);
   const [moduleMenu, setModuleMenu] = useState<{
@@ -519,10 +522,12 @@ export function RackWebStudio() {
 
   const openPatch = async (file: File) => {
     if(registryState!=="ready"){
-      setStatus(registryState==="error"?"GitHub registry is unavailable":"Wait for the GitHub registry to finish loading");
+      const message = registryState==="error"?"GitHub registry is unavailable":"Wait for the GitHub registry to finish loading";
+      setPatchOpenFailure({ kind: "invalid", message });
+      setStatus(message);
       return;
     }
-    setPatchOpenError(null);
+    setPatchOpenFailure(null);
     setBusy(true);
     try {
       const raw = parseVcvArchive(await file.arrayBuffer());
@@ -555,8 +560,11 @@ export function RackWebStudio() {
       setPatchName(`${file.name.replace(/\.vcv$/i, "")}-web.vcv`);
       setStatus(`${file.name} opened · ${modules.length} modules · ${cables.length} cables · all modules ready`);
     } catch (error) {
-      if (error instanceof BlockedVcvPatchError) setPatchOpenError(error);
-      setStatus(error instanceof Error ? error.message : "Invalid .vcv patch");
+      const message = error instanceof Error ? error.message : "Invalid .vcv patch";
+      setPatchOpenFailure(error instanceof BlockedVcvPatchError
+        ? { kind: "blocked", error }
+        : { kind: "invalid", message });
+      setStatus(message);
     } finally {
       setBusy(false);
     }
@@ -758,7 +766,11 @@ export function RackWebStudio() {
       `cable-${crypto.randomUUID()}`,
       CABLES[patch.cables.length % CABLES.length],
     );
-    if (!next) return;
+    if (!next) {
+      setPending(null);
+      setStatus("That exact cable connection already exists");
+      return;
+    }
     commitHistory(next);
     setSelectedCableIds(new Set());
     setPending(null);
@@ -789,10 +801,13 @@ export function RackWebStudio() {
         CABLES[patch.cables.length % CABLES.length],
       );
     setPending(null);
-    if (!next) return;
+    if (!next) {
+      setStatus("That exact cable connection already exists");
+      return;
+    }
     commitHistory(next);
     setSelectedCableIds(new Set());
-    setStatus("Cable dragged into place · existing input cable replaced · undo is available");
+    setStatus("Cable added to port stack · undo is available");
   }, [commitHistory, modulesLocked, patch]);
 
   const suppressNextPortClick = useCallback(() => {
@@ -807,6 +822,26 @@ export function RackWebStudio() {
     event.stopPropagation();
     if (modulesLocked) {
       setStatus("Exit Perform mode before changing cables");
+      return;
+    }
+    if (event.metaKey || event.ctrlKey) {
+      const port = side === "input"
+        ? { moduleId: path.toModule, direction: "in" as const, portId: path.toPort }
+        : { moduleId: path.fromModule, direction: "out" as const, portId: path.fromPort };
+      const rack = rackRef.current;
+      if (!rack) return;
+      const rect = rack.getBoundingClientRect();
+      setCableDraft({
+        port,
+        color: CABLES[patch.cables.length % CABLES.length],
+      });
+      setCableDragPoint({
+        x: (event.clientX - rect.left - pan.x) / zoom,
+        y: (event.clientY - rect.top - pan.y) / zoom,
+      });
+      setPending(port);
+      setSelectedCableIds(new Set());
+      setStatus("Stacking a new cable · release on a compatible port");
       return;
     }
     const port = side === "input"
@@ -824,7 +859,7 @@ export function RackWebStudio() {
     setPending(port);
     setSelectedCableIds(new Set([path.id]));
     setStatus("Dragging cable end · release on another compatible port to reconnect, or empty rack to disconnect");
-  }, [modulesLocked, pan.x, pan.y, rackRef, zoom]);
+  }, [modulesLocked, pan.x, pan.y, patch.cables.length, rackRef, zoom]);
 
   const startCableDragFromPort = useCallback((port: PortClick, event: React.PointerEvent<HTMLButtonElement>) => {
     if (modulesLocked || event.button !== 0) return;
@@ -833,7 +868,7 @@ export function RackWebStudio() {
         ? candidate.toModule === port.moduleId && candidate.toPort === port.portId
         : candidate.fromModule === port.moduleId && candidate.fromPort === port.portId,
     );
-    if (path) {
+    if (path && !event.metaKey && !event.ctrlKey) {
       startCableDrag(path, port.direction === "in" ? "input" : "output", event);
       return;
     }
@@ -888,8 +923,8 @@ export function RackWebStudio() {
     const next = reconnectPatchCableEndpoint(patch, cableDrag.cableId, cableDrag.side, target);
     if (next) {
       commitHistory(next);
-      setStatus("Cable reconnected · existing competing cable replaced · undo is available");
-    }
+      setStatus("Cable reconnected · port stacks preserved · undo is available");
+    } else setStatus("That exact cable connection already exists");
     setCableDrag(null);
     setCableDragPoint(null);
     setPending(null);
@@ -2440,11 +2475,11 @@ export function RackWebStudio() {
           </form>
         </div>
       ) : null}
-      {patchOpenError ? (
+      {patchOpenFailure ? (
         <div
           className="pw-dialog-backdrop"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setPatchOpenError(null);
+            if (event.target === event.currentTarget) setPatchOpenFailure(null);
           }}
         >
           <section
@@ -2454,34 +2489,42 @@ export function RackWebStudio() {
             aria-labelledby="pw-patch-error-title"
             aria-describedby="pw-patch-error-description"
             onKeyDown={(event) => {
-              if (event.key === "Escape") setPatchOpenError(null);
+              if (event.key === "Escape") setPatchOpenFailure(null);
             }}
           >
             <header>
               <div>
-                <span>PATCH BLOCKED</span>
-                <b id="pw-patch-error-title">Commercial or unavailable modules</b>
+                <span>{patchOpenFailure.kind === "blocked" ? "PATCH BLOCKED" : "PATCH NOT LOADED"}</span>
+                <b id="pw-patch-error-title">
+                  {patchOpenFailure.kind === "blocked"
+                    ? "Commercial or unavailable modules"
+                    : "Unsupported or invalid VCV patch"}
+                </b>
               </div>
-              <button type="button" aria-label="Close" onClick={() => setPatchOpenError(null)}>×</button>
+              <button type="button" aria-label="Close" onClick={() => setPatchOpenFailure(null)}>×</button>
             </header>
             <p id="pw-patch-error-description">
-              Nothing was loaded. This patch contains {patchOpenError.instanceCount} module instance{patchOpenError.instanceCount === 1 ? "" : "s"} that the verified browser runtime cannot use.
+              {patchOpenFailure.kind === "blocked"
+                ? <>Nothing was loaded. This patch contains {patchOpenFailure.error.instanceCount} module instance{patchOpenFailure.error.instanceCount === 1 ? "" : "s"} that the verified browser runtime cannot use.</>
+                : <>Nothing was loaded. {patchOpenFailure.message}</>}
             </p>
-            <ul className="pw-patch-error-list">
-              {patchOpenError.blocked.map((module) => (
-                <li key={module.key}>
-                  <b>{module.key}</b>
-                  <span>
-                    {module.count > 1 ? `${module.count} instances · ` : ""}
-                    {module.reason === "commercial-license"
-                      ? `commercial license (${module.license})`
-                      : "not available in the verified browser registry"}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {patchOpenFailure.kind === "blocked" ? (
+              <ul className="pw-patch-error-list">
+                {patchOpenFailure.error.blocked.map((module) => (
+                  <li key={module.key}>
+                    <b>{module.key}</b>
+                    <span>
+                      {module.count > 1 ? `${module.count} instances · ` : ""}
+                      {module.reason === "commercial-license"
+                        ? `commercial license (${module.license})`
+                        : "not available in the verified browser registry"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <footer>
-              <button type="button" autoFocus onClick={() => setPatchOpenError(null)}>Keep current patch</button>
+              <button type="button" autoFocus onClick={() => setPatchOpenFailure(null)}>Keep current patch</button>
             </footer>
           </section>
         </div>
@@ -2507,7 +2550,7 @@ export function RackWebStudio() {
       />
       <section
         ref={rackRef}
-        className={`pw-rack ${modulesLocked ? "modules-locked" : ""}`}
+        className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
         aria-label="Peach Patch modular rack"
         onPointerMove={(event) => {
           if (cableDrag || cableDraft) {

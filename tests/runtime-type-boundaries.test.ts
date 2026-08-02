@@ -15,7 +15,20 @@ test("autosave parser rejects structurally invalid JSON instead of trusting a ca
 test("VCV parser rejects JSON that does not contain a valid module graph", () => {
   assert.throws(
     () => parseVcvArchive(new TextEncoder().encode(JSON.stringify({ modules: [{}], cables: [] }))),
-    /no module graph/,
+    /module graph format is unsupported or invalid/,
+  );
+  assert.throws(
+    () => parseVcvArchive(new TextEncoder().encode(JSON.stringify({
+      version: "0.6.0",
+      modules: [{
+        plugin: "Legacy",
+        model: "Oscillator",
+        pos: [0, 0],
+        params: [{ paramId: 0, value: 0.5 }],
+      }],
+      wires: [],
+    }))),
+    /VCV Rack 0\.6\.0 patch could not be loaded because its module graph format is unsupported or invalid/,
   );
 });
 
@@ -30,13 +43,16 @@ test("VCV parser normalizes Rack 0.x modules, wires, parameters, and pixel coord
       { outputModuleId: 0, outputId: 0, inputModuleId: 1, inputId: 0 },
     ],
   })));
-  assert.equal(patch.version, "0.3.1");
+  assert.equal(patch.version, "2.6.6");
+  assert.equal(patch.patchworkWebSourceVersion, "0.3.1");
+  assert.deepEqual(patch.patchworkWebMigrations, ["rack-0.3.x-widget-order-to-v2"]);
   assert.deepEqual(patch.modules[0], {
     plugin: "Fundamental",
     model: "VCO",
     id: 0,
     pos: [2, 1],
     params: [{ id: 0, value: 0.25 }, { id: 1, value: 1 }],
+    patchworkWebLegacyUi: { legacyWidth: 150 },
   });
   assert.deepEqual(patch.cables[0], {
     id: 0,

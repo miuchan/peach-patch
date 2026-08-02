@@ -1,5 +1,11 @@
 import { decompress } from "fzstd";
 import { isFiniteNumber, isRecord, parseJson } from "./runtime-type-guards.ts";
+import {
+  CURRENT_VCV_PATCH_VERSION,
+  legacyVcvMigration,
+  migrateLegacyModule,
+  migrateLegacyPortId,
+} from "./vcv-legacy-migrations.ts";
 
 export type VcvModule = {
   id: number;
@@ -35,7 +41,9 @@ function normalizeLegacyVcvPatch(value: unknown): unknown {
   if (!isRecord(value) || !Array.isArray(value.modules) || !Array.isArray(value.wires) || value.cables !== undefined) {
     return value;
   }
-  const modules = value.modules.map((module, id) => {
+  const migration = legacyVcvMigration(value.version);
+  const sourceModules = value.modules;
+  const legacyModules = sourceModules.map((module) => {
     if (
       !isRecord(module) ||
       typeof module.plugin !== "string" ||
@@ -45,20 +53,67 @@ function normalizeLegacyVcvPatch(value: unknown): unknown {
       !module.pos.every(isFiniteNumber) ||
       !Array.isArray(module.params) ||
       !module.params.every(isFiniteNumber) ||
-      (module.data !== undefined && !isRecord(module.data))
+      (module.data != null && !isRecord(module.data))
     ) {
-      return module;
+      return undefined;
     }
-    return {
-      ...module,
-      id,
-      pos: [module.pos[0] / 15, module.pos[1] / 380],
-      params: module.params.map((param, paramId) => ({ id: paramId, value: param })),
+    return module as Record<string, unknown> & {
+      plugin: string;
+      model: string;
+      pos: [number, number];
+      params: number[];
     };
   });
-  const cables = value.wires.map((wire, id) => isRecord(wire) ? { ...wire, id } : wire);
+  const modules = legacyModules.map((module, id) => {
+    if (!module) return sourceModules[id];
+    const migrated = migrateLegacyModule(module, migration);
+    return {
+      ...migrated,
+      id,
+      pos: [module.pos[0] / 15, module.pos[1] / 380],
+    };
+  });
+  const cables = value.wires.map((wire, id) => {
+    if (!isRecord(wire)) return wire;
+    const outputModuleId = wire.outputModuleId;
+    const inputModuleId = wire.inputModuleId;
+    const outputId = wire.outputId;
+    const inputId = wire.inputId;
+    if (
+      !Number.isSafeInteger(outputModuleId) ||
+      !Number.isSafeInteger(inputModuleId) ||
+      !Number.isSafeInteger(outputId) ||
+      !Number.isSafeInteger(inputId)
+    ) return { ...wire, id };
+    return {
+      ...wire,
+      id,
+      outputId: migrateLegacyPortId(
+        legacyModules[outputModuleId as number],
+        "output",
+        outputId as number,
+        migration,
+      ),
+      inputId: migrateLegacyPortId(
+        legacyModules[inputModuleId as number],
+        "input",
+        inputId as number,
+        migration,
+      ),
+    };
+  });
+  const previousMigrations = Array.isArray(value.patchworkWebMigrations)
+    ? value.patchworkWebMigrations.filter((item): item is string => typeof item === "string")
+    : [];
   return {
     ...Object.fromEntries(Object.entries(value).filter(([key]) => key !== "wires")),
+    ...(migration
+      ? {
+          version: CURRENT_VCV_PATCH_VERSION,
+          patchworkWebSourceVersion: value.version,
+          patchworkWebMigrations: [...new Set([...previousMigrations, migration.id])],
+        }
+      : {}),
     modules,
     cables,
   };
@@ -103,7 +158,10 @@ export function parseVcvArchive(source: ArrayBuffer | Uint8Array): VcvPatch {
     : parseJson(decodeTarEntry(decompress(compressed), "patch.json"));
   const patch = normalizeLegacyVcvPatch(decoded);
   if (!isVcvPatch(patch)) {
-    throw new Error("The VCV patch has no module graph");
+    const version = isRecord(decoded) && typeof decoded.version === "string"
+      ? `VCV Rack ${decoded.version}`
+      : "The VCV";
+    throw new Error(`${version} patch could not be loaded because its module graph format is unsupported or invalid`);
   }
   return patch;
 }

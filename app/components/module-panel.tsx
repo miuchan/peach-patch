@@ -3,11 +3,13 @@ import type { ModuleInstance } from "../../lib/patch-types";
 import { resolvedModulePortPosition } from "../../lib/patch-operations";
 import { rackParamResetValue, registerRackParamPress, type RackParamPress } from "../../lib/rack-param-interaction";
 import type { ParamSpec, PortSpec, WebPluginModule } from "../../lib/web-plugin-registry";
+import { rackRuntimePorts } from "../../lib/rack-runtime-ports";
 import { rackUiGeometryIsTrustworthy } from "../../lib/rack-ui-geometry";
 import { rackParamIsVisible } from "../../lib/rack-param-visibility";
 import { STROKE_SPECIAL_MODES, strokeSpecialModeLabel } from "../../lib/stroke-host";
 import { RackScopeDisplay } from "./rack-scope-display";
 import { RackParamVisual, rackParamControlSize, rackParamInteraction, rackParamSwitchFrames } from "./rack-param-visual";
+import { rackLegacyUi } from "../../lib/rack-module-compatibility";
 import { RackSegmentDisplay } from "./rack-segment-display";
 import { RackParamNumericDisplay } from "./rack-param-numeric-display";
 import { RackLightVisual } from "./rack-light-visual";
@@ -235,22 +237,26 @@ export function ModulePanel({
   const assetPickerTimerRef=useRef<number|null>(null);
   const suppressAssetPickerRef=useRef(false);
   useEffect(()=>()=>{if(assetPickerTimerRef.current!==null)window.clearTimeout(assetPickerTimerRef.current);},[]);
+  const compatibilityUi = rackLegacyUi(module),
+    hiddenParamIds = new Set(compatibilityUi.hiddenParamIds),
+    runtimeAudio = definition?.runtime?.audio,
+    runtimePorts = definition ? rackRuntimePorts(definition) : undefined;
   const inputs: PortSpec[] =
-    definition?.inputs.filter((port)=>!port.hidden) ??
+    runtimePorts?.inputs ??
     Array.from({ length: 2 }, (_, id) => ({
       id,
       name: `IN ${id + 1}`,
       kind: "cv" as const,
     }));
   const outputs: PortSpec[] =
-    definition?.outputs.filter((port)=>!port.hidden) ??
+    runtimePorts?.outputs ??
     Array.from({ length: 2 }, (_, id) => ({
       id,
       name: `OUT ${id + 1}`,
       kind: "cv" as const,
     }));
   const params: ParamSpec[] =
-    definition?.params.filter((param)=>!param.hidden&&!param.contextOnly&&rackParamIsVisible(param,definition.stateKeys,module.state,connectedInputIds)) ??
+    definition?.params.filter((param)=>!hiddenParamIds.has(param.id)&&!param.hidden&&!param.contextOnly&&rackParamIsVisible(param,definition.stateKeys,module.state,connectedInputIds)) ??
     module.params.map((value, id) => ({
       id,
       name: `PARAM ${id + 1}`,
@@ -275,7 +281,7 @@ export function ModulePanel({
   const [assetUrl,setAssetUrl]=useState(typeof rackData.url==="string"?rackData.url:""),
     [urlStatus,setUrlStatus]=useState("");
   const audioData=rackData.audio&&typeof rackData.audio==="object"&&!Array.isArray(rackData.audio)?rackData.audio as Record<string,unknown>:undefined,
-    audioChannels=definition?.runtime?.audio?.channels,
+    audioChannels=runtimeAudio?.channels,
     renderedLightValues=lightValues??(audioChannels?audioBoundaryLightValues(audioChannels,definition?.lights??0,audioRunning,inputSignalLevels):[]);
   const hasDeclaredPanelArtwork=Boolean(module.screenshotUrl),
     panelArtworkFailed=failedPanelArtworkUrl===module.screenshotUrl,
@@ -539,8 +545,8 @@ export function ModulePanel({
         </div>
       ))}
       {definition?.runtime?.visuals?.filter(visual=>visual.kind==="audio-display").map((visual,index)=><RackAudioDisplay key={`audio-display-${index}`} audio={audioData} running={audioRunning} channels={visual.channels} x={visual.x} y={visual.y} width={visual.width} height={visual.height} scaleX={module.width/definition.width}/>)}
-      {definition?.lightWidgets?.map((light)=><RackLightVisual key={`light-${light.id}`} light={light} values={renderedLightValues} moduleWidth={module.width} sourceWidth={module.width} param={light.paramId===undefined?undefined:definition.params.find(param=>param.id===light.paramId)} paramValue={light.paramId===undefined?undefined:module.params[light.paramId]}/>)}
-      {hasParamSourceLayout&&definition&&panelParams.map(param=><RackParamVisual key={`visual-${param.id}`} param={param} value={module.params[param.id]??param.default} moduleWidth={module.width} sourceWidth={module.width}/>)}
+      {definition?.lightWidgets?.map((light)=><RackLightVisual key={`light-${light.id}`} light={light} values={renderedLightValues} moduleWidth={module.width} sourceWidth={definition.width} param={light.paramId===undefined?undefined:definition.params.find(param=>param.id===light.paramId)} paramValue={light.paramId===undefined?undefined:module.params[light.paramId]}/>)}
+      {hasParamSourceLayout&&definition&&panelParams.map(param=><RackParamVisual key={`visual-${param.id}`} param={param} value={module.params[param.id]??param.default} moduleWidth={module.width} sourceWidth={definition.width}/>)}
       <div className="pw-module-state">
         <i />
         <span>

@@ -71,6 +71,10 @@ rack_web_process(frames, sampleRate)
 
 Buffers are planar `float32`, 128 frames per channel, with up to 16 Rack channels per port. Channel zero keeps the ABI 0.2 monophonic layout; higher channels follow in channel-major port groups. Voltages use Rack conventions inside WASM. `public/audio/rack-graph-processor.js` owns every module instance in one render thread, moves Rack-voltage buffers between ports, and converts only the final Audio-8 pair to browser audio scale.
 
+Like VCV Rack 2.5+, every input and output port supports a cable stack. Output stacks fan one signal out to multiple destinations. Input stacks sum voltages per channel; a monophonic source is broadcast across the widest polyphonic source before summing. Exact duplicate output-to-input edges are rejected. Dragging a visible plug moves that cable, while Cmd/Ctrl-drag starts a new cable on the occupied port.
+
+Core audio boundaries expose the two browser output-device inputs that the runtime actually routes. Registry `FROM DEVICE` outputs and device channels above L/R remain hidden until browser audio-input and multichannel-output routing are implemented.
+
 The three asset calls are an optional-capacity protocol implemented by every artifact. Ordinary DSP modules report zero capacity. Sampler modules expose an interleaved `float32` staging buffer; the worklet copies browser-decoded PCM into WASM once and commits its frame/channel/sample-rate metadata before processing begins.
 
 The capture calls are the inverse optional-capacity protocol for modules that write audio. VCV Recorder keeps its real-time gain, trigger/gate, mono/stereo, and VU behavior in WASM, exposes a bounded interleaved PCM queue, and never blocks the AudioWorklet on encoding or filesystem access. The worklet drains 2,048-frame transferable chunks; the main thread converts them incrementally to PCM16 and finishes a WAV `Blob` on stop. Stopping audio or rebuilding the graph first flushes every active capture.

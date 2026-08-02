@@ -90,6 +90,38 @@ test("registry geometry repairs panels whose declared width clips their controls
   assert.equal(module.width, 75);
 });
 
+test("registry control dimensions preserve the source panel width", () => {
+  const [module] = modulesFromRegistryIndex(
+    {
+      schemaVersion: 1,
+      packages: [{
+        ...moduleRecord,
+        key: "AudibleInstruments/Branches",
+        plugin: "AudibleInstruments",
+        model: "Branches",
+        width: 90,
+        params: [{
+          id: 0,
+          name: "Channel 1 mode",
+          min: 0,
+          max: 1,
+          default: 0,
+          position: {
+            x: 76.335,
+            y: 65.669,
+            centered: true,
+            width: 15.36,
+            height: 15.3577,
+            widget: "TL1105",
+          },
+        }],
+      }],
+    },
+    "https://raw.example/registry/index.json",
+  );
+  assert.equal(module.width, 90);
+});
+
 test("registry geometry brings clipped positions back into the fixed Rack panel", () => {
   const [module] = modulesFromRegistryIndex(
     {

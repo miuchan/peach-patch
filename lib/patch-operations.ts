@@ -183,16 +183,19 @@ export function connectPatchCable(
   if (
     from.moduleId === to.moduleId ||
     !patch.modules.some((module) => module.id === from.moduleId) ||
-    !patch.modules.some((module) => module.id === to.moduleId)
+    !patch.modules.some((module) => module.id === to.moduleId) ||
+    patch.cables.some((cable) =>
+      cable.fromModule === from.moduleId &&
+      cable.fromPort === from.portId &&
+      cable.toModule === to.moduleId &&
+      cable.toPort === to.portId
+    )
   )
     return null;
   return {
     ...patch,
     cables: [
-      ...patch.cables.filter(
-        (cable) =>
-          !(cable.toModule === to.moduleId && cable.toPort === to.portId),
-      ),
+      ...patch.cables,
       {
         id: cableId,
         fromModule: from.moduleId,
@@ -218,13 +221,17 @@ export function reconnectPatchCableEndpoint(
   const nextCable = side === "input"
     ? { ...cable, toModule: port.moduleId, toPort: port.portId }
     : { ...cable, fromModule: port.moduleId, fromPort: port.portId };
+  if (patch.cables.some((candidate) =>
+    candidate.id !== cableId &&
+    candidate.fromModule === nextCable.fromModule &&
+    candidate.fromPort === nextCable.fromPort &&
+    candidate.toModule === nextCable.toModule &&
+    candidate.toPort === nextCable.toPort
+  ))
+    return null;
   return {
     ...patch,
-    cables: patch.cables
-      .filter((candidate) => candidate.id === cableId || !(side === "input"
-        ? candidate.toModule === port.moduleId && candidate.toPort === port.portId
-        : false))
-      .map((candidate) => candidate.id === cableId ? nextCable : candidate),
+    cables: patch.cables.map((candidate) => candidate.id === cableId ? nextCable : candidate),
   };
 }
 

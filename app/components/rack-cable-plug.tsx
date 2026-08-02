@@ -16,8 +16,9 @@ function lightStates(signal:RackPlugSignal|undefined){
 }
 
 export function RackCablePlug({x,y,angle,color,signal,top,gradientId,cableId,moduleId,direction,portId,onPointerDown}:{x:number;y:number;angle:number;color:string;signal?:RackPlugSignal;top:boolean;gradientId:string;cableId:string;moduleId:string;direction:"in"|"out";portId:number;onPointerDown?:(event:React.PointerEvent<Element>)=>void}){
-  const lights=lightStates(signal),rotation=angle*180/Math.PI-90,active=top?lights.filter(light=>light.brightness>.0001):[];
-  return <g className="pw-cable-plug" transform={`translate(${x} ${y})`} data-cable-id={cableId} data-module-id={moduleId} data-port-direction={direction} data-port-id={portId} role={onPointerDown?"button":undefined} tabIndex={onPointerDown?0:undefined} aria-label={onPointerDown?`Drag ${direction} plug`:undefined} onPointerDown={onPointerDown}>
+  const lights=lightStates(signal),rotation=angle*180/Math.PI-90,active=top?lights.filter(light=>light.brightness>.0001):[],interactive=top&&Boolean(onPointerDown);
+  return <g className={`pw-cable-plug ${top?"top":""}`} transform={`translate(${x} ${y})`} data-cable-id={cableId} data-module-id={moduleId} data-port-direction={direction} data-port-id={portId} role={interactive?"button":undefined} tabIndex={interactive?0:undefined} aria-label={interactive?`Drag ${direction} plug`:undefined} onPointerDown={interactive?onPointerDown:undefined}>
+    {interactive && <title>Drag to reconnect · Cmd/Ctrl-drag to stack a new cable</title>}
     <g transform={`rotate(${rotation})`}>
       <image href={componentAsset("Plug",color)} x={-PLUG_SIZE/2} y={-PLUG_SIZE/2} width={PLUG_SIZE} height={PLUG_SIZE}/>
     </g>

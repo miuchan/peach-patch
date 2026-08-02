@@ -1,6 +1,11 @@
 import type { ModuleInstance } from "./patch-types.ts";
 import { stateFromData } from "./patch-state.ts";
 import type { WebPluginModule } from "./web-plugin-registry.ts";
+import {
+  compactLegacyModuleRows,
+  migrateDeprecatedLegacyUi,
+  rackLegacyUi,
+} from "./rack-module-compatibility.ts";
 
 type ModuleMetadata = Partial<
   Pick<
@@ -21,7 +26,8 @@ export function hydrateModuleWithDefinition(
   definition: WebPluginModule,
   metadata: ModuleMetadata = {},
 ): ModuleInstance {
-  const params = definition.params.map((param) => param.default),
+  const compatibilityUi = rackLegacyUi(module),
+    params = definition.params.map((param) => param.default),
     savedParams = Array.isArray(module.rack?.params)
       ? module.rack.params
       : [];
@@ -39,14 +45,16 @@ export function hydrateModuleWithDefinition(
       params[param.id] = param.value;
   }
   return {
-    ...module,
+    ...migrateDeprecatedLegacyUi(module),
     version: definition.version ?? metadata.version ?? module.version,
     status: "ready",
     description: metadata.description ?? definition.description,
-    screenshotUrl: metadata.screenshotUrl ?? definition.screenshotUrl,
+    screenshotUrl: compatibilityUi.hidePanelArtwork
+      ? undefined
+      : metadata.screenshotUrl ?? definition.screenshotUrl,
     sourceUrl: metadata.sourceUrl ?? definition.sourceUrl,
     license: metadata.license ?? definition.license,
-    width: definition.width,
+    width: compatibilityUi.width ?? definition.width,
     params,
     stateKeys: definition.stateKeys,
     state: stateFromData(module.key, rackData(module), definition.stateKeys),
@@ -59,6 +67,16 @@ export function hydrateModulesWithDefinitions(
 ) {
   const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
   let changed = false;
+  const deprecatedWidths = new Map(
+    modules.flatMap((module) => {
+      const value = module.rack?.patchworkWebLegacyUi;
+      if (!value || typeof value !== "object" || !("width" in value)) return [];
+      const compatibilityUi = rackLegacyUi(module);
+      return compatibilityUi.legacyWidth !== undefined && compatibilityUi.width === undefined
+        ? [[module.id, compatibilityUi.legacyWidth] as const]
+        : [];
+    }),
+  );
   const hydrated = modules.map((module) => {
     if (module.key === "Core/Blank") return module;
     const definition = byKey.get(module.key);
@@ -74,9 +92,16 @@ export function hydrateModulesWithDefinitions(
         module.params.length === definition.params.length &&
         moduleStateKeys.length === definitionStateKeys.length &&
         moduleStateKeys.every((key, index) => key === definitionStateKeys[index]);
-    if (definitionMatches) return module;
+    if (definitionMatches && !deprecatedWidths.has(module.id)) return module;
     changed = true;
     return hydrateModuleWithDefinition(module, definition);
   });
-  return changed ? hydrated : modules;
+  if (deprecatedWidths.size === 0) return changed ? hydrated : modules;
+  changed = true;
+  return compactLegacyModuleRows(hydrated.map((module, index) => ({
+    module,
+    sourceX: modules[index].x,
+    sourceY: modules[index].y,
+    legacyWidth: deprecatedWidths.get(module.id),
+  })));
 }

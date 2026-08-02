@@ -123,6 +123,8 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(panel, /data-port-direction="out"/);
   assert.match(studio, /normalizeRestoredPatch\(restored\.patch, getWebPlugin\)/);
   assert.match(studio, /parseAutosavedPatch\(localStorage\.getItem/);
+  assert.match(studio, /PATCH NOT LOADED/);
+  assert.match(studio, /Unsupported or invalid VCV patch/);
   assert.match(studio, /layoutPatchCables\(patch, registry, cableTension\)/);
   assert.doesNotMatch(
     studio,
