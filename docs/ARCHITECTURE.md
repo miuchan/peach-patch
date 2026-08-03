@@ -1,66 +1,143 @@
 # Peach Patch architecture
 
-Peach Patch is organized around a client-only studio container, pure patch-domain operations, and an isolated browser audio runtime. The dependency direction is intentionally one-way:
+Peach Patch is split into a browser studio, pure patch-domain code, a narrow Cloudflare Worker boundary, and one AudioWorklet-owned signal graph. This repository is a registry consumer: source discovery, C++ adaptation, Emscripten builds, package manifests, and artifact publication belong to [Peach Patch Registry](https://github.com/miuchan/peach-patch-registry).
+
+## System map
 
 ```text
-UI components and studio container
-        |
-        v
-patch operations, serialization, registry and browser adapters
-        |
-        v
-AudioWorklet graph / verified WASM ABI
+VCV Library ───────┐
+PatchStorage ──────┼──► Worker API handlers ──► browser studio
+Rack UI assets ────┘                              │
+                                                  ├──► patch history + local storage
+Peach Patch Registry ──► schema validation ───────┤
+                              │                   ├──► IndexedDB module assets
+                              └──► verified WASM ─┤
+                                                  ▼
+                                      one AudioWorklet graph
+                                                  │
+                                                  ▼
+                                         Web Audio / Web MIDI
 ```
 
-## Boundaries
+The dependency direction is one-way: UI orchestration calls domain operations and adapters; adapters project trusted data into the AudioWorklet. The worklet never becomes a second editable or persisted store.
 
-### Studio container
+## Application boundaries
 
-`app/rack-web-studio.tsx` owns the application session: patch history, selection, registry hydration, audio lifecycle, file commands, and status reporting. It composes the visual boundaries but should not own their markup or low-level gesture algorithms.
+### Entry point and studio container
 
-The visual surface is split into focused components:
+`app/main.tsx` mounts a React 19 client SPA and lazy-loads `app/rack-web-studio.tsx`. The studio container owns session orchestration:
 
-- `rack-studio-topbar.tsx` — file, history, library, audio, and performance controls.
-- `rack-studio-library.tsx` — registry search, URL loading, and module insertion affordances.
-- `rack-studio-inspector.tsx` — selected-module controls and typed state editing.
-- `rack-studio-module-layer.tsx` — module panel rendering and module-level event wiring.
-- `rack-studio-cable-layer.tsx` — cable hit targets, curves, plugs, and signal display.
-- `rack-studio-context-menus.tsx` — module and cable context actions.
-- `rack-studio-quick-add.tsx` — keyboard-first module insertion at a world position.
+- registry loading and module hydration;
+- patch history, selection, viewport, dialogs, and status reporting;
+- file, PatchStorage, preset, autosave, and browser-asset commands;
+- audio and Web MIDI lifecycle;
+- automation, capture, telemetry, and host-control coordination.
 
-Canvas panning, marquee selection, dragging, and touch pinch behavior live in `lib/use-rack-canvas-gestures.ts`. The hook receives patch/history callbacks from the container and does not know about the registry or audio engine.
+The container may compose boundaries, but low-level rendering and gesture algorithms stay in focused components or `lib/` modules. The principal visual boundaries are:
+
+- `rack-studio-topbar.tsx` — file, history, Library, audio, and repository actions;
+- `rack-studio-library.tsx` — registry search, exact VCV Library URL loading, add, insert, and replace affordances;
+- `rack-studio-inspector.tsx` — live ports, parameter/state editing, MIDI learn, presets, and module actions;
+- `rack-studio-module-layer.tsx` and `module-panel.tsx` — panel rendering and module controls;
+- `rack-studio-cable-layer.tsx` and `rack-cable-plug.tsx` — cable geometry, hit targets, plugs, and signal state;
+- `rack-studio-context-menus.tsx` — module and cable commands;
+- `rack-studio-quick-add.tsx` — keyboard-first insertion at a rack position.
+
+Canvas pan, touch pinch, marquee selection, and collision-aware group dragging live in `lib/use-rack-canvas-gestures.ts`. The hook receives patch/history callbacks and has no dependency on the registry or audio engine.
 
 ### Patch domain
 
-Patch transformations are pure and immutable. `lib/patch-operations.ts` owns structural edits such as connecting, replacing, duplicating, healing, deleting, resetting, and randomizing modules. `lib/patch-state.ts`, `lib/patch-autosave.ts`, `lib/vcv-patch-import.ts`, and `lib/vcv-patch-serialize.ts` define the boundaries for persisted data.
+`PatchDocument` in `lib/patch-types.ts` is the internal editable model. Transformations are immutable and are kept outside React:
 
-Derived geometry and runtime projections are separate from edits:
+- `patch-operations.ts` — connect/reconnect, stacking, insert, replace, duplicate, heal-delete, reset, randomize, movement, and viewport calculations;
+- `vcv-patch.ts`, `vcv-legacy-migrations.ts`, and `vcv-patch-import.ts` — archive parsing, legacy repair, validation, and conversion;
+- `vcv-patch-serialize.ts` — Rack-compatible JSON export and ID translation;
+- `patch-state.ts` and `patch-hydrate.ts` — typed Rack state and trusted registry hydration;
+- `patch-autosave.ts` and `patch-automation.ts` — validated browser persistence boundaries;
+- `rack-cable-layout.ts` — derived curves, plugs, draft geometry, stacking order, and signal fan-out.
 
-- `lib/rack-cable-layout.ts` derives cable geometry and signal fan-out.
-- `lib/rack-viewport-control.ts` derives viewport lock and host-control behavior.
-- `lib/rack-studio-helpers.ts` contains placement, IDs, validation, and browser-only helper contracts.
+These modules must not import React or browser audio code. Unknown Rack fields are retained under the `rack` boundary so a supported import/export round trip does not discard data the browser does not interpret.
 
-These modules must not import React or AudioWorklet code. This keeps them testable with Node and prevents UI state from becoming an implicit source of truth.
+### Registry and browser adapters
 
-### Audio and browser adapters
+The browser downloads the mutable registry index directly from HTTPS. `lib/peach-registry-client.ts` validates schema version 1, required package identity/artifact fields, basic parameter and port data, and duplicate keys. It also resolves URLs and normalizes bounded geometry cases before replacing the in-memory catalog in `runtime-plugin-registry.ts`.
 
-`lib/rack-audio-controller.ts` owns the React-facing audio session. `lib/rack-audio-patch-sync.ts` projects patch changes into the live engine and performs incremental synchronization. `lib/rack-audio-engine.ts` remains the worklet client and transport boundary.
+The runtime index is the browser source of truth. `manifestUrl` may be retained as package metadata, but the application does not fetch an independent manifest during module startup. `fetchVerifiedWasm()` resolves the artifact URL, requires HTTPS, then checks declared byte length and SHA-256 before the bytes can reach WebAssembly.
 
-WASM loading, browser assets, and registry verification are isolated in `rack-wasm-host.ts`, `browser-asset-loader.ts`, and `peach-registry-client.ts`. The UI may request these services, but it should not reproduce their validation or transport rules.
+Other browser adapters remain isolated:
 
-## State ownership rules
+- `browser-asset-loader.ts` validates and normalizes audio, image, MIDI, ROM, and script files;
+- `sample-store.ts` owns IndexedDB storage and validates records on read;
+- `rack-wasm-host.ts` exposes the deterministic, restricted WASI surface used outside the graph worklet;
+- `rack-audio-controller.ts` translates engine callbacks into patch/history updates and downloads;
+- `rack-audio-patch-sync.ts` incrementally synchronizes params, state, JSON data, and bypass state.
 
-1. The patch history is the source of truth for editable patch state.
-2. AudioWorklet state is a live projection; it must be rebuilt or synchronized from the patch rather than becoming a second persisted store.
-3. Selection, menus, viewport, and transient gestures are UI session state and must never be serialized into `.vcv` or autosave data.
-4. Imported and autosaved data is normalized at the boundary before entering history.
-5. Every structural edit must be immutable and undoable; side effects such as audio messages or downloads happen after the domain decision.
+### Worker API
+
+`worker/index.ts` routes only known `/api/*` requests and otherwise falls back to SPA assets.
+
+| Route | Responsibility |
+| --- | --- |
+| `/api/library/resolve` | Accept one exact `https://library.vcvrack.com/Plugin/Model` URL and return normalized public metadata |
+| `/api/patchstorage` | Resolve a public PatchStorage page to its hosted `.vcv`, validate redirects, and enforce the 25 MB limit |
+| `/api/rack-component` | Serve the allowlisted Rack component SVGs used by browser controls |
+| `/api/rack-rail` | Serve the immutable local Rack rail SVG |
+
+The Worker does not build modules, proxy arbitrary URLs, store patches, or act as the registry.
+
+## State ownership
+
+| State | Owner | Persistence |
+| --- | --- | --- |
+| Modules, cables, Rack data, automation | `PatchDocument` history | `.vcv` export and validated `localStorage` autosave |
+| Undo/redo | `usePatchHistory` | Session only; capped history |
+| Decoded module assets | `sample-store.ts` | IndexedDB, referenced from patch metadata by storage key |
+| Selection, menus, viewport, gestures | React session | Never serialized |
+| Registry catalog | Runtime registry | Refetched; not persisted as patch state |
+| WASM instances and signal buffers | AudioWorklet | Live projection only |
+| Web MIDI devices and routes | Audio engine plus module data | Device enumeration is session state; selected names may round-trip in module data |
+
+Structural edits use `commit()` and become undoable immediately. Continuous gestures may use `mutate()` while moving, then create one history checkpoint when the gesture completes. Side effects such as worklet messages, file downloads, or IndexedDB writes happen after the domain decision.
+
+## Main data flows
+
+### Patch import
+
+1. `parseVcvArchive()` accepts plain JSON or a zstd-compressed Rack archive containing `patch.json`.
+2. Legacy data is normalized and structurally validated.
+3. `assertVcvPatchModulesLoadable()` checks every module against the current registry and blocks the whole import when a module is unavailable or commercially licensed.
+4. `importVcvPatch()` converts Rack IDs, positions, params, data, bypass state, and cables into `PatchDocument`.
+5. Registry definitions hydrate geometry and runtime metadata before the document replaces history.
+
+The atomic check prevents a failed import from silently replacing the user's current patch with a partial graph.
+
+### Audio startup and synchronization
+
+1. The main thread selects active registry-backed modules and loads browser assets from IndexedDB.
+2. WASM is fetched and verified once per artifact URL, then copied per module instance.
+3. `RackAudioEngine` transfers the graph, artifacts, state, assets, cables, and browser audio boundaries to one `AudioWorkletNode`.
+4. `public/audio/rack-graph-processor.js` instantiates the modules, schedules the graph, processes cable stacks and feedback, and emits telemetry, capture data, MIDI, automation, and state snapshots.
+5. Parameter/state/bypass changes use messages; structural changes rebuild the live projection from `PatchDocument`.
+
+Stopping audio first asks the worklet to flush active captures, then disconnects the node and closes the `AudioContext`.
+
+## External-data rules
+
+Treat every network response, file, saved patch, autosave record, and IndexedDB record as untrusted:
+
+- parse and normalize at the boundary before constructing internal types;
+- require finite numbers and bounded IDs, sizes, channel counts, and paths;
+- restrict server-side URL fetching to explicit HTTPS hosts and shapes;
+- keep verification in the owning adapter instead of repeating partial checks in UI components;
+- preserve known legacy omissions only through explicit migrations;
+- reject invalid or unsupported data without mutating the current patch.
 
 ## Testing strategy
 
-- Pure patch, geometry, state, import, registry, and serialization behavior is covered by Node tests.
-- Render-boundary tests assert that the client SPA uses the intended component and service boundaries.
-- Audio graph tests exercise topological scheduling, WASM routing, expanders, capture, telemetry, and reset messages.
-- `npm run typecheck`, `npm run lint`, `npm run build`, and `npm test` are the release gates. Graph tests distinguish Rack-voltage output from the browser audio boundary, which normalizes +/-5V to +/-1.
+- Pure domain, migration, geometry, state, registry, URL, storage, and serialization behavior runs under Node's test runner.
+- AudioWorklet behavior runs in a VM harness and covers graph scheduling, cable summing, polyphony, feedback, expanders, MIDI, capture, automation, and telemetry.
+- Render-boundary tests protect the SPA/component/service wiring without treating implementation text snapshots as runtime evidence.
+- `npm test` runs type checking, a production Cloudflare/Vite build, and the coverage-gated Node suite. The current gate is 95% lines, 95% functions, and 80% branches across covered `lib/` and `server/` TypeScript.
+- `npm run lint` is a separate required check.
 
-When adding a feature, first decide which boundary owns its state and transformation. Add a pure operation or adapter when behavior can be tested without React; add a component when the concern is rendering; keep the studio container responsible only for orchestration between those boundaries.
+When adding a feature, first choose its state owner and trust boundary. Prefer a pure operation when behavior can be tested without React, an adapter when data crosses browser/network/runtime boundaries, and a component when the concern is rendering or direct interaction.

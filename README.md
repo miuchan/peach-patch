@@ -133,16 +133,20 @@ Patch editing and browser-selected asset processing are local to the browser. Au
 
 Support depends on both the browser and the published module ABI. Native filesystem access, native threads, arbitrary OS paths, and platform-specific plugin binaries are not portable to this runtime.
 
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) defines ownership, trust boundaries, state, Worker routes, and data flow.
+- [Browser Runtime](docs/WEB_RUNTIME.md) documents patch compatibility, registry verification, the WASM/AudioWorklet contract, assets, MIDI, capture, and current limits.
+- [Interaction Model](docs/UX_COMPARISON.md) covers navigation, cable and module gestures, shortcuts, reference comparisons, and remaining UX gaps.
+- [Design QA](design-qa.md) is the dated visual evidence log; archived screenshots and numeric results are revision-specific rather than current registry guarantees.
+
 ## Contributing
 
 Issues and pull requests are welcome. Before contributing:
 
-- read [Architecture](docs/ARCHITECTURE.md) to understand the UI, patch-domain, registry, adapter, and AudioWorklet boundaries;
-- read [Web Runtime](docs/WEB_RUNTIME.md) for the module ABI and compatibility rules;
+- read the architecture and runtime contracts above before choosing an ownership boundary;
 - run the checks above and describe any browser-specific verification;
 - send module source/build or artifact-publication changes to the [registry repository](https://github.com/miuchan/peach-patch-registry).
-
-For interaction goals and known gaps, see [UX Comparison](docs/UX_COMPARISON.md).
 
 ## License and attribution
 

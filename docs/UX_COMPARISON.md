@@ -1,46 +1,141 @@
-# Mattix patch usability comparison
+# Peach Patch interaction model
 
-Validated on 2026-07-19 with the same 87-module, 142-cable `Mattix.vcv` graph.
+Peach Patch keeps Rack's direct module-and-cable model while using browser-native navigation, inspection, files, and accessibility semantics. The goal is not to reproduce every desktop menu. The goal is to keep signal flow visible, make dense patches navigable, and preserve manual patching without hiding structural changes behind automation.
 
-![VCV Rack and Patchwork Web fitted overviews](../artifacts/mattix-vcv-patchwork-comparison-2026-07-19.jpg)
+## Product principles
 
-## VCV Rack 2.6.6 live comparison
+1. **Signal flow stays primary.** Modules, jacks, plugs, and cables occupy the main surface; editing tools appear in the Library, inspector, context menus, or direct gestures.
+2. **Every structural change is explicit and undoable.** Add, move, connect, reconnect, stack, insert, replace, heal, and delete operations enter patch history.
+3. **Rack semantics win at the patch boundary.** Port direction, cable stacking, polyphony, bypass, panel widths, row geometry, parameter IDs, and `.vcv` data are not reinterpreted as generic audio-app concepts.
+4. **The browser owns browser concerns.** File handles, PatchStorage fetching, IndexedDB assets, Web MIDI devices, responsive layout, and accessible controls stay outside module DSP.
+5. **Performance state does not become hidden patch structure.** Perform mode locks destructive editing but leaves audio and controls live; leaving it restores the same visible patch.
 
-The original patch was opened in VCV Rack Free 2.6.6 and in Patchwork Web. Patchwork resolved all 87 module instances, preserved all 142 cables, reported zero missing modules, and ran the complete graph in the browser AudioWorklet.
+## Primary workflow
 
-VCV Rack remains the visual-fidelity reference: its official panels, control geometry, cable plugs, and rack rows are exact. Its fitted overview also uses the available empty space well. On this patch, however, finding one of several repeated `SEQ3` modules still requires scanning the rack, and unrelated cables remain equally prominent while editing one signal path.
+### Open or create
 
-Patchwork now automatically collapses the Library for large/imported/autosaved patches, centers the fitted graph, searches only the current patch, focuses a result at an editable zoom, and dims every cable unrelated to the selected module. Since the captured comparison, every interactive Mattix panel has also gained its official source-derived parameter and jack coordinates over the Library panel asset; web hit targets remain deliberately larger than Rack's. Navigation still requires fewer gestures on this dense patch.
+- **New** creates an empty patch.
+- **Open** uses the standard accessible file input for plain or compressed `.vcv` files.
+- **Link** accepts a public PatchStorage page and opens its `.vcv` through the constrained Worker route.
+- **Save** uses a browser save handle where supported and otherwise downloads Rack-compatible JSON.
 
-## Bitwig Studio reference
+Import waits for the registry and checks every module before replacing the current patch. A blocked or invalid patch opens an explanatory dialog and leaves the current work untouched.
 
-Bitwig Studio was not installed on the test Mac, so no Bitwig interaction is presented as a live test. The comparison uses Bitwig's current official documentation for [Welcome to The Grid](https://www.bitwig.com/userguide/latest/welcome_to_the_grid/) and [Grid Modules](https://www.bitwig.com/userguide/latest/grid_modules/).
+### Find and place modules
 
-The Grid documents four workflows worth carrying into a browser rack:
+The Library searches the currently loaded registry by model, plugin, brand, and description. An exact official VCV Library URL can resolve public metadata, but its key still needs a published Peach Patch package.
 
-- hide the module palette and lock structural editing for performance;
-- insert a module directly on a port/cable;
-- heal a serial signal path when a module is deleted;
-- show selected-module help and live input/output scopes in the inspector.
+- Click a Library card to add it at an open rack position.
+- Drag a Library card onto one selected module to replace it while preserving compatible parameters and cables.
+- Select one cable, then choose a compatible module to splice it into that signal path.
+- Right-click empty rack space to open Quick Add at that world position.
+- The rack surface expands in all directions and keeps modules on the 15 px HP by 380 px row grid.
 
-Patchwork implements browser versions of all four:
+### Navigate and select
 
-- `Perform` keeps parameters and audio live while structural and destructive edits are locked;
-- a selected cable turns compatible Library cards into `INSERT` actions;
-- `Heal delete` reconnects an unambiguous one-in/one-out path and refuses fan-in/fan-out;
-- inspector-driven Library replacement keeps exact-name parameters and all port-compatible cables;
-- Library cards can also be dragged directly onto a highlighted target panel to invoke the same replacement;
-- right-clicking empty rack space opens a searchable Quick Add palette at that world position;
-- right-clicking a module opens a compact Rack-style action menu, while the inspector exposes the same duplicate, initialize, randomize, disconnect, and replace operations;
-- cables can be created by direct port dragging as well as the existing click-to-patch flow, with occupied inputs replaced atomically;
-- a cable context menu exposes recoloring, insertion, and deletion, while the persistent footer keeps ready/total WASM and cable counts visible;
-- cable endpoints follow official source-derived jack centers when available, with the one- or two-column rendered geometry retained as the fallback;
-- matching Rack `.vcvm` presets can be saved or loaded from both the inspector and module context menu without replacing panel identity or cables;
-- a compact record/play pair captures panel gestures and MIDI-mapped changes into the patch for performance playback without unlocking structure;
-- empty-space mouse/touch panning, pointer-anchored trackpad zoom, center-anchored zoom buttons, and anchored two-finger pinch work without changing modules;
-- Shift-drag marquee selection intersects panels correctly at any pan/zoom and adds them to the current module selection for group edits;
-- the selected module inspector shows source metadata plus rate-limited live voltage peaks and Canvas waveforms for every port.
+- Drag empty rack space with the primary or middle pointer to pan.
+- Use an ordinary wheel/trackpad gesture to pan; hold <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> while scrolling to zoom around the pointer.
+- Use one-finger touch to pan and two-finger pinch to zoom around the gesture midpoint.
+- Use the lower-right controls for zoom out, zoom in, and fit-to-patch.
+- Double-click a module header to center it at an editable zoom.
+- Click a module or cable to select it; modifier-click adds to the selection.
+- <kbd>Shift</kbd>-drag empty rack space to add intersecting modules with a marquee.
+- Drag one selected module to move the selected group; movement remains grid-snapped and collision-aware.
 
-## Remaining fidelity work
+Fit is an overview command, not an editing guarantee. A dense patch may make controls intentionally too small to edit; focus or zoom before changing parameters or cables.
 
-Mattix no longer depends on generic widget placement: its 16 source-built models, Core Audio boundary, and Spring Reverb adapter all use their checked-out Rack coordinates, and Blank has no controls. Source-built modules added later receive the same extraction whenever their widget constructor uses statically recoverable `Vec` or `mm2px(Vec)` calls. The remaining visual gap is dynamic or custom-drawn widget geometry, animated native knobs/lights, and arbitrary SVG component skins; those fall back to accessible browser controls while the inspector keeps the exact official panel asset available for reference. This is separate from DSP compatibility, which remains covered by executable WASM and patch-graph tests.
+## Cable interaction
+
+Every routable input and output supports a cable stack.
+
+| Action | Result |
+| --- | --- |
+| Drag an empty jack to a compatible jack | Create a new cable |
+| Click two compatible jacks | Create the same connection through the accessible click path |
+| Drag a visible plug | Move that cable endpoint while the other end stays anchored |
+| Release a moved plug on empty rack | Disconnect that cable |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>-drag an occupied jack or plug | Start an additional cable and keep the existing stack |
+| Right-click a cable | Recolor, insert a compatible module, or delete it |
+
+Exact duplicate edges are refused. Output stacks fan a signal out; input stacks sum voltages per channel. The live drag preview follows the pointer and uses the same resolved jack centers as the final cable.
+
+## Module interaction
+
+Selecting one module opens the inspector. It provides:
+
+- live input/output voltages and bounded waveform scopes;
+- every compatible non-button parameter with a numeric value;
+- typed Rack state controls, including nested and indexed data;
+- a next-CC MIDI-learn target when a Core MIDI-Map module and live MIDI input are available;
+- source attribution, replace, duplicate, initialize, randomize, disconnect, and `.vcvm` preset actions.
+
+Right-clicking a module exposes the same structural actions plus bypass and registry-declared context-only controls. Double-clicking a supported parameter resets its dynamic or declared default. Custom module displays and gestures are explicit registry visual/action contracts rather than guessed DOM overlays.
+
+## Keyboard commands
+
+Keyboard commands are ignored while focus is in an input, textarea, select, or editable element.
+
+| Command | Action |
+| --- | --- |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Z</kbd> | Undo |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd>, or <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Y</kbd> | Redo |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>V</kbd> | Copy / paste selected modules and their internal cables |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>D</kbd> | Duplicate selection |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>A</kbd> | Select all modules |
+| <kbd>Delete</kbd> / <kbd>Backspace</kbd> | Delete selected modules or cables |
+| <kbd>Shift</kbd> + <kbd>Delete</kbd> / <kbd>Backspace</kbd> | Heal-delete one unambiguous serial module |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> | Toggle Perform mode |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> | Start or stop parameter automation recording |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> | Start or stop automation playback |
+| <kbd>Escape</kbd> | Close an open module or cable context menu |
+
+Perform and automation are expert shortcuts rather than persistent toolbar controls. Perform mode blocks structural/history commands and collapses the Library while parameters, Web MIDI, and audio remain active.
+
+## Live performance feedback
+
+The global audio action is isolated at the right side of the compact header. Starting audio creates one worklet graph and requests Web MIDI permission during the user gesture. Status changes are announced through the application's live region rather than occupying a permanent footer.
+
+Connected plugs and cables receive bounded live signal telemetry. Selecting a module enables its detailed inspector scopes. Registry-declared lights and custom displays render from worklet data without turning telemetry into serialized patch state.
+
+Automation records panel gestures and mapped CC changes into the patch. Playback is scheduled from the AudioWorklet clock. Capture-capable modules download WAV or MIDI data, and module asset controls keep selected audio/images/MIDI/ROM/scripts in the current browser profile.
+
+## Reference comparison
+
+### VCV Rack
+
+VCV Rack remains the reference for native plugin compatibility, official custom drawing, desktop audio/MIDI devices, and exact host behavior. Peach Patch intentionally adds browser-local advantages: public-link import, no plugin installation/restart loop, one searchable web catalog, native file downloads, responsive viewport controls, semantic HTML actions, and live inspector scopes.
+
+The browser runtime does not claim pixel or host parity for every module. Source-derived geometry and official public panel imagery are used where valid; dynamic or native-only widgets fall back to bounded browser controls.
+
+### Grid-style workflow ideas
+
+Peach Patch adopts several useful modular-editor ideas without replacing Rack semantics:
+
+- lock structure for performance;
+- insert a module directly on a cable;
+- heal a simple serial path on deletion;
+- replace a selected module while retaining compatible connections;
+- keep contextual controls and live port inspection beside the patch.
+
+All of these remain explicit patch operations with undo support.
+
+## Historical Mattix evidence
+
+The preserved July 19, 2026 comparison used an 87-module, 142-cable `Mattix.vcv` patch in VCV Rack Free 2.6.6 and the then-current browser build.
+
+![VCV Rack and the browser runtime fitted overviews](../artifacts/mattix-vcv-patchwork-comparison-2026-07-19.jpg)
+
+That image is historical evidence, not a current registry-count guarantee. Later code changed product naming, toolbar density, cable stacking, compatibility blocking, registry ownership, and testing gates. Detailed dated measurements remain in [`design-qa.md`](../design-qa.md) and the archived [workflow audit](../artifacts/ux-audit-2026-07-18/AUDIT.md).
+
+## Current gaps
+
+- Whole-patch fit remains primarily navigational on very dense graphs.
+- Cable search/isolation is not part of the current compact interface.
+- Perform and automation shortcuts need stronger in-product discoverability.
+- Complete screen-reader flow, keyboard focus order, reduced-motion behavior, contrast, and reflow still require dedicated accessibility verification beyond unit/render tests.
+- Browser output is stereo, and native audio inputs or extra device channels are not yet routed.
+- PatchStorage is import-only; there is no Peach Patch cloud account or cloud save.
+- Browser-local module assets are referenced, not embedded, in exported patches.
+- Native custom drawing and desktop host behavior still require explicit per-module browser translations.
+
+Product work should prioritize these cross-cutting interaction and accessibility gaps before adding one-off exceptions for individual audio modules.

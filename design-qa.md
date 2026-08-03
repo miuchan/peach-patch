@@ -1,5 +1,7 @@
 # VCV Rack UI restoration design QA
 
+> **Evidence status:** This is an append-only visual QA log for dated screenshots and browser sessions, not the current product specification. Early entries use the former `Patchwork Web` name; the product is now Peach Patch. Current architecture, runtime, and interaction contracts live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/WEB_RUNTIME.md`](docs/WEB_RUNTIME.md), and [`docs/UX_COMPARISON.md`](docs/UX_COMPARISON.md). Numeric registry/module results below remain evidence for the captured revision and should not be read as current catalog totals.
+
 source visual truth path: `artifacts/ui-qa/vcv-reference.png` and official `artifacts/ui-qa/scope-source.webp`
 
 implementation screenshot paths: `artifacts/ui-qa/scope-focused-full-v2.png`, `artifacts/ui-qa/rack-plugs-and-lights-1280x720.png`, `artifacts/ui-qa/rack-cable-direction-no-outline-1280x720.png`, `artifacts/ui-qa/mattix-import-live-fixed-v2-1280x720.png`, `artifacts/ui-qa/mattix-import-live-audio-display-690x749.png`, `artifacts/ui-qa/audio8-live-canonical-690x749.png`, `artifacts/ui-qa/mattix-final-passed-690x749.png`, and `artifacts/ui-qa/mattix-cable-centers-fixed-690x749.png`
@@ -84,7 +86,7 @@ The final 690 x 749 embedded-browser regression reloaded the autosaved Mattix gr
 
 final result: passed
 
-tooling note: the 32 focused import/layout/rendering tests, typecheck, lint, and production build pass. The repository-wide test command still reaches the pre-existing visual-only scaffold fixture failure where generated adapter code references an undeclared `foreground`; it is outside this cable/UI change.
+tooling note: at the time of this visual pass, 32 focused import/layout/rendering tests, typecheck, lint, and the production build passed while a then-existing repository-wide scaffold fixture failed on an undeclared `foreground`. That baseline note is historical: the current repository now uses a coverage-gated `npm test`, and it passes as of the 2026-08-03 documentation update. The dated browser screenshots and measurements in this file were not rerun for that documentation-only update.
 
 ## Dense application chrome pass
 

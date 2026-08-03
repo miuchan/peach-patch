@@ -1,5 +1,7 @@
 # Patchwork Web workflow audit
 
+> **Archived audit:** This report records the July 18, 2026 browser build under the former `Patchwork Web` name. It is preserved as source evidence for the screenshots and recommendations below, not as a description of the current Peach Patch interface. Several findings were implemented or superseded, including compact chrome, module focus, inspector scopes, smart insertion/replacement, heal-delete, Perform mode, direct cable dragging, universal cable stacks, and atomic registry compatibility checks. See [`../../docs/UX_COMPARISON.md`](../../docs/UX_COMPARISON.md) for current behavior.
+
 ## Scope
 
 Combined UX and screenshot-based accessibility audit of opening `Mattix.vcv`, starting its audio graph, loading an official VCV Library URL, and undoing/redoing that change. VCV Rack 2 Free was inspected locally as a visual and navigation reference. Bitwig Studio was not installed on this Mac, so Bitwig comparisons below are limited to its official Grid documentation and are not presented as hands-on evidence.
