@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -245,7 +246,9 @@ export function RackWebStudio() {
     wasmRef = useRef(new Map<string, wasmHost.WasmExports>());
   const viewportControlRef=useRef({pan,zoom}),
     undularLockRef=useRef<{x:number|null;y:number|null}>({x:null,y:null});
-  viewportControlRef.current={pan,zoom};
+  useLayoutEffect(() => {
+    viewportControlRef.current = { pan, zoom };
+  }, [pan, zoom]);
   const clipboardRef = useRef<{
     modules: ModuleInstance[];
     cables: PatchDocument["cables"];
@@ -1995,7 +1998,9 @@ export function RackWebStudio() {
         setStatus(`Stroke desktop command ${binding.mode} has no browser-safe equivalent yet`);
     }
   };
-  runStrokeSpecialRef.current = runStrokeSpecial;
+  useEffect(() => {
+    runStrokeSpecialRef.current = runStrokeSpecial;
+  });
 
   useEffect(() => {
     if (!moduleMenu && !cableMenu) return;

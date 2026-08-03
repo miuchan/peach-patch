@@ -40,7 +40,7 @@ The application is registry-only at runtime. Native `.vcvplugin` packages and th
 
 ### Requirements
 
-- Node.js 22.13 or newer
+- Node.js 22.22 or newer
 - A modern browser with WebAssembly and Web Audio support
 
 ### Run locally

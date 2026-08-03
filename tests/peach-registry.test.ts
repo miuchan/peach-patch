@@ -25,7 +25,7 @@ test("the website has no bundled catalog or local compiler plugin fallback",()=>
   assert.doesNotMatch(runtimeRegistry,/WEB_PLUGIN_(?:BY_KEY|REGISTRY)|registerDynamicModule/);
   assert.doesNotMatch(resolver,/WEB_PLUGIN_(?:BY_KEY|REGISTRY)|dynamic-plugins/);
   assert.equal(packageJson.scripts.dev,"vite");
-  assert.equal(packageJson.dependencies["react-router"],"^7.18.2");
+  assert.equal(packageJson.dependencies["react-router"],"^8.3.0");
   assert.equal(packageJson.dependencies.next,undefined);
   assert.equal(packageJson.devDependencies.vinext,undefined);
 });
