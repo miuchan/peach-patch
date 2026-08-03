@@ -83,19 +83,21 @@ export function rackSurfaceBounds(
       top: -pan.y / safeZoom,
       right: (safeViewportWidth - pan.x) / safeZoom,
       bottom: (safeViewportHeight - pan.y) / safeZoom,
-    },
-    moduleBox = modules.length
-      ? {
-          left: Math.min(...modules.map((module) => module.x)),
-          top: Math.min(...modules.map((module) => module.y)),
-          right: Math.max(
-            ...modules.map((module) => module.x + module.width),
-          ),
-          bottom: Math.max(
-            ...modules.map((module) => module.y + RACK_GRID_HEIGHT),
-          ),
-        }
-      : { left: 0, top: 0, right: 0, bottom: 0 },
+    };
+  const moduleBox = { left: 0, top: 0, right: 0, bottom: 0 };
+  if (modules.length) {
+    moduleBox.left = Number.POSITIVE_INFINITY;
+    moduleBox.top = Number.POSITIVE_INFINITY;
+    moduleBox.right = Number.NEGATIVE_INFINITY;
+    moduleBox.bottom = Number.NEGATIVE_INFINITY;
+    for (const module of modules) {
+      moduleBox.left = Math.min(moduleBox.left, module.x);
+      moduleBox.top = Math.min(moduleBox.top, module.y);
+      moduleBox.right = Math.max(moduleBox.right, module.x + module.width);
+      moduleBox.bottom = Math.max(moduleBox.bottom, module.y + RACK_GRID_HEIGHT);
+    }
+  }
+  const
     horizontalMargin = (safeViewportWidth / safeZoom) * 0.9,
     verticalMargin = (safeViewportHeight / safeZoom) * 0.9,
     left =

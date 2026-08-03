@@ -1,4 +1,4 @@
-import type { MutableRefObject } from "react";
+import { memo, useMemo, type MutableRefObject } from "react";
 import type { MadzineManualTarget } from "./rack-madzine-manual";
 import { ModulePanel } from "./module-panel";
 import type { ModuleInstance, PatchDocument } from "../../lib/patch-types";
@@ -27,6 +27,7 @@ export type RackStudioModuleLayerProps = {
   recordingIds: ReadonlySet<string>;
   midiDevices: { inputs: string[]; outputs: string[] };
   manualHelpTarget: MadzineManualTarget | null;
+  modulesLocked: boolean;
   hoveredModuleRef: MutableRefObject<string | null>;
   hoveredParamRef: MutableRefObject<{ moduleId: string; paramId: number } | null>;
   onSelect: (module: ModuleInstance, event: React.PointerEvent<HTMLElement>) => void;
@@ -57,7 +58,9 @@ export type RackStudioModuleLayerProps = {
   onReplaceDrop: (module: ModuleInstance, key: string) => void;
 };
 
-export function RackStudioModuleLayer({
+const EMPTY_CONNECTED_INPUT_IDS: ReadonlySet<number> = new Set();
+
+function RackStudioModuleLayerView({
   modules,
   cables,
   getDefinition,
@@ -98,30 +101,32 @@ export function RackStudioModuleLayer({
   onRemove,
   onReplaceDrop,
 }: RackStudioModuleLayerProps) {
+  const connectedInputIdsByModule = useMemo(() => {
+    const connected = new Map<string, Set<number>>();
+    for (const cable of cables) {
+      let ports = connected.get(cable.toModule);
+      if (!ports) {
+        ports = new Set();
+        connected.set(cable.toModule, ports);
+      }
+      ports.add(cable.toPort);
+    }
+    return connected;
+  }, [cables]);
+
   return <>
     {modules.map((module) => {
       const definition = getDefinition(module.key);
-      const inputSignalLevels = Object.fromEntries(
-        (definition?.inputs ?? []).flatMap((port) => {
-          const key = `${module.id}:in:${port.id}`;
-          return jackSignalLevels.has(key)
-            ? [[port.id, jackSignalLevels.get(key) ?? 0]]
-            : [];
-        }),
-      );
-      const outputSignalLevels = Object.fromEntries(
-        (definition?.outputs ?? []).flatMap((port) => {
-          const key = `${module.id}:out:${port.id}`;
-          return jackSignalLevels.has(key)
-            ? [[port.id, jackSignalLevels.get(key) ?? 0]]
-            : [];
-        }),
-      );
-      const connectedInputIds = new Set(
-        cables
-          .filter((cable) => cable.toModule === module.id)
-          .map((cable) => cable.toPort),
-      );
+      const inputSignalLevels: Record<number, number> = {};
+      for (const port of definition?.inputs ?? []) {
+        const level = jackSignalLevels.get(`${module.id}:in:${port.id}`);
+        if (level !== undefined) inputSignalLevels[port.id] = level;
+      }
+      const outputSignalLevels: Record<number, number> = {};
+      for (const port of definition?.outputs ?? []) {
+        const level = jackSignalLevels.get(`${module.id}:out:${port.id}`);
+        if (level !== undefined) outputSignalLevels[port.id] = level;
+      }
       return <ModulePanel
         key={module.id}
         module={module}
@@ -129,7 +134,7 @@ export function RackStudioModuleLayer({
         selected={selectedIds.has(module.id)}
         pending={pending}
         inputSignalLevels={inputSignalLevels}
-        connectedInputIds={connectedInputIds}
+        connectedInputIds={connectedInputIdsByModule.get(module.id) ?? EMPTY_CONNECTED_INPUT_IDS}
         outputSignalLevels={outputSignalLevels}
         scopeSamples={visualSignals.scopes[module.id]}
         lightValues={visualSignals.lights[module.id]}
@@ -175,3 +180,34 @@ export function RackStudioModuleLayer({
     })}
   </>;
 }
+
+function moduleLayerPropsEqual(
+  previous: RackStudioModuleLayerProps,
+  next: RackStudioModuleLayerProps,
+) {
+  return previous.modules === next.modules
+    && previous.cables === next.cables
+    && previous.getDefinition === next.getDefinition
+    && previous.selectedIds === next.selectedIds
+    && previous.pending === next.pending
+    && previous.jackSignalLevels === next.jackSignalLevels
+    && previous.visualSignals === next.visualSignals
+    && previous.audioRunning === next.audioRunning
+    && previous.recordingIds === next.recordingIds
+    && previous.midiDevices === next.midiDevices
+    && previous.manualHelpTarget === next.manualHelpTarget
+    && previous.modulesLocked === next.modulesLocked
+    && previous.hoveredModuleRef === next.hoveredModuleRef
+    && previous.hoveredParamRef === next.hoveredParamRef;
+}
+
+/**
+ * Viewport-only parent renders must not reconcile hundreds of full module
+ * panels. Event callbacks intentionally stay attached until one of the data
+ * dependencies above changes; modulesLocked covers the only external mode
+ * that changes their behavior without changing the patch itself.
+ */
+export const RackStudioModuleLayer = memo(
+  RackStudioModuleLayerView,
+  moduleLayerPropsEqual,
+);

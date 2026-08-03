@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { WebPluginModule } from "../../lib/web-plugin-registry";
 
 export type RackStudioLibraryProps = {
@@ -17,7 +18,7 @@ export type RackStudioLibraryProps = {
   onAddModule: (module: WebPluginModule) => void;
 };
 
-export function RackStudioLibrary({
+function RackStudioLibraryView({
   moduleUrl,
   moduleQuery,
   busy,
@@ -58,3 +59,5 @@ export function RackStudioLibrary({
     </aside>
   );
 }
+
+export const RackStudioLibrary = memo(RackStudioLibraryView);

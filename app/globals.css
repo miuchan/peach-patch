@@ -196,3 +196,11 @@
 .pw-controls input[type=range]::-moz-range-thumb{width:15px;height:15px;border:1px solid #1b1c1c;border-radius:50%;background:radial-gradient(circle at 35% 30%,#eee 0 12%,#777 16% 32%,#292a2a 36% 68%,#111 72%);box-shadow:0 1px 2px #000b;cursor:grab}
 .pw-controls label.rack-control-slider input[type=range]::-webkit-slider-thumb{width:8px;height:20px;margin-top:-7px;border-radius:2px;background:linear-gradient(90deg,#222,#aaa,#222)}
 .pw-controls label.rack-control-slider input[type=range]::-moz-range-thumb{width:8px;height:20px;border-radius:2px;background:linear-gradient(90deg,#222,#aaa,#222)}
+
+/* Viewport gestures only change this compositor layer. Off-screen module
+   interiors stay out of layout and paint work until they approach view. */
+.pw-world{will-change:transform;backface-visibility:hidden;contain:layout style}
+.pw-module{content-visibility:auto}
+.pw-world.viewport-overview .pw-module{border:1px solid #171819;background:linear-gradient(90deg,#aaa79e,#e5e1d7 12%,#cfcbc1 88%,#8e8b84);box-shadow:none;overflow:hidden}
+.pw-world.viewport-overview .pw-module>*{display:none!important}
+.pw-world.viewport-overview .pw-cable-plug{display:none}

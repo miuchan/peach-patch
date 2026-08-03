@@ -1,7 +1,7 @@
 import {
+  startTransition,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -96,6 +96,11 @@ import {
   type RackPanGestureState,
   type RackPinchState,
 } from "../lib/use-rack-canvas-gestures";
+import {
+  rackViewportTransform,
+  RACK_VIEWPORT_OVERVIEW_ZOOM,
+} from "../lib/rack-viewport-transform";
+import { useStableEvent } from "../lib/use-stable-event";
 
 const CABLES = [
   "#ef5265",
@@ -112,6 +117,12 @@ type CableDraft = { port: PortClick; color: string };
 type PatchOpenFailure =
   | { kind: "blocked"; error: BlockedVcvPatchError }
   | { kind: "invalid"; message: string };
+type RackVisualSignals = {
+  cables: Record<string, number>;
+  plugs: Record<string, RackPlugSignal>;
+  scopes: Record<string, number[][]>;
+  lights: Record<string, number[]>;
+};
 type ResolveResult = {
   key: string;
   plugin: string;
@@ -220,12 +231,9 @@ export function RackWebStudio() {
     inputScopes: number[][];
     outputScopes: number[][];
   } | null>(null);
-  const [visualSignals, setVisualSignals] = useState<{
-    cables: Record<string, number>;
-    plugs: Record<string, RackPlugSignal>;
-    scopes: Record<string, number[][]>;
-    lights: Record<string, number[]>;
-  }>({ cables: {}, plugs: {}, scopes: {}, lights: {} });
+  const [visualSignals, setVisualSignals] = useState<RackVisualSignals>(
+    { cables: {}, plugs: {}, scopes: {}, lights: {} },
+  );
   const [cablesVisible, setCablesVisible] = useState(true),
     [cableOpacity, setCableOpacity] = useState(1),
     [cableTension, setCableTension] = useState(.5),
@@ -244,12 +252,13 @@ export function RackWebStudio() {
     automationStructureRef = useRef(""),
     suppressPortClickRef = useRef(false),
     rackRef = useRef<HTMLDivElement>(null),
+    worldRef = useRef<HTMLDivElement>(null),
+    viewportInteractingRef = useRef(false),
+    deferredVisualSignalsRef = useRef(false),
+    visualSignalsRef = useRef(visualSignals),
     wasmRef = useRef(new Map<string, wasmHost.WasmExports>());
   const viewportControlRef=useRef({pan,zoom}),
     undularLockRef=useRef<{x:number|null;y:number|null}>({x:null,y:null});
-  useLayoutEffect(() => {
-    viewportControlRef.current = { pan, zoom };
-  }, [pan, zoom]);
   const clipboardRef = useRef<{
     modules: ModuleInstance[];
     cables: PatchDocument["cables"];
@@ -358,6 +367,26 @@ export function RackWebStudio() {
     setPan(next.pan);
   },[]);
 
+  const updateVisualSignals = useCallback(
+    (updater: (previous: RackVisualSignals) => RackVisualSignals) => {
+      const next = updater(visualSignalsRef.current);
+      visualSignalsRef.current = next;
+      if (viewportInteractingRef.current) {
+        deferredVisualSignalsRef.current = true;
+        return;
+      }
+      setVisualSignals(next);
+    },
+    [],
+  );
+
+  const handleViewportInteractionChange = useCallback((active: boolean) => {
+    viewportInteractingRef.current = active;
+    if (active || !deferredVisualSignalsRef.current) return;
+    deferredVisualSignalsRef.current = false;
+    startTransition(() => setVisualSignals(visualSignalsRef.current));
+  }, []);
+
   const createAudioEngine = useCallback(
     () =>
       createRackAudioEngine({
@@ -377,7 +406,7 @@ export function RackWebStudio() {
         automationStructureRef,
         automationPlaybackCountRef,
         setPortPeaks,
-        setVisualSignals,
+        setVisualSignals: updateVisualSignals,
         setRecordingIds,
       }),
     [
@@ -386,6 +415,7 @@ export function RackWebStudio() {
       commitHistory,
       mutateHistory,
       recordAutomationValue,
+      updateVisualSignals,
     ],
   );
 
@@ -470,9 +500,10 @@ export function RackWebStudio() {
       const result = await resolveModule(moduleUrl);
       const addRuntime = (runtime: WebPluginModule) => {
         history.commit((current) => {
+          const viewport = viewportControlRef.current;
           const position = studioHelpers.findOpenPosition(current.modules, runtime.width, {
-            x: (-pan.x + 80) / zoom,
-            y: (-pan.y + 80) / zoom,
+            x: (-viewport.pan.x + 80) / viewport.zoom,
+            y: (-viewport.pan.y + 80) / viewport.zoom,
           });
           return {
             ...current,
@@ -489,9 +520,10 @@ export function RackWebStudio() {
         setStatus(`${result.key} loaded from the GitHub registry`);
       }else{
         const registryError=`${result.key} is not available in the GitHub registry`;
-          const origin = {
-              x: (-pan.x + 80) / zoom,
-              y: (-pan.y + 80) / zoom,
+        const viewport = viewportControlRef.current,
+          origin = {
+              x: (-viewport.pan.x + 80) / viewport.zoom,
+              y: (-viewport.pan.y + 80) / viewport.zoom,
             },
             position = studioHelpers.findOpenPosition(history.value.modules, 240, origin),
             instance: ModuleInstance = {
@@ -835,13 +867,14 @@ export function RackWebStudio() {
       const rack = rackRef.current;
       if (!rack) return;
       const rect = rack.getBoundingClientRect();
+      const viewport = viewportControlRef.current;
       setCableDraft({
         port,
         color: CABLES[patch.cables.length % CABLES.length],
       });
       setCableDragPoint({
-        x: (event.clientX - rect.left - pan.x) / zoom,
-        y: (event.clientY - rect.top - pan.y) / zoom,
+        x: (event.clientX - rect.left - viewport.pan.x) / viewport.zoom,
+        y: (event.clientY - rect.top - viewport.pan.y) / viewport.zoom,
       });
       setPending(port);
       setSelectedCableIds(new Set());
@@ -855,15 +888,16 @@ export function RackWebStudio() {
     const rack = rackRef.current;
     if (rack) {
       const rect = rack.getBoundingClientRect();
+      const viewport = viewportControlRef.current;
       setCableDragPoint({
-        x: (event.clientX - rect.left - pan.x) / zoom,
-        y: (event.clientY - rect.top - pan.y) / zoom,
+        x: (event.clientX - rect.left - viewport.pan.x) / viewport.zoom,
+        y: (event.clientY - rect.top - viewport.pan.y) / viewport.zoom,
       });
     }
     setPending(port);
     setSelectedCableIds(new Set([path.id]));
     setStatus("Dragging cable end · release on another compatible port to reconnect, or empty rack to disconnect");
-  }, [modulesLocked, pan.x, pan.y, patch.cables.length, rackRef, zoom]);
+  }, [modulesLocked, patch.cables.length, rackRef]);
 
   const startCableDragFromPort = useCallback((port: PortClick, event: React.PointerEvent<HTMLButtonElement>) => {
     if (modulesLocked || event.button !== 0) return;
@@ -881,18 +915,19 @@ export function RackWebStudio() {
     const rack = rackRef.current;
     if (!rack) return;
     const rect = rack.getBoundingClientRect();
+    const viewport = viewportControlRef.current;
     setCableDraft({
       port,
       color: CABLES[patch.cables.length % CABLES.length],
     });
     setCableDragPoint({
-      x: (event.clientX - rect.left - pan.x) / zoom,
-      y: (event.clientY - rect.top - pan.y) / zoom,
+      x: (event.clientX - rect.left - viewport.pan.x) / viewport.zoom,
+      y: (event.clientY - rect.top - viewport.pan.y) / viewport.zoom,
     });
     if (!pending) setPending(port);
     setSelectedCableIds(new Set());
     setStatus("Dragging a new cable · release on a compatible port to connect");
-  }, [cableTension, modulesLocked, pan.x, pan.y, patch, pending, registry, startCableDrag, zoom]);
+  }, [cableTension, modulesLocked, patch, pending, registry, startCableDrag]);
 
   const finishCableDragOnPort = useCallback((target: PortClick, event: React.PointerEvent<HTMLButtonElement>) => {
     if (cableDraft) {
@@ -1078,6 +1113,7 @@ export function RackWebStudio() {
             definition.inputs.length &&
             definition.outputs.length,
         ),
+        viewport = viewportControlRef.current,
         origin = canInsert
           ? {
               x: Math.round(
@@ -1092,8 +1128,8 @@ export function RackWebStudio() {
                 Math.round(((fromModule!.y + toModule!.y) / 2) / 380) * 380,
             }
           : {
-              x: (-pan.x + 80) / zoom,
-              y: (-pan.y + 80) / zoom,
+              x: (-viewport.pan.x + 80) / viewport.zoom,
+              y: (-viewport.pan.y + 80) / viewport.zoom,
             },
         position = studioHelpers.findOpenPosition(
           patch.modules,
@@ -1166,7 +1202,7 @@ export function RackWebStudio() {
       return next;
     });
   };
-  const selectCable = (
+  const selectCable = useCallback((
     id: string,
     event: {
       stopPropagation: () => void;
@@ -1187,7 +1223,29 @@ export function RackWebStudio() {
       return next;
     });
     setPending(null);
-  };
+  }, []);
+
+  const openCableContextMenu = useCallback((
+    id: string,
+    event: React.MouseEvent<SVGPathElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rack = rackRef.current;
+    if (!rack) return;
+    const rect = rack.getBoundingClientRect();
+    const localX = event.clientX - rect.left;
+    const localY = event.clientY - rect.top;
+    setSelectedIds(new Set());
+    setSelectedCableIds(new Set([id]));
+    setModuleMenu(null);
+    setQuickAdd(null);
+    setCableMenu({
+      left: Math.max(8, Math.min(localX, rack.clientWidth - 210)),
+      top: Math.max(8, Math.min(localY, rack.clientHeight - 178)),
+      cableId: id,
+    });
+  }, []);
 
   const startDrag = (
     module: ModuleInstance,
@@ -1424,8 +1482,17 @@ export function RackWebStudio() {
     );
   }, [commitHistory, patch, selectedIds]);
 
-  const { startBackgroundGesture, pointerMove, pointerUp } = useRackCanvasGestures({
+  const {
+    startBackgroundGesture,
+    pointerMove,
+    pointerUp,
+    previewViewport,
+    readViewport,
+    commitViewportSoon,
+  } = useRackCanvasGestures({
     rackRef,
+    worldRef,
+    viewportRef: viewportControlRef,
     dragRef,
     marqueeRef,
     panGestureRef,
@@ -1443,7 +1510,10 @@ export function RackWebStudio() {
     mutatePatch: history.mutate,
     checkpointPatch: history.checkpoint,
     bumpLayoutRevision: () => setLayoutRevision((revision) => revision + 1),
+    onViewportInteractionChange: handleViewportInteractionChange,
   });
+  const addFromUrlEvent = useStableEvent(() => void addFromUrl());
+  const addRegistryModuleEvent = useStableEvent(addRegistryModule);
 
   const fitPatch = () => {
     const rack = rackRef.current;
@@ -1464,9 +1534,10 @@ export function RackWebStudio() {
   const adjustZoom = (delta: number) => {
     const rack = rackRef.current;
     if (!rack) return;
-    const nextZoom = Math.min(1.5, Math.max(0.08, zoom + delta)),
+    const viewport = viewportControlRef.current,
+      nextZoom = Math.min(1.5, Math.max(0.08, viewport.zoom + delta)),
       anchor = { x: rack.clientWidth / 2, y: rack.clientHeight / 2 };
-    setPan(anchoredViewportPan(pan, zoom, nextZoom, anchor));
+    setPan(anchoredViewportPan(viewport.pan, viewport.zoom, nextZoom, anchor));
     setZoom(nextZoom);
   };
 
@@ -1905,7 +1976,7 @@ export function RackWebStudio() {
         return;
       case 15:
       case 151:
-        if (zoom >= 0.75) fitPatch();
+        if (viewportControlRef.current.zoom >= 0.75) fitPatch();
         else if (target) focusModule(target.id, 0.9);
         else setStatus("Stroke zoom toggle needs a hovered or selected module");
         return;
@@ -1963,9 +2034,10 @@ export function RackWebStudio() {
           definition = candidates[Math.floor(Math.random() * candidates.length)];
         if (!definition) return;
         commitHistory((current) => {
+          const viewport = viewportControlRef.current;
           const position = studioHelpers.findOpenPosition(current.modules, definition.width, {
-            x: (-pan.x + 80) / zoom,
-            y: (-pan.y + 80) / zoom,
+            x: (-viewport.pan.x + 80) / viewport.zoom,
+            y: (-viewport.pan.y + 80) / viewport.zoom,
           });
           return {
             ...current,
@@ -2551,8 +2623,8 @@ export function RackWebStudio() {
         selectedCableCount={selectedCableIds.size}
         onModuleUrlChange={setModuleUrl}
         onModuleQueryChange={setModuleQuery}
-        onAddFromUrl={() => void addFromUrl()}
-        onAddModule={addRegistryModule}
+        onAddFromUrl={addFromUrlEvent}
+        onAddModule={addRegistryModuleEvent}
       />
       <section
         ref={rackRef}
@@ -2561,9 +2633,10 @@ export function RackWebStudio() {
         onPointerMove={(event) => {
           if (cableDrag || cableDraft) {
             const rect = event.currentTarget.getBoundingClientRect();
+            const viewport = readViewport();
             setCableDragPoint({
-              x: (event.clientX - rect.left - pan.x) / zoom,
-              y: (event.clientY - rect.top - pan.y) / zoom,
+              x: (event.clientX - rect.left - viewport.pan.x) / viewport.zoom,
+              y: (event.clientY - rect.top - viewport.pan.y) / viewport.zoom,
             });
           }
           pointerMove(event);
@@ -2592,6 +2665,10 @@ export function RackWebStudio() {
           pointerUp(event);
         }}
         onPointerLeave={(event) => {
+          if (cableDrag || cableDraft) return;
+          pointerUp(event);
+        }}
+        onPointerCancel={(event) => {
           if (cableDrag || cableDraft) return;
           pointerUp(event);
         }}
@@ -2626,8 +2703,8 @@ export function RackWebStudio() {
               event.preventDefault();
               return;
             }
-            setSelectedIds(new Set());
-            setSelectedCableIds(new Set());
+            setSelectedIds((current) => current.size ? new Set() : current);
+            setSelectedCableIds((current) => current.size ? new Set() : current);
             setPending(null);
             setReplaceMode(false);
             setQuickAdd(null);
@@ -2653,18 +2730,20 @@ export function RackWebStudio() {
           if (!rack) return;
           const rect = rack.getBoundingClientRect(),
             localX = event.clientX - rect.left,
-            localY = event.clientY - rect.top;
+            localY = event.clientY - rect.top,
+            viewport = readViewport();
           setModuleMenu(null);
           setCableMenu(null);
           setQuickAdd({
             left: Math.max(8, Math.min(localX, rack.clientWidth - 298)),
             top: Math.max(8, Math.min(localY, rack.clientHeight - 404)),
-            worldX: (localX - pan.x) / zoom,
-            worldY: (localY - pan.y) / zoom,
+            worldX: (localX - viewport.pan.x) / viewport.zoom,
+            worldY: (localY - viewport.pan.y) / viewport.zoom,
             query: "",
           });
         }}
         onWheel={(event) => {
+          const viewport = readViewport();
           if (event.metaKey || event.ctrlKey) {
             event.preventDefault();
             const rack = rackRef.current;
@@ -2676,15 +2755,23 @@ export function RackWebStudio() {
               },
               nextZoom = Math.min(
                 1.5,
-                Math.max(0.08, zoom - event.deltaY * 0.001),
+                Math.max(0.08, viewport.zoom - event.deltaY * 0.001),
               );
-            setPan(anchoredViewportPan(pan, zoom, nextZoom, anchor));
-            setZoom(nextZoom);
-          } else
-            setPan((value) => ({
-              x: value.x - event.deltaX,
-              y: value.y - event.deltaY,
-            }));
+            previewViewport({
+              pan: anchoredViewportPan(viewport.pan, viewport.zoom, nextZoom, anchor),
+              zoom: nextZoom,
+            });
+          } else {
+            event.preventDefault();
+            previewViewport({
+              pan: {
+                x: viewport.pan.x - event.deltaX,
+                y: viewport.pan.y - event.deltaY,
+              },
+              zoom: viewport.zoom,
+            });
+          }
+          commitViewportSoon();
         }}
       >
         {selectedModule && selectedDefinition && (
@@ -2734,9 +2821,10 @@ export function RackWebStudio() {
           />
         )}
         <div
-          className="pw-world"
+          ref={worldRef}
+          className={`pw-world ${zoom < RACK_VIEWPORT_OVERVIEW_ZOOM ? "viewport-overview" : ""}`}
           style={{
-            transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
+            transform: rackViewportTransform({ pan, zoom }),
           }}
         >
           <div
@@ -2765,24 +2853,7 @@ export function RackWebStudio() {
             plugSignals={visualSignals.plugs}
             onPlugPointerDown={startCableDrag}
             onSelect={selectCable}
-            onContextMenu={(id, event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              const rack = rackRef.current;
-              if (!rack) return;
-              const rect = rack.getBoundingClientRect();
-              const localX = event.clientX - rect.left;
-              const localY = event.clientY - rect.top;
-              setSelectedIds(new Set());
-              setSelectedCableIds(new Set([id]));
-              setModuleMenu(null);
-              setQuickAdd(null);
-              setCableMenu({
-                left: Math.max(8, Math.min(localX, rack.clientWidth - 210)),
-                top: Math.max(8, Math.min(localY, rack.clientHeight - 178)),
-                cableId: id,
-              });
-            }}
+            onContextMenu={openCableContextMenu}
           />
           <RackStudioModuleLayer
             modules={patch.modules}
@@ -2796,6 +2867,7 @@ export function RackWebStudio() {
             recordingIds={recordingIds}
             midiDevices={midiDevices}
             manualHelpTarget={manualHelpTarget}
+            modulesLocked={modulesLocked}
             hoveredModuleRef={hoveredModuleRef}
             hoveredParamRef={hoveredParamRef}
             onSelect={(module, event) => {

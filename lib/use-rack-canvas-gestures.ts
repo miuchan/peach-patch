@@ -1,6 +1,22 @@
-import { useCallback, type Dispatch, type MutableRefObject, type PointerEvent, type RefObject, type SetStateAction } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type PointerEvent,
+  type RefObject,
+  type SetStateAction,
+} from "react";
 import type { ModuleInstance, PatchDocument } from "./patch-types";
 import { modulesIntersectingViewportRect, moveRackModulesWithoutOverlap } from "./patch-operations";
+import {
+  createRackViewportTransformWriter,
+  RACK_VIEWPORT_OVERVIEW_ZOOM,
+  type RackViewport,
+} from "./rack-viewport-transform";
 
 export type RackDragState = {
   ids: string[];
@@ -36,6 +52,8 @@ export type RackPinchState = {
 
 export type RackCanvasGestureRefs = {
   rackRef: RefObject<HTMLElement | null>;
+  worldRef: RefObject<HTMLElement | null>;
+  viewportRef: MutableRefObject<RackViewport>;
   dragRef: MutableRefObject<RackDragState | null>;
   marqueeRef: MutableRefObject<RackMarqueeState | null>;
   panGestureRef: MutableRefObject<RackPanGestureState | null>;
@@ -56,10 +74,13 @@ export type RackCanvasGestureOptions = RackCanvasGestureRefs & {
   mutatePatch: (updater: (current: PatchDocument) => PatchDocument) => void;
   checkpointPatch: (patch: PatchDocument) => void;
   bumpLayoutRevision: () => void;
+  onViewportInteractionChange?: (active: boolean) => void;
 };
 
 export function useRackCanvasGestures({
   rackRef,
+  worldRef,
+  viewportRef,
   dragRef,
   marqueeRef,
   panGestureRef,
@@ -77,16 +98,97 @@ export function useRackCanvasGestures({
   mutatePatch,
   checkpointPatch,
   bumpLayoutRevision,
+  onViewportInteractionChange,
 }: RackCanvasGestureOptions) {
+  const viewportCommitTimerRef = useRef<number | null>(null);
+  const viewportInteractionActiveRef = useRef(false);
+  const viewportWriterRef = useRef<ReturnType<typeof createRackViewportTransformWriter> | null>(null);
+  useEffect(() => {
+    const writer = createRackViewportTransformWriter((transform) => {
+      const world = worldRef.current;
+      if (world) {
+        world.style.transform = transform;
+        world.classList.toggle(
+          "viewport-overview",
+          viewportRef.current.zoom < RACK_VIEWPORT_OVERVIEW_ZOOM,
+        );
+      }
+    });
+    viewportWriterRef.current = writer;
+    return () => {
+      writer.cancel();
+      viewportWriterRef.current = null;
+    };
+  }, [viewportRef, worldRef]);
+  const clearViewportCommitTimer = useCallback(() => {
+    if (viewportCommitTimerRef.current === null) return;
+    window.clearTimeout(viewportCommitTimerRef.current);
+    viewportCommitTimerRef.current = null;
+  }, []);
+  const beginViewportInteraction = useCallback(() => {
+    if (viewportInteractionActiveRef.current) return;
+    viewportInteractionActiveRef.current = true;
+    onViewportInteractionChange?.(true);
+  }, [onViewportInteractionChange]);
+  const endViewportInteraction = useCallback(() => {
+    if (!viewportInteractionActiveRef.current) return;
+    viewportInteractionActiveRef.current = false;
+    onViewportInteractionChange?.(false);
+  }, [onViewportInteractionChange]);
+  const previewViewport = useCallback((viewport: RackViewport) => {
+    beginViewportInteraction();
+    const snapshot = {
+      pan: { x: viewport.pan.x, y: viewport.pan.y },
+      zoom: viewport.zoom,
+    };
+    viewportRef.current = snapshot;
+    viewportWriterRef.current?.preview(snapshot);
+  }, [beginViewportInteraction, viewportRef]);
+  const commitViewport = useCallback(() => {
+    clearViewportCommitTimer();
+    viewportWriterRef.current?.flush();
+    const viewport = viewportRef.current;
+    startTransition(() => {
+      setPan((current) => current.x === viewport.pan.x && current.y === viewport.pan.y
+        ? current
+        : viewport.pan);
+      setZoom((current) => current === viewport.zoom ? current : viewport.zoom);
+    });
+    endViewportInteraction();
+  }, [clearViewportCommitTimer, endViewportInteraction, setPan, setZoom, viewportRef]);
+  const commitViewportSoon = useCallback((delay = 80) => {
+    clearViewportCommitTimer();
+    viewportCommitTimerRef.current = window.setTimeout(commitViewport, delay);
+  }, [clearViewportCommitTimer, commitViewport]);
+  const readViewport = useCallback(() => viewportRef.current, [viewportRef]);
+
+  useLayoutEffect(() => {
+    const current = viewportRef.current;
+    if (
+      current.pan.x === pan.x
+      && current.pan.y === pan.y
+      && current.zoom === zoom
+    ) return;
+    clearViewportCommitTimer();
+    viewportWriterRef.current?.cancel();
+    viewportRef.current = { pan, zoom };
+  }, [clearViewportCommitTimer, pan, viewportRef, zoom]);
+
+  useEffect(() => () => {
+    clearViewportCommitTimer();
+  }, [clearViewportCommitTimer]);
+
   const startBackgroundGesture = useCallback((event: PointerEvent<HTMLElement>) => {
     const rack = rackRef.current;
     if (!rack) return;
+    const viewport = viewportRef.current;
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Optional browser API. */ }
     if (event.pointerType === "touch") {
+      beginViewportInteraction();
       touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
       const points = [...touchPointsRef.current.values()];
       if (points.length === 1) {
-        panGestureRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, panX: pan.x, panY: pan.y };
+        panGestureRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, panX: viewport.pan.x, panY: viewport.pan.y };
         pinchRef.current = null;
       } else if (points.length >= 2) {
         const [first, second] = points;
@@ -95,9 +197,9 @@ export function useRackCanvasGestures({
         const midY = (first.y + second.y) / 2 - rect.top;
         pinchRef.current = {
           distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
-          zoom,
-          worldX: (midX - pan.x) / zoom,
-          worldY: (midY - pan.y) / zoom,
+          zoom: viewport.zoom,
+          worldX: (midX - viewport.pan.x) / viewport.zoom,
+          worldY: (midY - viewport.pan.y) / viewport.zoom,
         };
         panGestureRef.current = null;
       }
@@ -105,10 +207,11 @@ export function useRackCanvasGestures({
       return;
     }
     if (event.button === 0 || event.button === 1) {
-      panGestureRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, panX: pan.x, panY: pan.y };
+      beginViewportInteraction();
+      panGestureRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, panX: viewport.pan.x, panY: viewport.pan.y };
       event.preventDefault();
     }
-  }, [pan.x, pan.y, panGestureRef, pinchRef, rackRef, touchPointsRef, zoom]);
+  }, [beginViewportInteraction, panGestureRef, pinchRef, rackRef, touchPointsRef, viewportRef]);
 
   const pointerMove = useCallback((event: PointerEvent<HTMLElement>) => {
     const selection = marqueeRef.current;
@@ -129,11 +232,12 @@ export function useRackCanvasGestures({
     }
     const drag = dragRef.current;
     if (drag) {
+      const viewport = viewportRef.current;
       mutatePatch((current) => ({
         ...current,
         modules: moveRackModulesWithoutOverlap(current.modules, drag.origins, {
-          x: (event.clientX - drag.clientX) / zoom,
-          y: (event.clientY - drag.clientY) / zoom,
+          x: (event.clientX - drag.clientX) / viewport.zoom,
+          y: (event.clientY - drag.clientY) / viewport.zoom,
         }),
       }));
       return;
@@ -150,22 +254,30 @@ export function useRackCanvasGestures({
         const midY = (first.y + second.y) / 2 - rect.top;
         const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
         const nextZoom = Math.min(1.5, Math.max(0.08, pinch.zoom * (distance / pinch.distance)));
-        setZoom(nextZoom);
-        setPan({ x: midX - pinch.worldX * nextZoom, y: midY - pinch.worldY * nextZoom });
+        previewViewport({
+          pan: { x: midX - pinch.worldX * nextZoom, y: midY - pinch.worldY * nextZoom },
+          zoom: nextZoom,
+        });
       } else {
         const gesture = panGestureRef.current;
         if (gesture?.pointerId === event.pointerId)
-          setPan({ x: gesture.panX + event.clientX - gesture.clientX, y: gesture.panY + event.clientY - gesture.clientY });
+          previewViewport({
+            pan: { x: gesture.panX + event.clientX - gesture.clientX, y: gesture.panY + event.clientY - gesture.clientY },
+            zoom: viewportRef.current.zoom,
+          });
       }
       event.preventDefault();
       return;
     }
     const gesture = panGestureRef.current;
     if (gesture?.pointerId === event.pointerId) {
-      setPan({ x: gesture.panX + event.clientX - gesture.clientX, y: gesture.panY + event.clientY - gesture.clientY });
+      previewViewport({
+        pan: { x: gesture.panX + event.clientX - gesture.clientX, y: gesture.panY + event.clientY - gesture.clientY },
+        zoom: viewportRef.current.zoom,
+      });
       event.preventDefault();
     }
-  }, [dragRef, marqueeRef, mutatePatch, panGestureRef, pinchRef, rackRef, setMarquee, setPan, setZoom, touchPointsRef, zoom]);
+  }, [dragRef, marqueeRef, mutatePatch, panGestureRef, pinchRef, previewViewport, rackRef, setMarquee, touchPointsRef, viewportRef]);
 
   const pointerUp = useCallback((event?: PointerEvent<HTMLElement>) => {
     const selection = marqueeRef.current;
@@ -174,7 +286,8 @@ export function useRackCanvasGestures({
       const top = Math.min(selection.startY, selection.currentY);
       const right = Math.max(selection.startX, selection.currentX);
       const bottom = Math.max(selection.startY, selection.currentY);
-      const hits = modulesIntersectingViewportRect(modules, pan, zoom, { left, top, right, bottom });
+      const viewport = viewportRef.current;
+      const hits = modulesIntersectingViewportRect(modules, viewport.pan, viewport.zoom, { left, top, right, bottom });
       const next = new Set(selection.base);
       for (const id of hits) next.add(id);
       setSelectedIds(next);
@@ -188,17 +301,53 @@ export function useRackCanvasGestures({
       dragRef.current = null;
       bumpLayoutRevision();
     }
-    if (!event) return;
+    const endingPan = event
+      ? panGestureRef.current?.pointerId === event.pointerId
+      : Boolean(panGestureRef.current);
+    const endingPinch = Boolean(pinchRef.current);
+    if (!event) {
+      panGestureRef.current = null;
+      pinchRef.current = null;
+      touchPointsRef.current.clear();
+      if (endingPan || endingPinch) commitViewport();
+      return;
+    }
     touchPointsRef.current.delete(event.pointerId);
     if (panGestureRef.current?.pointerId === event.pointerId) panGestureRef.current = null;
     const remaining = [...touchPointsRef.current.entries()];
     pinchRef.current = null;
-    if (remaining.length === 1) {
+    if (remaining.length >= 2) {
+      const [, first] = remaining[0];
+      const [, second] = remaining[1];
+      const rack = rackRef.current;
+      if (rack) {
+        const rect = rack.getBoundingClientRect();
+        const midX = (first.x + second.x) / 2 - rect.left;
+        const midY = (first.y + second.y) / 2 - rect.top;
+        const viewport = viewportRef.current;
+        pinchRef.current = {
+          distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+          zoom: viewport.zoom,
+          worldX: (midX - viewport.pan.x) / viewport.zoom,
+          worldY: (midY - viewport.pan.y) / viewport.zoom,
+        };
+      }
+    } else if (remaining.length === 1) {
       const [pointerId, point] = remaining[0];
-      panGestureRef.current = { pointerId, clientX: point.x, clientY: point.y, panX: pan.x, panY: pan.y };
+      const viewport = viewportRef.current;
+      panGestureRef.current = { pointerId, clientX: point.x, clientY: point.y, panX: viewport.pan.x, panY: viewport.pan.y };
+    } else if (endingPan || endingPinch) {
+      commitViewport();
     }
     try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* Already released. */ }
-  }, [bumpLayoutRevision, checkpointPatch, dragRef, marqueeRef, modules, pan, panGestureRef, pinchRef, setMarquee, setSelectedCableIds, setSelectedIds, setStatus, touchPointsRef, zoom]);
+  }, [bumpLayoutRevision, checkpointPatch, commitViewport, dragRef, marqueeRef, modules, panGestureRef, pinchRef, rackRef, setMarquee, setSelectedCableIds, setSelectedIds, setStatus, touchPointsRef, viewportRef]);
 
-  return { startBackgroundGesture, pointerMove, pointerUp };
+  return {
+    startBackgroundGesture,
+    pointerMove,
+    pointerUp,
+    previewViewport,
+    readViewport,
+    commitViewportSoon,
+  };
 }

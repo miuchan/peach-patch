@@ -47,6 +47,31 @@ test("ships product metadata and removes starter preview", async () => {
   await assert.rejects(access(new URL("app/page.tsx", root)));
 });
 
+test("large racks keep viewport gestures off the React render path", async () => {
+  const [studio, gestures, viewport, moduleLayer, cableLayer, library, styles] = await Promise.all([
+    readFile(new URL("app/rack-web-studio.tsx", root), "utf8"),
+    readFile(new URL("lib/use-rack-canvas-gestures.ts", root), "utf8"),
+    readFile(new URL("lib/rack-viewport-transform.ts", root), "utf8"),
+    readFile(new URL("app/components/rack-studio-module-layer.tsx", root), "utf8"),
+    readFile(new URL("app/components/rack-studio-cable-layer.tsx", root), "utf8"),
+    readFile(new URL("app/components/rack-studio-library.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  const pointerMove = gestures.slice(
+    gestures.indexOf("const pointerMove"),
+    gestures.indexOf("const pointerUp"),
+  );
+  assert.match(gestures, /createRackViewportTransformWriter/);
+  assert.match(gestures, /startTransition\(\(\) =>/);
+  assert.doesNotMatch(pointerMove, /setPan\(|setZoom\(/);
+  assert.match(viewport, /translate3d\(/);
+  assert.match(moduleLayer, /memo\(\s*RackStudioModuleLayerView/);
+  assert.match(cableLayer, /const cablePaths = useMemo/);
+  assert.match(library, /memo\(RackStudioLibraryView\)/);
+  assert.match(studio, /viewport-overview/);
+  assert.match(styles, /\.pw-world\.viewport-overview \.pw-module>\*\{display:none!important\}/);
+});
+
 test("official source widths stay canonical across image loads and autosave restore", async () => {
   const [panel, studio, cableLayer, styles, manual, arpeggiator, corrupter, tapestry, paramVisual] = await Promise.all([
     readFile(new URL("app/components/module-panel.tsx", root), "utf8"),
