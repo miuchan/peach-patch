@@ -105,6 +105,7 @@ const CABLES = [
   "#ac79ee",
   "#f28a49",
 ];
+const EMPTY_RACK_PATCH_URL = "https://patchstorage.com/meditation-patch/";
 type PortClick = { moduleId: string; direction: "in" | "out"; portId: number };
 type CableDrag = { cableId: string; side: "input" | "output"; port: PortClick };
 type CableDraft = { port: PortClick; color: string };
@@ -580,8 +581,8 @@ export function RackWebStudio() {
     fileRef.current?.click();
   };
 
-  const openPatchStoragePatch = async () => {
-    const requested = patchUrl.trim();
+  const openPatchStoragePatch = async (url = patchUrl) => {
+    const requested = url.trim();
     if (!requested) return;
     setBusy(true);
     setPatchUrlError("");
@@ -2983,8 +2984,11 @@ export function RackWebStudio() {
           <div className="pw-empty">
             <b>Empty rack.</b>
             <span>Paste a Library URL or open a .vcv patch.</span>
-            <button disabled={registryState!=="ready"} onClick={() => void addFromUrl()}>
-              Load the SEQ1 WASM example
+            <button
+              disabled={registryState!=="ready" || busy}
+              onClick={() => void openPatchStoragePatch(EMPTY_RACK_PATCH_URL)}
+            >
+              Load the Meditation patch
             </button>
           </div>
         )}
