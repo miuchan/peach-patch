@@ -1,4 +1,5 @@
 import { useRef, type PointerEvent } from "react";
+import { useI18n } from "../i18n/provider";
 
 export function RackWavetableEditor({
   values,
@@ -31,6 +32,7 @@ export function RackWavetableEditor({
   scaleX: number;
   onMomentary: (id: number, active: boolean) => void;
 }) {
+  const { t } = useI18n();
   const lastPoint = useRef<{ table: number; sample: number; value: number } | null>(null),
     stride = bitDepth + 1,
     totalHeight = tables * height + Math.max(0, tables - 1) * gap,
@@ -78,7 +80,7 @@ export function RackWavetableEditor({
   return (
     <svg
       className="pw-rack-wavetable-editor"
-      aria-label="Editable five-bank wavetable"
+      aria-label={t("display.wavetable.editor", { count: tables })}
       viewBox={`0 0 ${width} ${totalHeight}`}
       preserveAspectRatio="none"
       style={{

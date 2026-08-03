@@ -1,4 +1,5 @@
 import { type PointerEvent } from "react";
+import { useI18n } from "../i18n/provider";
 
 const BALL_COLORS = ["#ff9709", "#fff309", "#901afc", "#1996fc"];
 
@@ -31,6 +32,7 @@ export function RackBouncyBallsDisplay({
   onState: (updates: Array<[id: number, value: number]>) => void;
   onMomentary: (id: number, active: boolean) => void;
 }) {
+  const { t } = useI18n();
   const fallback = [176, 181.2, 206, 181.2, 236, 181.2, 266, 181.2, 174, 346, 1, 1],
     visual = values?.length === 12 ? values : fallback,
     locked = visual[11] >= 0.5;
@@ -56,7 +58,7 @@ export function RackBouncyBallsDisplay({
   return (
     <svg
       className="pw-rack-bouncy-balls"
-      aria-label={`Bouncy Balls animated display, paddle ${locked ? "locked" : "unlocked"}`}
+      aria-label={t(locked ? "display.bouncyBallsLocked" : "display.bouncyBallsUnlocked")}
       viewBox={`0 0 ${displayWidth} ${displayHeight}`}
       preserveAspectRatio="none"
       style={{ position: "absolute", left: x * scaleX, top: y, width: width * scaleX, height }}

@@ -1,4 +1,5 @@
 import type { WebPluginModule } from "../../lib/web-plugin-registry";
+import { useI18n } from "../i18n/provider";
 
 export type RackStudioQuickAddState = {
   left: number;
@@ -25,6 +26,7 @@ export function RackStudioQuickAdd({
   onSelect,
   onDismiss,
 }: RackStudioQuickAddProps) {
+  const { t } = useI18n();
   return (
     <div
       className="pw-quick-add"
@@ -39,13 +41,13 @@ export function RackStudioQuickAdd({
       >
         <input
           autoFocus
-          aria-label="Quick add module"
+          aria-label={t("quickAdd.aria")}
           value={state.query}
           onChange={(event) => onQueryChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") onDismiss();
           }}
-          placeholder="Add module at this position…"
+          placeholder={t("quickAdd.placeholder")}
         />
         <kbd>↵</kbd>
       </form>
@@ -55,11 +57,12 @@ export function RackStudioQuickAdd({
             <b>{module.model}</b>
             <span>{module.plugin}</span>
             <small>
-              {module.inputs.length} in · {module.outputs.length} out
+              {t("quickAdd.inputCount", { count: module.inputs.length })} ·{" "}
+              {t("quickAdd.outputCount", { count: module.outputs.length })}
             </small>
           </button>
         ))}
-        {!matches.length && <p>No matching web build</p>}
+        {!matches.length && <p>{t("quickAdd.noMatches")}</p>}
       </div>
     </div>
   );

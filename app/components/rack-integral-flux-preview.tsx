@@ -1,4 +1,5 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 const POINT_COUNT = 128;
 const LUT_SIZE = 512;
@@ -118,6 +119,7 @@ export const RackIntegralFluxPreview = memo(function RackIntegralFluxPreview({
   scaleX: number;
   label?: string;
 }) {
+  const { locale, t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const trailsRef = useRef<Trail[]>([]);
   const previousPointsRef = useRef<Point[] | null>(null);
@@ -228,18 +230,24 @@ export const RackIntegralFluxPreview = memo(function RackIntegralFluxPreview({
     }
   }, [curve, displayWidth, dotVisible, dotX, dotY, fallTime, height, riseTime, shapeMode, version]);
 
-  const frequencyLabel =
-    frequency < 1
-      ? `${Math.round(frequency * 1000)
-          .toString()
-          .padStart(4)} mHz`
-      : frequency >= 1000
-        ? `${(frequency / 1000).toFixed(2).padStart(4)} kHz`
-        : `${frequency.toFixed(1).padStart(5)} Hz`;
+  const frequencyLabel = useMemo(() => {
+    const digits = frequency < 1 ? 0 : frequency >= 1000 ? 2 : 1,
+      value = frequency < 1 ? frequency * 1000 : frequency >= 1000 ? frequency / 1000 : frequency,
+      unit = frequency < 1 ? "mHz" : frequency >= 1000 ? "kHz" : "Hz";
+    return `${new Intl.NumberFormat(locale, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(value)} ${unit}`;
+  }, [frequency, locale]);
+
+  const accessibleLabel = label ?? t("display.integralFluxChannel", { channel });
 
   return (
     <div
-      aria-label={`${label ?? `Integral Flux channel ${channel}`} waveform preview, ${frequencyLabel.trim()}`}
+      aria-label={t("display.waveformPreview", {
+        label: accessibleLabel,
+        frequency: frequencyLabel,
+      })}
       style={{
         position: "absolute",
         left: x * scaleX,

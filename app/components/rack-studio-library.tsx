@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { WebPluginModule } from "../../lib/web-plugin-registry";
+import { useI18n } from "../i18n/provider";
 
 export type RackStudioLibraryProps = {
   moduleUrl: string;
@@ -34,6 +35,7 @@ function RackStudioLibraryView({
   onAddFromUrl,
   onAddModule,
 }: RackStudioLibraryProps) {
+  const { t } = useI18n();
   return (
     <aside className="pw-library">
       <form
@@ -43,7 +45,7 @@ function RackStudioLibraryView({
         }}
       >
         <input
-          aria-label="VCV Library module URL"
+          aria-label={t("library.urlLabel")}
           value={moduleUrl}
           onChange={(event) => onModuleUrlChange(event.target.value)}
           placeholder="https://library.vcvrack.com/Plugin/Model"
@@ -51,25 +53,32 @@ function RackStudioLibraryView({
         <button
           disabled={busy || registryState !== "ready"}
           type="submit"
-          title="Load a module published in the GitHub registry"
+          title={t("library.loadTitle")}
         >
-          {busy ? "Loading…" : registryState === "loading" ? "Registry…" : "Load URL"}
+          {busy
+            ? t("common.loading")
+            : registryState === "loading"
+              ? t("library.registryLoading")
+              : t("library.loadUrl")}
         </button>
       </form>
       <div className="pw-registry">
         <label>
           <span>
             {registryState === "loading"
-              ? "MODULES · LOADING FROM GITHUB…"
+              ? t("library.modulesLoading")
               : registryState === "error"
-                ? "MODULES · GITHUB UNAVAILABLE"
-                : `MODULES · ${filteredModules.length}/${registryCount}`}
+                ? t("library.modulesUnavailable")
+                : t("library.modulesCount", {
+                    visible: filteredModules.length,
+                    total: registryCount,
+                  })}
           </span>
           <input
-            aria-label="Search web builds"
+            aria-label={t("library.searchLabel")}
             value={moduleQuery}
             onChange={(event) => onModuleQueryChange(event.target.value)}
-            placeholder="VCO, mixer, brand…"
+            placeholder={t("library.searchPlaceholder")}
           />
         </label>
         <div className="pw-registry-results">
@@ -87,23 +96,23 @@ function RackStudioLibraryView({
               }}
               title={
                 replaceMode && selectedModuleCount === 1
-                  ? `Replace the selected module with ${module.key}`
+                  ? t("library.replaceTitle", { module: module.key })
                   : selectedCableCount === 1 &&
                       module.inputs.length > 0 &&
                       module.outputs.length > 0
-                    ? `Insert ${module.key} on the selected cable`
-                    : `Add ${module.key} to the patch`
+                    ? t("library.insertTitle", { module: module.key })
+                    : t("library.addTitle", { module: module.key })
               }
             >
               <b>{module.key}</b>
               <em>{module.version}</em>
               <small>
                 {replaceMode && selectedModuleCount === 1
-                  ? "REPLACE"
+                  ? t("library.replaceBadge")
                   : selectedCableCount === 1 &&
                       module.inputs.length > 0 &&
                       module.outputs.length > 0
-                    ? "INSERT"
+                    ? t("library.insertBadge")
                     : "WASM"}
               </small>
             </button>

@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 const HEADER = 8;
 
@@ -54,6 +55,7 @@ export const RackTdScopeDisplay = memo(function RackTdScopeDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const displayWidth = width * scaleX;
 
@@ -147,11 +149,7 @@ export const RackTdScopeDisplay = memo(function RackTdScopeDisplay({
   return (
     <canvas
       ref={canvasRef}
-      aria-label={
-        (values?.[0] ?? 0) > 0.5
-          ? "TD.Scope waveform linked to Temporal Deck"
-          : "TD.Scope, attach to Temporal Deck"
-      }
+      aria-label={t((values?.[0] ?? 0) > 0.5 ? "display.tdScopeLinked" : "display.tdScopeAttach")}
       style={{
         position: "absolute",
         left: x * scaleX,

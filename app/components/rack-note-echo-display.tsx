@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/provider";
+
 function decimalText(value: number) {
   const absolute = Math.abs(value);
   if (absolute >= 0.9975) return "   1";
@@ -81,6 +83,7 @@ export function RackNoteEchoDisplay({
   y: number;
   scaleX?: number;
 }) {
+  const { t } = useI18n();
   const text = displayText({ ...visual, params, wetOnly, notifiedParam });
   return (
     <div
@@ -91,7 +94,7 @@ export function RackNoteEchoDisplay({
         width: visual.width * scaleX,
         height: visual.height,
       }}
-      aria-label={`Note Echo tap ${visual.tap + 1}: ${text.trim()}`}
+      aria-label={t("display.noteEchoTap", { tap: visual.tap + 1, value: text.trim() })}
     >
       <span aria-hidden="true">~~~~</span>
       <b>{text}</b>

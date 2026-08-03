@@ -11,6 +11,7 @@ import {
 import { allWebPlugins, getWebPlugin } from "../../lib/runtime-plugin-registry";
 import { isStrokeCvMode, STROKE_REPEATABLE_MODES } from "../../lib/stroke-host";
 import { useStableEvent } from "../../lib/use-stable-event";
+import { message, type UserMessage } from "../i18n/user-message";
 
 type ValueRef<T> = { current: T };
 type RackPoint = { x: number; y: number };
@@ -74,7 +75,7 @@ export type RackStrokeControlsOptions = {
   patchActions: RackStrokePatchActions;
   automation: RackStrokeAutomationActions;
   onSavePreset: (module: ModuleInstance, asDefault: boolean) => void;
-  onStatus: (message: string) => void;
+  onStatus: (message: UserMessage) => void;
 };
 
 function resolveStrokeTarget(
@@ -146,14 +147,19 @@ export function useRackStrokeControls({
           ? patch.modules.find((module) => module.id === hovered.moduleId)
           : undefined;
         if (!hovered || !targetModule) {
-          onStatus("Stroke parameter command needs the pointer over a parameter");
+          onStatus(message("status.stroke.parameterHoverRequired"));
           return;
         }
 
         const current = targetModule.params[hovered.paramId] ?? 0;
         if (binding.mode === 10) {
           copiedParamRef.current = current;
-          onStatus(`Stroke copied ${targetModule.model} parameter ${hovered.paramId + 1}`);
+          onStatus(
+            message("status.stroke.parameterCopied", {
+              module: targetModule.model,
+              parameter: hovered.paramId + 1,
+            }),
+          );
           return;
         }
 
@@ -164,7 +170,7 @@ export function useRackStrokeControls({
             ? (param?.min ?? 0) + Math.random() * ((param?.max ?? 1) - (param?.min ?? 0))
             : copiedParamRef.current;
         if (next === null) {
-          onStatus("Stroke paste needs a copied parameter value first");
+          onStatus(message("status.stroke.copyRequired"));
           return;
         }
 
@@ -181,31 +187,41 @@ export function useRackStrokeControls({
           ),
         }));
         onStatus(
-          `Stroke ${binding.mode === 9 ? "randomized" : "pasted"} ${targetModule.model} parameter ${hovered.paramId + 1}`,
+          message(
+            binding.mode === 9
+              ? "status.stroke.parameterRandomized"
+              : "status.stroke.parameterPasted",
+            { module: targetModule.model, parameter: hovered.paramId + 1 },
+          ),
         );
         return;
       }
       case 12:
       case 121:
         if (target) viewport.focusModule(target.id, 0.9);
-        else onStatus("Stroke focus needs a hovered or selected module");
+        else onStatus(message("status.stroke.focusTargetRequired"));
         return;
       case 14:
       case 141:
         if (target) viewport.focusModule(target.id, 0.3);
-        else onStatus("Stroke focus needs a hovered or selected module");
+        else onStatus(message("status.stroke.focusTargetRequired"));
         return;
       case 16:
       case 161: {
         const customZoom = Number(binding.data);
         if (target && Number.isFinite(customZoom)) viewport.focusModule(target.id, customZoom);
-        else onStatus("Stroke custom focus is missing a valid zoom value");
+        else onStatus(message("status.stroke.customZoomInvalid"));
         return;
       }
       case 17:
       case 171:
         if (target) viewport.focusModule(target.id, 0.9);
-        else onStatus(`Stroke target module ${binding.data || "is missing"}`);
+        else
+          onStatus(
+            binding.data
+              ? message("status.stroke.targetMissing", { target: binding.data })
+              : message("status.stroke.targetMissingUnknown"),
+          );
         return;
       case 13:
       case 131:
@@ -215,16 +231,22 @@ export function useRackStrokeControls({
       case 151:
         if (viewport.controlRef.current.zoom >= 0.75) viewport.fitPatch();
         else if (target) viewport.focusModule(target.id, 0.9);
-        else onStatus("Stroke zoom toggle needs a hovered or selected module");
+        else onStatus(message("status.stroke.zoomTargetRequired"));
         return;
       case 20:
         editor.setCableOpacity((value) => (value > 0 ? 0 : 1));
-        onStatus(`Stroke ${editor.cableOpacity > 0 ? "hid" : "restored"} cable opacity`);
+        onStatus(
+          message(
+            editor.cableOpacity > 0
+              ? "status.stroke.cableOpacityHidden"
+              : "status.stroke.cableOpacityRestored",
+          ),
+        );
         return;
       case 21:
       case 24: {
         if (!selection.cableIds.size) {
-          onStatus("Stroke cable color needs at least one selected cable");
+          onStatus(message("status.stroke.cableSelectionRequired"));
           return;
         }
         patchActions.commitPatch((current) => ({
@@ -241,12 +263,16 @@ export function useRackStrokeControls({
             return { ...cable, color: nextColor };
           }),
         }));
-        onStatus(`Stroke recolored ${selection.cableIds.size} selected cable(s)`);
+        onStatus(
+          message("status.stroke.cablesRecolored", {
+            cables: message("count.cables", { count: selection.cableIds.size }),
+          }),
+        );
         return;
       }
       case 22:
         if (!selection.cableIds.size) {
-          onStatus("Stroke cable rotate needs at least one selected cable");
+          onStatus(message("status.stroke.rotateSelectionRequired"));
           return;
         }
         patchActions.commitPatch((current) => ({
@@ -256,15 +282,23 @@ export function useRackStrokeControls({
             ...current.cables.filter((cable) => selection.cableIds.has(cable.id)),
           ],
         }));
-        onStatus("Stroke moved selected cables to the front layer");
+        onStatus(message("status.stroke.cablesFront"));
         return;
       case 23:
         editor.setCablesVisible((value) => !value);
-        onStatus(`Stroke ${editor.cablesVisible ? "hid" : "showed"} all cables`);
+        onStatus(
+          message(
+            editor.cablesVisible ? "status.stroke.cablesHidden" : "status.stroke.cablesShown",
+          ),
+        );
         return;
       case 33:
         editor.setModulesLocked((value) => !value);
-        onStatus(`Stroke ${editor.modulesLocked ? "unlocked" : "locked"} module movement`);
+        onStatus(
+          message(
+            editor.modulesLocked ? "status.stroke.modulesUnlocked" : "status.stroke.modulesLocked",
+          ),
+        );
         return;
       case 38: {
         const candidates = allWebPlugins().filter((definition) => definition.key !== source.key);
@@ -280,13 +314,13 @@ export function useRackStrokeControls({
             modules: [...current.modules, moduleFromDefinition(definition, position.x, position.y)],
           };
         });
-        onStatus(`Stroke added random web module ${definition.key}`);
+        onStatus(message("status.stroke.randomModule", { module: definition.key }));
         return;
       }
       case 36:
       case 37:
         if (target) onSavePreset(target, binding.mode === 37);
-        else onStatus("Stroke preset save needs a hovered or selected module");
+        else onStatus(message("status.stroke.presetTargetRequired"));
         return;
       case 40:
       case 41:
@@ -298,10 +332,10 @@ export function useRackStrokeControls({
         }));
         return;
       case 44:
-        onStatus("Stroke window minimize is unavailable in a browser tab");
+        onStatus(message("status.stroke.minimizeUnavailable"));
         return;
       default:
-        onStatus(`Stroke desktop command ${binding.mode} has no browser-safe equivalent yet`);
+        onStatus(message("status.stroke.desktopUnsupported", { command: binding.mode }));
     }
   });
 
@@ -359,7 +393,7 @@ export function useRackStrokeControls({
         [contract.modsState, modifiers],
       ]);
       patchActions.setModuleParam(hotkeyModule.id, contract.recordParam, 0);
-      onStatus(`Hotkey recorded · ${event.key}`);
+      onStatus(message("status.stroke.hotkeyRecorded", { key: event.key }));
     }
     return true;
   });
@@ -400,7 +434,7 @@ export function useRackStrokeControls({
         event.key === "Backspace")
     ) {
       event.preventDefault();
-      onStatus("Exit Perform mode before editing the patch");
+      onStatus(message("status.stroke.exitPerform"));
       return;
     }
     if (command && letter === "z") {
@@ -433,7 +467,11 @@ export function useRackStrokeControls({
       event.preventDefault();
       selection.replaceModuleSelection(new Set(patch.modules.map((module) => module.id)));
       selection.replaceCableSelection(new Set());
-      onStatus(`${patch.modules.length} modules selected`);
+      onStatus(
+        message("status.stroke.modulesSelected", {
+          modules: message("count.modules", { count: patch.modules.length }),
+        }),
+      );
       return;
     }
     if (command && event.shiftKey && letter === "p") {

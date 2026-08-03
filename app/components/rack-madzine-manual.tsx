@@ -1,5 +1,6 @@
 import { useMemo, useState, type MouseEvent, type PointerEvent } from "react";
 import type { ManualHelpModule } from "../../lib/web-plugin-registry";
+import { useI18n } from "../i18n/provider";
 
 export type MadzineManualTarget = {
   moduleSlug: string;
@@ -55,6 +56,7 @@ export function RackMadzineManual({
   scaleX: number;
   onData: (data: Record<string, unknown>) => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState(""),
     [selectedSlug, setSelectedSlug] = useState<string | null>(null),
     language = LANGUAGE_ORDER[Math.max(0, Math.min(2, Math.round(languageValue) - 1))] ?? "en",
@@ -84,7 +86,7 @@ export function RackMadzineManual({
           )
         : undefined,
     body = activeEntry?.text[language] ?? active?.description[language] ?? "",
-    title = active?.name ?? target?.moduleName ?? "Manual",
+    title = active?.name ?? target?.moduleName ?? t("manual.defaultTitle"),
     controlStyle = (left: number, top: number, width: number, height: number) => ({
       left: left * scaleX,
       top,
@@ -95,13 +97,13 @@ export function RackMadzineManual({
   const updateFont = (delta: number) =>
     onData({ fontSize: Math.max(8, Math.min(32, fontSize + delta)) });
   return (
-    <div className="pw-madzine-manual" aria-label="MADZINE Manual">
+    <div className="pw-madzine-manual" aria-label={t("manual.aria")}>
       <button
         type="button"
         className="pw-madzine-manual-control language"
         style={controlStyle(languageX, languageY, languageWidth, languageHeight)}
-        aria-label={`Manual language ${LANGUAGE_NAMES[language]}`}
-        title="Click to change language · double-click to reset to EN"
+        aria-label={t("manual.languageLabel", { language: LANGUAGE_NAMES[language] })}
+        title={t("manual.languageTitle")}
         onPointerDown={stopPointer}
         onClick={() => onData({ language: ((LANGUAGE_ORDER.indexOf(language) + 1) % 3) + 1 })}
         onDoubleClick={(event) => {
@@ -115,8 +117,8 @@ export function RackMadzineManual({
         type="button"
         className="pw-madzine-manual-control font"
         style={controlStyle(decreaseX, fontY, fontWidth, fontHeight)}
-        aria-label="Decrease Manual font size"
-        title="Decrease font · double-click to reset"
+        aria-label={t("manual.decreaseFont")}
+        title={t("manual.decreaseFontTitle")}
         onPointerDown={stopPointer}
         onClick={() => updateFont(-2)}
         onDoubleClick={(event) => {
@@ -130,8 +132,8 @@ export function RackMadzineManual({
         type="button"
         className="pw-madzine-manual-control font"
         style={controlStyle(increaseX, fontY, fontWidth, fontHeight)}
-        aria-label="Increase Manual font size"
-        title="Increase font · double-click to reset"
+        aria-label={t("manual.increaseFont")}
+        title={t("manual.increaseFontTitle")}
         onPointerDown={stopPointer}
         onClick={() => updateFont(2)}
         onDoubleClick={(event) => {
@@ -151,7 +153,7 @@ export function RackMadzineManual({
             <button
               type="button"
               className="pw-madzine-manual-back"
-              aria-label="Back to MADZINE module directory"
+              aria-label={t("manual.back")}
               onClick={() => {
                 setSelectedSlug(null);
                 setQuery("");
@@ -183,7 +185,7 @@ export function RackMadzineManual({
             <h3 className="directory-title">MADZINE</h3>
             <input
               type="search"
-              aria-label="Search MADZINE manual"
+              aria-label={t("manual.search")}
               placeholder={
                 language === "zh"
                   ? "搜尋模組或控制項"

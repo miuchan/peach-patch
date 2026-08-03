@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 function finite(samples: number[] | undefined) {
   return (samples ?? []).map((value) => (Number.isFinite(value) ? value : 0));
@@ -33,6 +34,7 @@ export function RackScopeDisplay({
   left?: number;
   top?: number;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -141,7 +143,7 @@ export function RackScopeDisplay({
       ref={ref}
       className="pw-rack-scope"
       style={{ left, top, width, height }}
-      aria-label="Live Rack oscilloscope"
+      aria-label={t("display.rackOscilloscope")}
     />
   );
 }

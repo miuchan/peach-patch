@@ -4,6 +4,12 @@ import type { RackAudioEngine, RackAudioStats } from "../../lib/rack-audio-engin
 import { syncRackAudioModules } from "../../lib/rack-audio-patch-sync";
 import { rackAudioGraphNeedsRebuild } from "../../lib/rack-audio-runtime-state";
 import type { PeachRegistryState } from "./use-peach-registry";
+import {
+  issue,
+  message,
+  type MessageDescriptorValue,
+  type UserMessage,
+} from "../i18n/user-message";
 
 type AudioEngineRef = { current: RackAudioEngine | null };
 
@@ -16,11 +22,18 @@ type RackAudioRuntimeOptions = {
   configureEngine: (engine: RackAudioEngine) => void;
   isRebuildDeferred: () => boolean;
   onBusyChange: (busy: boolean) => void;
-  onStatus: (message: string) => void;
+  onStatus: (message: UserMessage) => void;
 };
 
-function graphSummary(stats: RackAudioStats) {
-  return `${stats.activeModules} WASM modules · one graph worklet · ${stats.connectedCables} cables · MIDI ${stats.midiInputs} in/${stats.midiOutputs} out · ${stats.feedbackEdges} feedback edges · ${stats.skippedModules} modules skipped`;
+function graphValues(stats: RackAudioStats): Readonly<Record<string, MessageDescriptorValue>> {
+  return {
+    modules: message("count.wasmModules", { count: stats.activeModules }),
+    cables: message("count.cables", { count: stats.connectedCables }),
+    midiInputs: stats.midiInputs,
+    midiOutputs: stats.midiOutputs,
+    feedbackEdges: message("count.feedbackEdges", { count: stats.feedbackEdges }),
+    skippedModules: message("count.skippedModules", { count: stats.skippedModules }),
+  };
 }
 
 async function stopAfterFailedTransition(engine: RackAudioEngine | null) {
@@ -107,9 +120,7 @@ export function useRackAudioRuntime({
           if (!started) return;
           engine = started.engine;
           setAudioRunning(true);
-          onStatus(
-            `Audio live · ${started.stats.activeModules} WASM modules · ${started.stats.connectedCables} cables · MIDI ${started.stats.midiInputs} in/${started.stats.midiOutputs} out · ready to record`,
-          );
+          onStatus(message("status.audio.readyToRecord", graphValues(started.stats)));
         }
         if (!isCurrentGeneration(generation)) return;
         engine.setCaptureEnabled(moduleId, true);
@@ -120,7 +131,7 @@ export function useRackAudioRuntime({
         await stopAfterFailedTransition(failedEngine);
         if (!isCurrentGeneration(generation)) return;
         setAudioRunning(false);
-        onStatus(error instanceof Error ? error.message : "Recorder failed");
+        onStatus(issue(error, "errors.recorderFailed"));
       } finally {
         if (isCurrentGeneration(generation)) onBusyChange(false);
       }
@@ -131,9 +142,7 @@ export function useRackAudioRuntime({
   const toggleAudio = useCallback(async () => {
     if (registryState !== "ready") {
       onStatus(
-        registryState === "error"
-          ? "GitHub registry is unavailable"
-          : "Wait for the GitHub registry to finish loading",
+        message(registryState === "error" ? "errors.registryUnavailable" : "status.registry.wait"),
       );
       return;
     }
@@ -147,14 +156,14 @@ export function useRackAudioRuntime({
         await previous.stop();
         if (!isCurrentGeneration(generation)) return;
         setAudioRunning(false);
-        onStatus("Browser audio stopped");
+        onStatus(message("status.audio.stopped"));
         return;
       }
 
       const started = await startCurrentEngine(generation);
       if (!started) return;
       setAudioRunning(true);
-      onStatus(`Audio live · ${graphSummary(started.stats)}`);
+      onStatus(message("status.audio.live", graphValues(started.stats)));
     } catch (error) {
       if (!isCurrentGeneration(generation)) return;
       const failedEngine = previous ?? audioRef.current;
@@ -162,7 +171,7 @@ export function useRackAudioRuntime({
       await stopAfterFailedTransition(failedEngine);
       if (!isCurrentGeneration(generation)) return;
       setAudioRunning(false);
-      onStatus(error instanceof Error ? error.message : "Audio engine failed");
+      onStatus(issue(error, "errors.audioEngineFailed"));
     } finally {
       if (isCurrentGeneration(generation)) onBusyChange(false);
     }
@@ -194,7 +203,7 @@ export function useRackAudioRuntime({
     const generation = ++generationRef.current;
     audioRef.current = null;
     onBusyChange(true);
-    onStatus("Patch structure changed · rebuilding browser audio graph…");
+    onStatus(message("status.audio.rebuilding"));
 
     void (async () => {
       try {
@@ -203,7 +212,7 @@ export function useRackAudioRuntime({
         const started = await startCurrentEngine(generation);
         if (!started) return;
         setAudioRunning(true);
-        onStatus(`Audio rebuilt · ${graphSummary(started.stats)}`);
+        onStatus(message("status.audio.rebuilt", graphValues(started.stats)));
       } catch (error) {
         if (!isCurrentGeneration(generation)) return;
         const failedEngine = audioRef.current ?? previous;
@@ -211,7 +220,7 @@ export function useRackAudioRuntime({
         await stopAfterFailedTransition(failedEngine);
         if (!isCurrentGeneration(generation)) return;
         setAudioRunning(false);
-        onStatus(error instanceof Error ? error.message : "Audio graph rebuild failed");
+        onStatus(issue(error, "errors.audioRebuildFailed"));
       } finally {
         if (isCurrentGeneration(generation)) onBusyChange(false);
       }

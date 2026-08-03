@@ -1,3 +1,6 @@
+import { useMemo } from "react";
+import { useI18n } from "../i18n/provider";
+
 type Props = {
   values?: number[];
   filenames: [string | undefined, string | undefined];
@@ -22,18 +25,19 @@ function LcdFile({
   scaleX: number;
   onLoad: (slot: number) => void;
 }) {
+  const { t } = useI18n();
   const x = (slot ? 104 : 3) * MM * scaleX;
   const width = (slot ? 96.2 : 97) * MM * scaleX;
   const label = filename
     ? filename.length > 24
       ? `${filename.slice(0, 21)}...`
       : filename
-    : "<No IR selected>";
+    : t("display.octobir.noIrSelected");
   return (
     <button
       type="button"
-      aria-label={`Load IR ${slot ? "B" : "A"}: ${label}`}
-      title={`IR ${slot ? "B" : "A"} · click to load`}
+      aria-label={t("display.octobir.loadIr", { slot: slot ? "B" : "A", label })}
+      title={t("display.octobir.loadIrTitle", { slot: slot ? "B" : "A" })}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={() => onLoad(slot)}
       style={{
@@ -71,6 +75,7 @@ export function RackOctobirDisplay({
   scaleX,
   onLoad,
 }: Props) {
+  const { locale, t } = useI18n();
   const levelDb = Number.isFinite(values?.[0]) ? Number(values?.[0]) : -60;
   const blend = Number.isFinite(values?.[1]) ? Number(values?.[1]) : 0;
   const litInput = Math.max(0, Math.min(SEGMENTS, Math.ceil(((levelDb + 60) / 60) * SEGMENTS)));
@@ -78,12 +83,26 @@ export function RackOctobirDisplay({
   const blendPosition = blendNorm * SEGMENTS;
   const thresholdX = 8 + Math.max(0, Math.min(1, (threshold + 60) / 60)) * 554;
   const rangeX = 8 + Math.max(0, Math.min(1, (threshold + range + 60) / 60)) * 554;
+  const meterValues = useMemo(() => {
+    const decibels = new Intl.NumberFormat(locale, {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }).format(levelDb),
+      blendAmount = new Intl.NumberFormat(locale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(blend);
+    return { decibels, blendAmount };
+  }, [blend, levelDb, locale]);
   return (
     <>
       <LcdFile slot={0} filename={filenames[0]} scaleX={scaleX} onLoad={onLoad} />
       <LcdFile slot={1} filename={filenames[1]} scaleX={scaleX} onLoad={onLoad} />
       <svg
-        aria-label={`OctobIR input ${levelDb.toFixed(1)} dB, blend ${blend.toFixed(2)}`}
+        aria-label={t("display.octobir.meter", {
+          level: meterValues.decibels,
+          blend: meterValues.blendAmount,
+        })}
         role="img"
         viewBox="0 0 570.472 59.055"
         style={{

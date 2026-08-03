@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "../i18n/provider";
 
 const modeNames = ["PM", "RM", "AM", "SYNC"];
 const modeColors = ["#e3bb0a", "#e3151a", "#15d121", "#1a21e3"];
@@ -52,6 +53,7 @@ export function RackTheKickSample({
   onLoad: () => void;
   onMomentary: (id: number, active: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const normalizedMode = Math.max(0, Math.min(3, Math.round(mode)));
   const action = (id: number) => {
@@ -64,7 +66,7 @@ export function RackTheKickSample({
       <button
         type="button"
         className={`pw-the-kick-load ${loaded ? "loaded" : ""}`}
-        aria-label={loaded ? `Loaded sample ${label}` : "Load kick transfer sample"}
+        aria-label={loaded ? t("kick.loadedSample", { sample: label }) : t("kick.loadSample")}
         style={{ left: loadX * scaleX, top: loadY, width: loadWidth * scaleX, height: loadHeight }}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={() => {
@@ -108,7 +110,7 @@ export function RackTheKickSample({
       <button
         type="button"
         className="pw-the-kick-mode-hit"
-        aria-label={`Kick FM mode ${modeNames[normalizedMode]}`}
+        aria-label={t("kick.fmMode", { mode: modeNames[normalizedMode] })}
         disabled={!loaded}
         style={{ left: modeX * scaleX, top: modeY, width: modeWidth * scaleX, height: modeHeight }}
         onPointerDown={(event) => event.stopPropagation()}

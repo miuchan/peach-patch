@@ -18,6 +18,7 @@ import {
 } from "../../lib/rack-module-panel-data";
 import { STROKE_SPECIAL_MODES, strokeSpecialModeLabel } from "../../lib/stroke-host";
 import type { ParamSpec, WebPluginModule } from "../../lib/web-plugin-registry";
+import { useI18n } from "../i18n/provider";
 
 type ModulePanelControlsProps = {
   module: ModuleInstance;
@@ -52,6 +53,7 @@ export function ModulePanelControls({
   onPolyphony,
   onMidiDevice,
 }: ModulePanelControlsProps) {
+  const { formatNumber, t } = useI18n();
   const paramDragRef = useRef<{
     pointerId: number;
     paramId: number;
@@ -94,13 +96,57 @@ export function ModulePanelControls({
       height: size.height,
     };
   };
+  const strokeCommandLabel = (value: number, fallback: string) => {
+    switch (value) {
+      case 9:
+        return t("stroke.command.randomizeHoveredParameter");
+      case 10:
+        return t("stroke.command.copyHoveredParameter");
+      case 11:
+        return t("stroke.command.pasteHoveredParameter");
+      case 12:
+        return t("stroke.command.focusModule90");
+      case 14:
+        return t("stroke.command.focusModule30");
+      case 13:
+        return t("stroke.command.fitPatch");
+      case 15:
+        return t("stroke.command.toggleFocusFit");
+      case 20:
+        return t("stroke.command.toggleCableOpacity");
+      case 21:
+        return t("stroke.command.nextCableColor");
+      case 22:
+        return t("stroke.command.rotateCableLayer");
+      case 23:
+        return t("stroke.command.toggleCableVisibility");
+      case 33:
+        return t("stroke.command.toggleModuleLock");
+      case 38:
+        return t("stroke.command.addRandomModule");
+      case 36:
+        return t("stroke.command.saveModulePreset");
+      case 37:
+        return t("stroke.command.saveDefaultPreset");
+      case 40:
+        return t("stroke.command.panLeft");
+      case 41:
+        return t("stroke.command.panRight");
+      case 42:
+        return t("stroke.command.panUp");
+      case 43:
+        return t("stroke.command.panDown");
+      default:
+        return fallback;
+    }
+  };
 
   return (
     <div className={`pw-controls ${hasParamSourceLayout ? "source-layout" : ""}`}>
       {module.key === "Core/Notes" ? (
         <textarea
           className="pw-notes-editor"
-          aria-label="Notes text"
+          aria-label={t("module.notesText")}
           value={String(
             module.rack?.data && typeof module.rack.data === "object"
               ? ((module.rack.data as Record<string, unknown>).text ?? "")
@@ -112,7 +158,11 @@ export function ModulePanelControls({
       ) : (
         panelParams.map((param) => {
           const interaction = rackParamInteraction(param),
-            label = `${module.model} ${param.name}`,
+            label = t("module.controlLabel", {
+              module: module.model,
+              control: param.name,
+            }),
+            formattedValue = formatNumber(module.params[param.id] ?? param.default),
             resetParam = () =>
               window.requestAnimationFrame(() =>
                 onParamReset(param.id, rackParamResetValue(param, module.params)),
@@ -133,7 +183,10 @@ export function ModulePanelControls({
             <label
               key={param.id}
               className={`rack-control-${interaction} ${param.position?.control === "selector" ? "rack-selector" : ""}`}
-              title={`${param.name}: ${module.params[param.id] ?? param.default}`}
+              title={t("module.controlValue", {
+                control: param.name,
+                value: formattedValue,
+              })}
               style={hasParamSourceLayout ? rackWidgetStyle(param) : undefined}
             >
               <span>{param.name}</span>
@@ -214,7 +267,11 @@ export function ModulePanelControls({
                 <button
                   type="button"
                   className="pw-param-switch"
-                  aria-label={`${label}: ${module.params[param.id] ?? param.default}`}
+                  aria-label={t("module.controlValueLabel", {
+                    module: module.model,
+                    control: param.name,
+                    value: formattedValue,
+                  })}
                   onPointerDown={(event) => {
                     if (event.button > 0) return;
                     event.stopPropagation();
@@ -394,7 +451,7 @@ export function ModulePanelControls({
       {module.key === "FrankBuss/Formula" && (
         <div className="pw-formula-editors">
           <textarea
-            aria-label="Formula output expression"
+            aria-label={t("module.formulaOutputExpression")}
             spellCheck={false}
             value={String(
               module.rack?.data && typeof module.rack.data === "object"
@@ -405,7 +462,7 @@ export function ModulePanelControls({
             onChange={(event) => onData({ text: event.target.value })}
           />
           <input
-            aria-label="Formula frequency expression"
+            aria-label={t("module.formulaFrequencyExpression")}
             spellCheck={false}
             value={String(
               module.rack?.data && typeof module.rack.data === "object"
@@ -429,8 +486,8 @@ export function ModulePanelControls({
                 <span>{slot + 1}</span>
                 <button
                   type="button"
-                  aria-label={`Stroke map ${slot + 1}`}
-                  title="Focus, then press a key"
+                  aria-label={t("stroke.mapLabel", { slot: slot + 1 })}
+                  title={t("stroke.mapHint")}
                   onKeyDown={(event) => {
                     const next = rackKeyFromEvent(event);
                     if (next < 0) return;
@@ -443,31 +500,33 @@ export function ModulePanelControls({
                     ]);
                   }}
                 >
-                  {strokeKeyLabel(key, mods)}
+                  {key < 0 ? t("stroke.mapKey") : strokeKeyLabel(key, mods)}
                 </button>
                 <select
-                  aria-label={`Stroke mode ${slot + 1}`}
+                  aria-label={t("stroke.modeLabel", { slot: slot + 1 })}
                   value={mode}
                   onChange={(event) => onState([[offset + 3, Number(event.target.value)]])}
                 >
-                  <option value={0}>Off</option>
-                  <option value={1}>Trigger</option>
-                  <option value={2}>Gate</option>
-                  <option value={3}>Toggle</option>
-                  <optgroup label="Browser commands">
+                  <option value={0}>{t("stroke.mode.off")}</option>
+                  <option value={1}>{t("stroke.mode.trigger")}</option>
+                  <option value={2}>{t("stroke.mode.gate")}</option>
+                  <option value={3}>{t("stroke.mode.toggle")}</option>
+                  <optgroup label={t("stroke.browserCommands")}>
                     {STROKE_SPECIAL_MODES.map((option) => (
                       <option key={option.value} value={option.value}>
-                        {option.label}
+                        {strokeCommandLabel(option.value, option.label)}
                       </option>
                     ))}
                   </optgroup>
                   {mode > 3 && !strokeSpecialModeLabel(mode) && (
-                    <option value={mode}>Imported desktop command {mode}</option>
+                    <option value={mode}>
+                      {t("stroke.importedDesktopCommand", { command: mode })}
+                    </option>
                   )}
                 </select>
                 <button
                   type="button"
-                  aria-label={`Clear Stroke map ${slot + 1}`}
+                  aria-label={t("stroke.clearMap", { slot: slot + 1 })}
                   onClick={() =>
                     onState([
                       [offset, -1],
@@ -486,15 +545,15 @@ export function ModulePanelControls({
       )}
       {definition?.polyphonic && (
         <label>
-          <span>Voices</span>
+          <span>{t("module.voices")}</span>
           <select
-            aria-label={`${module.model} polyphony`}
+            aria-label={t("module.polyphonyLabel", { module: module.model })}
             value={module.polyphony ?? 1}
             onChange={(event) => onPolyphony(Number(event.target.value))}
           >
             {[1, 2, 4, 8, 16].map((channels) => (
               <option key={channels} value={channels}>
-                {channels}
+                {formatNumber(channels)}
               </option>
             ))}
           </select>
@@ -502,22 +561,26 @@ export function ModulePanelControls({
       )}
       {definition?.runtime?.midi && (
         <label className="pw-midi-device">
-          <span>MIDI {definition.runtime.midi.input ? "input" : "output"}</span>
+          <span>{definition.runtime.midi.input ? t("midi.input") : t("midi.output")}</span>
           <select
-            aria-label={`${module.model} MIDI device`}
+            aria-label={t("midi.deviceLabel", { module: module.model })}
             value={midiDeviceName}
             onChange={(event) => onMidiDevice(event.target.value)}
           >
             <option value="">
-              {definition.runtime.midi.input ? "All MIDI inputs" : "First MIDI output"}
+              {definition.runtime.midi.input ? t("midi.allInputs") : t("midi.firstOutput")}
             </option>
             {midiOptions.map((name) => (
               <option key={name} value={name}>
-                {name}
+                {name === "Unnamed input"
+                  ? t("midi.unnamedInput")
+                  : name === "Unnamed output"
+                    ? t("midi.unnamedOutput")
+                    : name}
               </option>
             ))}
           </select>
-          {!midiOptions.length && <small>Start audio to enumerate</small>}
+          {!midiOptions.length && <small>{t("midi.startAudioToEnumerate")}</small>}
         </label>
       )}
     </div>

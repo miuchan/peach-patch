@@ -54,6 +54,21 @@ Treat data from files, network responses, the registry, PatchStorage, `localStor
 - Preserve supported legacy input only through explicit migrations.
 - Reject invalid imports atomically so the current patch is not replaced by a partial graph.
 
+## Internationalization
+
+The Peach Patch host interface supports English (`en`) and Simplified Chinese (`zh-CN`). Browser-owned visible copy, dialog text, status and error fallbacks, titles, and accessibility labels belong in `app/i18n/catalogs.ts`; components render them through `useI18n()` instead of hardcoding a language.
+
+Keep translation state out of patch and audio domains:
+
+- Represent deferred or long-lived UI feedback with `message()` or `issue()` from `app/i18n/user-message.ts`. Store the descriptor and call `formatUserMessage()` at the render boundary so an existing status is translated again when the language changes.
+- Give `issue()` a localized fallback key. Do not expose `Error.message` or other browser/runtime diagnostics as user-facing copy.
+- Pass numbers through message interpolation or `formatNumber()` so `Intl` applies the active locale. Use plural templates for count-dependent grammar.
+- Keep module names, plugin-authored panel text, physical key names, filenames, and user content in their source form. Translate the surrounding Peach Patch instruction or accessibility label.
+
+The English catalog defines the canonical `MessageKey` set. Every catalog must contain exactly the same keys and interpolation placeholders. When adding or changing copy, update `enMessages` and `zhCNMessages` together, preserve placeholder names, and include an `other` plural form. `tests/i18n.test.ts` enforces key and placeholder parity, locale resolution, plural formatting, and descriptor retranslation.
+
+Adding another locale also requires updating `SUPPORTED_LOCALES`, registering its catalog, exposing it in the language selector, defining its document metadata mapping, and extending the locale tests. A language choice is a host preference stored under `peach-patch.locale.v1`; it must never enter a `.vcv` patch or patch autosave data.
+
 ## Checks
 
 During development, use the smallest relevant feedback loop:

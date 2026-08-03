@@ -1,4 +1,7 @@
+import { useI18n } from "../i18n/provider";
+
 export function RackRkdDividers({ values, scaleX }: { values?: number[]; scaleX: number }) {
+  const { t } = useI18n();
   const labels = Array.from({ length: 8 }, (_, row) => {
     const first = Math.round(values?.[row * 2] ?? 45);
     const second = Math.round(values?.[row * 2 + 1] ?? 45);
@@ -6,7 +9,7 @@ export function RackRkdDividers({ values, scaleX }: { values?: number[]; scaleX:
   });
   return (
     <span
-      aria-label={`Dividers ${labels.join(", ")}`}
+      aria-label={t("display.dividers", { values: labels.join(", ") })}
       style={{
         position: "absolute",
         zIndex: 7,

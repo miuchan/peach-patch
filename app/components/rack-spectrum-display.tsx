@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 const SAMPLE_RATE = 48_000,
   FFT_SIZE = 512,
@@ -184,6 +185,7 @@ export const RackSpectrumDisplay = memo(function RackSpectrumDisplay({
   width,
   height,
 }: RackSpectrumDisplayProps) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null),
     historiesRef = useRef<number[][]>([]),
     columnsRef = useRef<Float32Array[]>([]);
@@ -294,7 +296,9 @@ export const RackSpectrumDisplay = memo(function RackSpectrumDisplay({
       ref={canvasRef}
       className="pw-rack-spectrum"
       style={{ left: x, top: y, width, height }}
-      aria-label={kind === "spectrogram" ? "Live Rack spectrogram" : "Live Rack spectrum analyzer"}
+      aria-label={t(
+        kind === "spectrogram" ? "display.rackSpectrogram" : "display.rackSpectrumAnalyzer",
+      )}
     />
   );
 });

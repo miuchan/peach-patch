@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 export const RackWavetableDisplay = memo(function RackWavetableDisplay({
   values,
@@ -15,6 +16,7 @@ export const RackWavetableDisplay = memo(function RackWavetableDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current,
@@ -34,7 +36,11 @@ export const RackWavetableDisplay = memo(function RackWavetableDisplay({
     context.fillStyle = "#f0cf35";
     context.font = "11px 'SFMono-Regular',Consolas,monospace";
     context.textBaseline = "top";
-    context.fillText((values?.[0] ?? 0) > 0.5 ? "Browser wavetable" : "Basic.wav", 4, 3);
+    context.fillText(
+      (values?.[0] ?? 0) > 0.5 ? t("display.wavetable.browserSource") : "Basic.wav",
+      4,
+      3,
+    );
     if (!values || values.length < 132) return;
     const top = 18,
       bottom = height - 5,
@@ -53,11 +59,11 @@ export const RackWavetableDisplay = memo(function RackWavetableDisplay({
     context.strokeStyle = "#f0cf35";
     context.lineWidth = 1.5;
     context.stroke();
-  }, [values, width, height, scaleX]);
+  }, [values, width, height, scaleX, t]);
   return (
     <canvas
       ref={canvasRef}
-      aria-label="Live wavetable waveform"
+      aria-label={t("display.wavetable.waveform")}
       style={{
         position: "absolute",
         left: x * scaleX,

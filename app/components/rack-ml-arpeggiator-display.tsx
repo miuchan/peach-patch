@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/provider";
+
 export function RackMlArpeggiatorDisplay({
   values,
   channels,
@@ -17,6 +19,7 @@ export function RackMlArpeggiatorDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const activeChannels = Math.max(1, Math.min(channels, Math.round(values?.[0] ?? 1))),
     rowHeight = height / rows,
     columnWidth = width / activeChannels,
@@ -24,7 +27,7 @@ export function RackMlArpeggiatorDisplay({
   return (
     <svg
       className="pw-ml-arpeggiator-display"
-      aria-label={`${activeChannels}-channel arpeggiator order, range, and mode display`}
+      aria-label={t("display.arpeggiator", { count: activeChannels })}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}

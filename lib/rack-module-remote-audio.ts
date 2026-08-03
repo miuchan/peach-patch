@@ -1,6 +1,21 @@
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_MILLISECONDS = 12_000;
 
+export type RemoteAudioErrorCode =
+  "http" | "empty-data" | "empty-playlist" | "invalid-playlist-url" | "nested-playlist";
+
+export class RemoteAudioError extends Error {
+  readonly code: RemoteAudioErrorCode;
+  readonly status?: number;
+
+  constructor(code: RemoteAudioErrorCode, message: string, status?: number) {
+    super(message);
+    this.name = "RemoteAudioError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
 async function readWithTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array<ArrayBufferLike>>,
   milliseconds: number,
@@ -23,7 +38,12 @@ export async function boundedAudioResponse(
   maxBytes = DEFAULT_MAX_BYTES,
   maxMilliseconds = DEFAULT_MAX_MILLISECONDS,
 ) {
-  if (!response.ok) throw new Error(`Audio URL returned HTTP ${response.status}`);
+  if (!response.ok)
+    throw new RemoteAudioError(
+      "http",
+      `Audio URL returned HTTP ${response.status}`,
+      response.status,
+    );
   if (!response.body) return new Uint8Array(await response.arrayBuffer());
 
   const reader = response.body.getReader();
@@ -41,7 +61,7 @@ export async function boundedAudioResponse(
     length += chunk.byteLength;
   }
   await reader.cancel().catch(() => undefined);
-  if (!length) throw new Error("The audio URL returned no decodable data");
+  if (!length) throw new RemoteAudioError("empty-data", "The audio URL returned no decodable data");
 
   const bytes = new Uint8Array(length);
   let offset = 0;
@@ -59,8 +79,15 @@ export function firstPlaylistEntry(text: string, baseUrl: string) {
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"));
   const entry = plsEntries[0] ?? m3uEntries[0];
-  if (!entry) throw new Error("The playlist contains no audio URL");
-  return new URL(entry, baseUrl).href;
+  if (!entry) throw new RemoteAudioError("empty-playlist", "The playlist contains no audio URL");
+  try {
+    return new URL(entry, baseUrl).href;
+  } catch {
+    throw new RemoteAudioError(
+      "invalid-playlist-url",
+      "The playlist contains an invalid audio URL",
+    );
+  }
 }
 
 export async function audioFileFromUrl(value: string) {
@@ -101,5 +128,5 @@ export async function audioFileFromUrl(value: string) {
       type: contentType.startsWith("audio/") ? contentType : "audio/mpeg",
     });
   }
-  throw new Error("Nested playlists are not supported");
+  throw new RemoteAudioError("nested-playlist", "Nested playlists are not supported");
 }

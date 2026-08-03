@@ -17,7 +17,7 @@ test("browser binary assets validate their format and preserve every byte", asyn
   const loaded = await loadBrowserAsset(rom, binaryContract("binary"));
   assert.equal(loaded.ref.name, "game.nes");
   assert.equal(loaded.ref.frames, 16);
-  assert.equal(loaded.detail, "16 bytes");
+  assert.deepEqual(loaded.detail, { kind: "bytes", bytes: 16 });
   assert.deepEqual(Array.from(loaded.samples.slice(0, 4)), [0x4e, 0x45, 0x53, 0x1a]);
 
   await assert.rejects(
@@ -38,7 +38,7 @@ test("browser text assets reject empty, invalid UTF-8, and over-limit payloads",
     new File(["return 42"], "voice.lua"),
     binaryContract("script"),
   );
-  assert.equal(script.detail, "9 bytes");
+  assert.deepEqual(script.detail, { kind: "bytes", bytes: 9 });
 
   await assert.rejects(
     loadBrowserAsset(new File([], "empty.lua"), binaryContract("script")),
@@ -87,7 +87,7 @@ test("browser image assets are scaled and normalized into RGBA samples", async (
       maxSeconds: 0,
       channels: 4,
     });
-    assert.equal(loaded.detail, "2×1 RGBA");
+    assert.deepEqual(loaded.detail, { kind: "image", width: 2, height: 1 });
     assert.equal(loaded.ref.sampleRate, 2);
     assert.equal(loaded.ref.channels, 4);
     assert.deepEqual(
@@ -159,7 +159,7 @@ test("browser audio assets honor channel, duration, and sample limits", async ()
       maxSeconds: 1,
       channels: 2,
     });
-    assert.equal(loaded.detail, "0.8s · stereo");
+    assert.deepEqual(loaded.detail, { kind: "audio", seconds: 0.75, channels: 2 });
     assert.equal(loaded.ref.frames, 3);
     assert.deepEqual(Array.from(loaded.samples), [0, 10, 1, 11, 2, 12]);
     assert.equal(closed, true);

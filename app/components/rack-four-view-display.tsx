@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/provider";
+
 const SHARP_NAMES = ["C", 'C"', "D", 'D"', "E", "F", 'F"', "G", 'G"', "A", 'A"', "B"];
 const FLAT_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 
@@ -48,6 +50,7 @@ export function RackFourViewDisplay({
   spacingY: number;
   scaleX?: number;
 }) {
+  const { t } = useI18n();
   const source = values ?? [],
     chordMode = (params[modeParam] ?? 0) >= 0.5,
     sharp = (state?.[sharpState] ?? 1) >= 0.5;
@@ -60,7 +63,10 @@ export function RackFourViewDisplay({
             key={row}
             className="pw-four-view-display"
             style={{ left: x * scaleX, top: y + row * spacingY, width: width * scaleX, height }}
-            aria-label={`Four View ${row + 1}: ${text || "blank"}`}
+            aria-label={t("display.fourView", {
+              row: row + 1,
+              value: text || t("common.blank"),
+            })}
           >
             <span>~~~</span>
             <b>{text}</b>

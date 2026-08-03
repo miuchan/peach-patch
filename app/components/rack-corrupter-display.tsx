@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/provider";
+
 const ALGORITHMS = ["DECIMATE", "DROPOUT", "DESTROY", "DJ FILTER", "VINYL SIM"];
 
 export function RackCorrupterDisplay({
@@ -17,6 +19,7 @@ export function RackCorrupterDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const writePosition = Math.max(0, Math.min(bins - 1, Math.round(values?.[0] ?? 0))),
     algorithm = Math.max(0, Math.min(ALGORITHMS.length - 1, Math.round(values?.[1] ?? 0))),
     waveHeight = height - 14,
@@ -45,7 +48,7 @@ export function RackCorrupterDisplay({
   return (
     <svg
       className="pw-corrupter-display"
-      aria-label={`Corrupter waveform, ${ALGORITHMS[algorithm]} algorithm`}
+      aria-label={t("display.corrupter", { algorithm: ALGORITHMS[algorithm] })}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       style={{

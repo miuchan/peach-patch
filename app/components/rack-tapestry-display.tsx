@@ -1,4 +1,5 @@
 import { useId, useState, type PointerEvent } from "react";
+import { useI18n } from "../i18n/provider";
 
 const WAVEFORM_COLORS = [
   [255, 0, 0],
@@ -41,6 +42,7 @@ export function RackTapestryDisplay({
   scaleX: number;
   onMomentary: (id: number, active: boolean) => void;
 }) {
+  const { t } = useI18n();
   const gradientId = `tapestry-waveform-${useId().replace(/:/g, "")}`,
     [hoverX, setHoverX] = useState<number | null>(null),
     present = Boolean(values?.[0]),
@@ -79,7 +81,7 @@ export function RackTapestryDisplay({
   return (
     <svg
       className="pw-tapestry-display"
-      aria-label="Tapestry reel waveform and splice editor"
+      aria-label={t("display.tapestryEditor")}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       style={{

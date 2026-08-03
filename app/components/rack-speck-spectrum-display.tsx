@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 const SAMPLE_RATE = 48_000;
 
@@ -23,6 +24,7 @@ export const RackSpeckSpectrumDisplay = memo(function RackSpeckSpectrumDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -143,7 +145,7 @@ export const RackSpeckSpectrumDisplay = memo(function RackSpeckSpectrumDisplay({
       ref={canvasRef}
       className="pw-rack-spectrum"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
-      aria-label="Speck live FFT spectrum"
+      aria-label={t("display.speckSpectrum")}
     />
   );
 });

@@ -51,6 +51,19 @@ The container may compose boundaries, but low-level rendering and gesture algori
 
 Canvas pan, touch pinch, marquee selection, and collision-aware group dragging live in `lib/use-rack-canvas-gestures.ts`. The hook receives patch/history callbacks and has no dependency on the registry or audio engine.
 
+### Internationalization
+
+`app/i18n/` owns localization for the Peach Patch host interface. `initializeI18n()` resolves the initial locale before React mounts, then `I18nProvider` exposes the active locale, translation, and number-formatting functions. Resolution prefers the validated `peach-patch.locale.v1` value from `localStorage`, then the first supported entry in `navigator.languages`, and finally English. An explicit selection is persisted when storage is available. Every change also synchronizes the document language, direction, title, description, and Open Graph locale metadata.
+
+The boundary is split by responsibility:
+
+- `core.ts` owns supported locale identifiers, normalization, fallback resolution, plural selection, interpolation, and locale-aware number formatting;
+- `catalogs.ts` owns the statically imported English and Simplified Chinese catalogs. The English keys form the `MessageKey` type, and every other catalog must have exact key and placeholder parity;
+- `provider.tsx` owns browser detection, preference persistence, document metadata, and the React context consumed by components;
+- `user-message.ts` defines stable `message` and `issue` descriptors for asynchronous status, callback, and failure paths.
+
+Components translate browser-owned copy at render time with `useI18n()`. Long-lived state stores a message key and structured values rather than a translated string; `formatUserMessage()` resolves it only at the final display boundary. This lets already-visible status and error fallbacks update immediately when the locale changes and prevents native exception text from becoming untranslated UI. Locale state never enters `PatchDocument`, AudioWorklet messages, `.vcv` serialization, or autosave. Plugin names, module-authored panel text, and user content remain source data rather than host translations.
+
 ### Patch domain
 
 `PatchDocument` in `lib/patch-types.ts` is the internal editable model. Transformations are immutable and are kept outside React. `lib/patch-operations.ts` is the stable import facade; implementation details are split by responsibility:
@@ -112,6 +125,7 @@ The Worker does not build modules, proxy arbitrary URLs, store patches, or act a
 | Registry catalog                       | Runtime registry              | Refetched; not persisted as patch state                                           |
 | WASM instances and signal buffers      | AudioWorklet                  | Live projection only                                                              |
 | Web MIDI devices and routes            | Audio engine plus module data | Device enumeration is session state; selected names may round-trip in module data |
+| Interface locale                       | `I18nProvider`                | Validated `localStorage` preference; never patch state                            |
 
 Structural edits use `commit()` and become undoable immediately. Continuous gestures may use `mutate()` while moving, then create one history checkpoint when the gesture completes. Side effects such as worklet messages, file downloads, or IndexedDB writes happen after the domain decision.
 
@@ -154,6 +168,7 @@ Treat every network response, file, saved patch, autosave record, and IndexedDB 
 - Pure domain, migration, geometry, state, registry, URL, storage, and serialization behavior runs under Node's test runner.
 - AudioWorklet behavior runs in a VM harness and covers graph scheduling, cable summing, polyphony, feedback, expanders, MIDI, capture, automation, and telemetry.
 - Render-boundary tests protect the SPA/component/service wiring without treating implementation text snapshots as runtime evidence.
+- Internationalization tests enforce locale resolution, catalog and placeholder parity, plural and number formatting, and render-time retranslation of stable message descriptors.
 - `npm test` runs type checking, a production Cloudflare/Vite build, and the coverage-gated Node suite. The current gate is 95% lines, 95% functions, and 80% branches across covered `lib/` and `server/` TypeScript.
 - `npm run check` is the contributor and CI entry point: formatting, linting, then the complete test command above.
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 const finite = (samples: number[] | undefined) =>
   (samples ?? []).map((value) => (Number.isFinite(value) ? value : 0));
@@ -22,6 +23,7 @@ export function RackMultiMeterDisplay({
   width: number;
   height: number;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null),
     peaksRef = useRef(Array(16).fill(-96));
   useEffect(() => {
@@ -115,7 +117,7 @@ export function RackMultiMeterDisplay({
       ref={canvasRef}
       className="pw-rack-multi-meter"
       style={{ left: x, top: y, width, height }}
-      aria-label="Live multichannel level and XY meter"
+      aria-label={t("display.multichannelMeter")}
     />
   );
 }

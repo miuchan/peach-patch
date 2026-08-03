@@ -1,7 +1,9 @@
+import { useI18n } from "../i18n/provider";
+
 export function RackPhraseSeqDisplay({
   values,
   digits = 3,
-  label = "Phrase sequence display",
+  label,
   x,
   y,
   width,
@@ -17,6 +19,7 @@ export function RackPhraseSeqDisplay({
   height: number;
   scaleX?: number;
 }) {
+  const { t } = useI18n();
   const fallback = "1".padStart(digits, " "),
     text =
       values
@@ -27,7 +30,10 @@ export function RackPhraseSeqDisplay({
     <div
       className="pw-phrase-seq-display"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
-      aria-label={`${label}: ${text.trim() || text}`}
+      aria-label={t("display.labeledValue", {
+        label: label ?? t("display.phraseSequence"),
+        value: text.trim() || text,
+      })}
     >
       <span aria-hidden="true">{"~".repeat(digits)}</span>
       <b>{text.padEnd(digits, " ").slice(0, digits)}</b>

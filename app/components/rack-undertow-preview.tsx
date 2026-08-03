@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 const HEADER = 8;
 const POINTS = 256;
@@ -8,13 +9,15 @@ const MAX_TRAILS = 6;
 type Point = { x: number; y: number };
 type Trail = { born: number; points: Point[] };
 
-function frequencyText(value: number) {
+function frequencyText(value: number, locale: string) {
   const hz = Number.isFinite(value) && value > 0 ? value : 0;
-  if (hz < 1) return `${(hz * 1000).toFixed(1)} mHz`;
-  if (hz >= 1000) return `${(hz / 1000).toFixed(2)} kHz`;
-  if (hz < 10) return `${hz.toFixed(2)} Hz`;
-  if (hz < 100) return `${hz.toFixed(1)} Hz`;
-  return `${hz.toFixed(0)} Hz`;
+  const digits = hz < 1 ? 1 : hz >= 1000 || hz < 10 ? 2 : hz < 100 ? 1 : 0,
+    scaled = hz < 1 ? hz * 1000 : hz >= 1000 ? hz / 1000 : hz,
+    unit = hz < 1 ? "mHz" : hz >= 1000 ? "kHz" : "Hz";
+  return `${new Intl.NumberFormat(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(scaled)} ${unit}`;
 }
 
 function stroke(context: CanvasRenderingContext2D, points: Point[]) {
@@ -40,6 +43,7 @@ export const RackUndertowPreview = memo(function RackUndertowPreview({
   height: number;
   scaleX: number;
 }) {
+  const { locale, t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousRef = useRef<Point[] | null>(null);
   const trailsRef = useRef<Trail[]>([]);
@@ -112,13 +116,19 @@ export const RackUndertowPreview = memo(function RackUndertowPreview({
     context.textAlign = "center";
     context.textBaseline = "top";
     context.font = "11.5px ui-sans-serif, system-ui, sans-serif";
-    context.fillText(frequencyText(values?.[0] ?? 261.63), displayWidth * 0.5, height + 1.5);
-  }, [canvasHeight, displayWidth, height, values]);
+    context.fillText(
+      frequencyText(values?.[0] ?? 261.63, locale),
+      displayWidth * 0.5,
+      height + 1.5,
+    );
+  }, [canvasHeight, displayWidth, height, locale, values]);
 
   return (
     <canvas
       ref={canvasRef}
-      aria-label={`Undertow waveform preview, ${frequencyText(values?.[0] ?? 261.63)}`}
+      aria-label={t("display.undertowPreview", {
+        frequency: frequencyText(values?.[0] ?? 261.63, locale),
+      })}
       style={{
         position: "absolute",
         left: x * scaleX,

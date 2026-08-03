@@ -1,4 +1,5 @@
-import { memo, useId } from "react";
+import { memo, useId, useMemo } from "react";
+import { useI18n } from "../i18n/provider";
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -19,6 +20,7 @@ export const RackLomasSamplerDisplay = memo(function RackLomasSamplerDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { locale, t } = useI18n();
   const clipId = useId().replaceAll(":", "-");
   const displayWidth = width * scaleX,
     frames = Math.max(0, Math.round(values?.[offset] ?? 0));
@@ -55,11 +57,28 @@ export const RackLomasSamplerDisplay = memo(function RackLomasSamplerDisplay({
     maximum = Math.max(start, end),
     waveWidth = displayWidth - 2 * margin;
   const duration = frames / sampleRate,
-    label = recording ? "Recording…" : frames > 0 ? "Browser sample" : "Load audio";
+    durationText = useMemo(
+      () =>
+        new Intl.NumberFormat(locale, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(duration),
+      [duration, locale],
+    ),
+    label = t(
+      recording
+        ? "display.sampler.recording"
+        : frames > 0
+          ? "display.sampler.browserSample"
+          : "display.sampler.loadAudio",
+    );
 
   return (
     <div
-      aria-label={`Advanced Sampler display, ${label}${frames > 0 ? `, ${duration.toFixed(2)} seconds` : ""}`}
+      aria-label={t(
+        frames > 0 ? "display.sampler.withDuration" : "display.sampler.withoutDuration",
+        { status: label, duration: durationText },
+      )}
       style={{
         position: "absolute",
         left: x * scaleX,

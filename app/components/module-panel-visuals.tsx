@@ -44,6 +44,7 @@ import { RackWavetableDisplay } from "./rack-wavetable-display";
 import { RackWavetableEditor } from "./rack-wavetable-editor";
 import { RackWolframDisplay } from "./rack-wolfram-display";
 import { RackXYPadDisplay } from "./rack-xy-pad-display";
+import { useI18n } from "../i18n/provider";
 
 type ModulePanelVisualsProps = {
   module: ModuleInstance;
@@ -84,6 +85,7 @@ export function ModulePanelVisuals({
   onState,
   onData,
 }: ModulePanelVisualsProps) {
+  const { t } = useI18n();
   if (!definition) return null;
 
   return (
@@ -234,7 +236,7 @@ export function ModulePanelVisuals({
           <pre
             key={`midi-log-${index}`}
             className="pw-midi-log"
-            aria-label="MIDI log"
+            aria-label={t("visual.midiLog")}
             style={{
               left: (visual.x * module.width) / definition.width,
               top: visual.y,
@@ -406,7 +408,7 @@ export function ModulePanelVisuals({
             <div
               key={`scribble-strip-${index}`}
               className={`pw-scribble-strip-display ${fromTop ? "from-top" : "from-bottom"}`}
-              aria-label={`ScribbleStrip label: ${text}`}
+              aria-label={t("visual.scribbleStripLabel", { text })}
               style={{
                 left: (visual.x * module.width) / definition.width,
                 top: visual.y,
@@ -488,7 +490,7 @@ export function ModulePanelVisuals({
           <input
             key={`song-mode-sequence-${index}`}
             className="pw-song-mode-sequence"
-            aria-label="Playback sequence"
+            aria-label={t("visual.playbackSequence")}
             type="text"
             spellCheck={false}
             value={String(rackData[visual.dataKey] ?? visual.defaultText)}
@@ -525,7 +527,7 @@ export function ModulePanelVisuals({
             scaleX={module.width / definition.width}
             loaded={Boolean(selectedAsset) || Boolean(rackData.hasSample)}
             mode={Number(module.state?.[2] ?? rackData.modeValue ?? 0)}
-            filename={selectedAsset?.name ?? String(rackData.samplePath ?? "Sample")}
+            filename={selectedAsset?.name ?? String(rackData.samplePath ?? t("asset.defaultName"))}
             onLoad={onLoadAsset}
             onMomentary={onMomentary}
           />
@@ -701,7 +703,7 @@ export function ModulePanelVisuals({
               return (
                 <input
                   key={key}
-                  aria-label={`Cable label ${row + 1}`}
+                  aria-label={t("visual.cableLabel", { row: row + 1 })}
                   type="text"
                   value={String(rackData[key] ?? "")}
                   style={{ top: row * visual.rowHeight, height: visual.height }}

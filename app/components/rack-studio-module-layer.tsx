@@ -18,7 +18,7 @@ type SignalState = {
 export type RackStudioModuleLayerProps = {
   modules: ModuleInstance[];
   cables: PatchDocument["cables"];
-  getDefinition: (key: string) => WebPluginModule | undefined;
+  definitions: readonly WebPluginModule[];
   selectedIds: ReadonlySet<string>;
   pending: RackStudioPortClick | null;
   jackSignalLevels: ReadonlyMap<string, number>;
@@ -70,7 +70,7 @@ const EMPTY_CONNECTED_INPUT_IDS: ReadonlySet<number> = new Set();
 function RackStudioModuleLayerView({
   modules,
   cables,
-  getDefinition,
+  definitions,
   selectedIds,
   pending,
   jackSignalLevels,
@@ -108,6 +108,10 @@ function RackStudioModuleLayerView({
   onRemove,
   onReplaceDrop,
 }: RackStudioModuleLayerProps) {
+  const definitionsByKey = useMemo(
+    () => new Map(definitions.map((definition) => [definition.key, definition])),
+    [definitions],
+  );
   const connectedInputIdsByModule = useMemo(() => {
     const connected = new Map<string, Set<number>>();
     for (const cable of cables) {
@@ -124,7 +128,7 @@ function RackStudioModuleLayerView({
   return (
     <>
       {modules.map((module) => {
-        const definition = getDefinition(module.key);
+        const definition = definitionsByKey.get(module.key);
         const inputSignalLevels: Record<number, number> = {};
         for (const port of definition?.inputs ?? []) {
           const level = jackSignalLevels.get(`${module.id}:in:${port.id}`);
@@ -202,7 +206,7 @@ function moduleLayerPropsEqual(
   return (
     previous.modules === next.modules &&
     previous.cables === next.cables &&
-    previous.getDefinition === next.getDefinition &&
+    previous.definitions === next.definitions &&
     previous.selectedIds === next.selectedIds &&
     previous.pending === next.pending &&
     (next.visualUpdatesPaused ||
@@ -221,7 +225,9 @@ function moduleLayerPropsEqual(
 /**
  * Viewport-only parent renders must not reconcile hundreds of full module
  * panels. Event callbacks intentionally stay attached until one of the data
- * dependencies above changes; modulesLocked covers the only external mode
- * that changes their behavior without changing the patch itself.
+ * dependencies above changes. The immutable definitions snapshot makes a
+ * completed Registry load invalidate panels restored before metadata arrived;
+ * modulesLocked covers the only external mode that changes their behavior
+ * without changing the patch itself.
  */
 export const RackStudioModuleLayer = memo(RackStudioModuleLayerView, moduleLayerPropsEqual);

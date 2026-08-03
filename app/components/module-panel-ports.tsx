@@ -1,5 +1,6 @@
 import type { CSSProperties, DragEvent, PointerEvent } from "react";
 import type { PortSpec } from "../../lib/web-plugin-registry";
+import { useI18n } from "../i18n/provider";
 
 export type ModulePanelPort = {
   moduleId: string;
@@ -46,6 +47,7 @@ export function ModulePanelPortBank({
   onPortPointerUp,
   onPortHover,
 }: ModulePanelPortBankProps) {
+  const { t } = useI18n();
   const bankClass = direction === "in" ? "inputs" : "outputs";
   const startPortDrag = (event: DragEvent<HTMLButtonElement>, port: ModulePanelPort) => {
     event.stopPropagation();
@@ -93,7 +95,11 @@ export function ModulePanelPortBank({
             data-port-id={port.id}
             className={`${Object.hasOwn(signalLevels, port.id) ? "connected" : ""} ${Math.abs(level) > 0.01 ? "powered" : ""} ${pendingPort ? "pending" : ""}`}
             data-signal={Math.min(10, Math.abs(level)).toFixed(3)}
-            aria-label={`${moduleModel} ${port.name} ${direction === "in" ? "input" : "output"}`}
+            aria-label={t("port.label", {
+              module: moduleModel,
+              port: port.name,
+              direction: direction === "in" ? t("port.input") : t("port.output"),
+            })}
             onClick={() => onPort(reference)}
             onDragStart={(event) => startPortDrag(event, reference)}
             onDragOver={allowPortDrop}

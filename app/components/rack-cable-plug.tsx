@@ -1,4 +1,5 @@
 import type { RackPlugSignal } from "../../lib/rack-audio-engine";
+import { useI18n } from "../i18n/provider";
 
 const PLUG_SIZE = 33,
   PORT_SIZE = 15.8003,
@@ -55,6 +56,7 @@ export function RackCablePlug({
   portId: number;
   onPointerDown?: (event: React.PointerEvent<Element>) => void;
 }) {
+  const { t } = useI18n();
   const lights = lightStates(signal),
     rotation = (angle * 180) / Math.PI - 90,
     active = top ? lights.filter((light) => light.brightness > 0.0001) : [],
@@ -69,10 +71,16 @@ export function RackCablePlug({
       data-port-id={portId}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
-      aria-label={interactive ? `Drag ${direction} plug` : undefined}
+      aria-label={
+        interactive
+          ? t("cable.dragPlug", {
+              direction: t(direction === "in" ? "cable.input" : "cable.output"),
+            })
+          : undefined
+      }
       onPointerDown={interactive ? onPointerDown : undefined}
     >
-      {interactive && <title>Drag to reconnect · Cmd/Ctrl-drag to stack a new cable</title>}
+      {interactive && <title>{t("cable.dragHint")}</title>}
       <g transform={`rotate(${rotation})`}>
         <image
           href={componentAsset("Plug", color)}

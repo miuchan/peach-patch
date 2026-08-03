@@ -1,11 +1,13 @@
 import type { BlockedVcvPatchError } from "../../lib/vcv-patch-compatibility";
+import { useI18n } from "../i18n/provider";
+import { formatUserMessage, type UserMessage } from "../i18n/user-message";
 
 export type PatchOpenFailure =
-  { kind: "blocked"; error: BlockedVcvPatchError } | { kind: "invalid"; message: string };
+  { kind: "blocked"; error: BlockedVcvPatchError } | { kind: "invalid"; message: UserMessage };
 
 type PatchStorageUrlDialogProps = {
   value: string;
-  error: string;
+  error: UserMessage | null;
   busy: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
@@ -20,6 +22,7 @@ export function PatchStorageUrlDialog({
   onSubmit,
   onDismiss,
 }: PatchStorageUrlDialogProps) {
+  const { t } = useI18n();
   return (
     <div
       className="pw-dialog-backdrop"
@@ -42,14 +45,14 @@ export function PatchStorageUrlDialog({
       >
         <header>
           <div>
-            <span>OPEN FROM LINK</span>
-            <b id="pw-patch-url-title">PatchStorage patch</b>
+            <span>{t("dialog.link.eyebrow")}</span>
+            <b id="pw-patch-url-title">{t("dialog.link.title")}</b>
           </div>
-          <button type="button" aria-label="Close" disabled={busy} onClick={onDismiss}>
+          <button type="button" aria-label={t("common.close")} disabled={busy} onClick={onDismiss}>
             ×
           </button>
         </header>
-        <label htmlFor="pw-patch-url">Paste the public PatchStorage page link</label>
+        <label htmlFor="pw-patch-url">{t("dialog.link.label")}</label>
         <input
           id="pw-patch-url"
           type="url"
@@ -61,16 +64,16 @@ export function PatchStorageUrlDialog({
           onChange={(event) => onChange(event.target.value)}
         />
         {error ? (
-          <p role="alert">{error}</p>
+          <p role="alert">{formatUserMessage(t, error)}</p>
         ) : (
-          <small>The patch is downloaded from PatchStorage and opened in this browser.</small>
+          <small>{t("dialog.link.help")}</small>
         )}
         <footer>
           <button type="button" disabled={busy} onClick={onDismiss}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button type="submit" disabled={busy || !value.trim()}>
-            {busy ? "Loading…" : "Open patch"}
+            {busy ? t("common.loading") : t("dialog.link.open")}
           </button>
         </footer>
       </form>
@@ -84,6 +87,7 @@ type PatchOpenFailureDialogProps = {
 };
 
 export function PatchOpenFailureDialog({ failure, onDismiss }: PatchOpenFailureDialogProps) {
+  const { t } = useI18n();
   const blocked = failure.kind === "blocked";
 
   return (
@@ -105,25 +109,23 @@ export function PatchOpenFailureDialog({ failure, onDismiss }: PatchOpenFailureD
       >
         <header>
           <div>
-            <span>{blocked ? "PATCH BLOCKED" : "PATCH NOT LOADED"}</span>
+            <span>
+              {blocked ? t("dialog.failure.blockedEyebrow") : t("dialog.failure.invalidEyebrow")}
+            </span>
             <b id="pw-patch-error-title">
-              {blocked ? "Commercial or unavailable modules" : "Unsupported or invalid VCV patch"}
+              {blocked ? t("dialog.failure.blockedTitle") : t("dialog.failure.invalidTitle")}
             </b>
           </div>
-          <button type="button" aria-label="Close" onClick={onDismiss}>
+          <button type="button" aria-label={t("common.close")} onClick={onDismiss}>
             ×
           </button>
         </header>
         <p id="pw-patch-error-description">
-          {failure.kind === "blocked" ? (
-            <>
-              Nothing was loaded. This patch contains {failure.error.instanceCount} module instance
-              {failure.error.instanceCount === 1 ? "" : "s"} that the verified browser runtime
-              cannot use.
-            </>
-          ) : (
-            <>Nothing was loaded. {failure.message}</>
-          )}
+          {failure.kind === "blocked"
+            ? t("dialog.failure.blockedDescription", { count: failure.error.instanceCount })
+            : t("dialog.failure.invalidDescription", {
+                message: formatUserMessage(t, failure.message),
+              })}
         </p>
         {failure.kind === "blocked" ? (
           <ul className="pw-patch-error-list">
@@ -131,10 +133,14 @@ export function PatchOpenFailureDialog({ failure, onDismiss }: PatchOpenFailureD
               <li key={module.key}>
                 <b>{module.key}</b>
                 <span>
-                  {module.count > 1 ? `${module.count} instances · ` : ""}
+                  {module.count > 1
+                    ? t("dialog.failure.instanceCount", { count: module.count })
+                    : ""}
                   {module.reason === "commercial-license"
-                    ? `commercial license (${module.license})`
-                    : "not available in the verified browser registry"}
+                    ? t("dialog.failure.commercial", {
+                        license: module.license ?? t("common.unknown"),
+                      })
+                    : t("dialog.failure.unavailable")}
                 </span>
               </li>
             ))}
@@ -142,7 +148,7 @@ export function PatchOpenFailureDialog({ failure, onDismiss }: PatchOpenFailureD
         ) : null}
         <footer>
           <button type="button" autoFocus onClick={onDismiss}>
-            Keep current patch
+            {t("dialog.failure.keepCurrent")}
           </button>
         </footer>
       </section>

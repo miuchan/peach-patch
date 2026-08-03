@@ -2,6 +2,7 @@ import { memo, useMemo, type MouseEvent, type PointerEvent } from "react";
 import type { RackCableLayout } from "../../lib/rack-cable-layout";
 import type { RackPlugSignal } from "../../lib/rack-audio-engine";
 import { RackCablePlug } from "./rack-cable-plug";
+import { useI18n } from "../i18n/provider";
 
 export type RackCableSurface = {
   x: number;
@@ -49,6 +50,7 @@ function RackStudioCableLayerView({
   onContextMenu,
   onPlugPointerDown,
 }: RackStudioCableLayerProps) {
+  const { t } = useI18n();
   const viewBox = `${surface.x} ${surface.y} ${surface.width} ${surface.height}`;
   const hitPaths = useMemo(
     () =>
@@ -58,7 +60,7 @@ function RackStudioCableLayerView({
           className="hit"
           d={path.d}
           role="button"
-          aria-label={`Cable ${path.id}`}
+          aria-label={t("cable.aria", { id: path.id })}
           tabIndex={0}
           onPointerDown={(event) => onSelect(path.id, event)}
           onContextMenu={(event) => onContextMenu(path.id, event)}
@@ -69,7 +71,7 @@ function RackStudioCableLayerView({
           }}
         />
       )),
-    [onContextMenu, onSelect, paths],
+    [onContextMenu, onSelect, paths, t],
   );
   const cablePaths = useMemo(
     () =>

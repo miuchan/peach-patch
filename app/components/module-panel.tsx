@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -19,12 +20,24 @@ import { rackLegacyUi } from "../../lib/rack-module-compatibility";
 import { RackLightVisual } from "./rack-light-visual";
 import type { MadzineManualTarget } from "./rack-madzine-manual";
 import { audioBoundaryLightValues } from "../../lib/rack-module-panel-data";
-import { audioFileFromUrl } from "../../lib/rack-module-remote-audio";
+import {
+  audioFileFromUrl,
+  RemoteAudioError,
+  type RemoteAudioErrorCode,
+} from "../../lib/rack-module-remote-audio";
 import { ModulePanelControls } from "./module-panel-controls";
 import { ModulePanelPortBank, type ModulePanelPort } from "./module-panel-ports";
 import { ModulePanelVisuals } from "./module-panel-visuals";
+import { useI18n } from "../i18n/provider";
 
 type PortClick = ModulePanelPort;
+type AssetUrlStatus =
+  | { kind: "idle" }
+  | { kind: "fetching" }
+  | { kind: "decoding" }
+  | { kind: "invalid-url" }
+  | { kind: "invalid-protocol" }
+  | { kind: "error"; code?: RemoteAudioErrorCode; status?: number };
 
 export function ModulePanel({
   module,
@@ -107,6 +120,15 @@ export function ModulePanel({
   lightValues?: number[];
   audioRunning: boolean;
 }) {
+  const { locale, t } = useI18n();
+  const secondsFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(locale, {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }),
+    [locale],
+  );
   const [dropTarget, setDropTarget] = useState(false);
   const [failedPanelArtworkUrl, setFailedPanelArtworkUrl] = useState<string | null>(null);
   const [paramNotice, setParamNotice] = useState<{ id: number; serial: number } | null>(null);
@@ -169,7 +191,7 @@ export function ModulePanel({
       ? (module.rack.data as Record<string, unknown>)
       : {};
   const [assetUrl, setAssetUrl] = useState(typeof rackData.url === "string" ? rackData.url : ""),
-    [urlStatus, setUrlStatus] = useState("");
+    [urlStatus, setUrlStatus] = useState<AssetUrlStatus>({ kind: "idle" });
   const audioData =
       rackData.audio && typeof rackData.audio === "object" && !Array.isArray(rackData.audio)
         ? (rackData.audio as Record<string, unknown>)
@@ -248,24 +270,59 @@ export function ModulePanel({
   const loadAssetUrl = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    let normalized: URL;
     try {
-      const normalized = new URL(assetUrl.trim());
-      if (!["http:", "https:"].includes(normalized.protocol))
-        throw new Error("Use an HTTP or HTTPS audio URL");
+      normalized = new URL(assetUrl.trim());
+    } catch {
+      setUrlStatus({ kind: "invalid-url" });
+      return;
+    }
+    try {
+      if (!["http:", "https:"].includes(normalized.protocol)) {
+        setUrlStatus({ kind: "invalid-protocol" });
+        return;
+      }
       onData({ url: normalized.href });
-      setUrlStatus("FETCHING…");
+      setUrlStatus({ kind: "fetching" });
       const file = await audioFileFromUrl(normalized.href);
-      setUrlStatus("DECODING…");
+      setUrlStatus({ kind: "decoding" });
       onSample(file, assetSlot);
     } catch (error) {
-      setUrlStatus(error instanceof Error ? error.message : "Audio URL could not be loaded");
+      setUrlStatus({
+        kind: "error",
+        ...(error instanceof RemoteAudioError
+          ? { code: error.code, ...(error.status === undefined ? {} : { status: error.status }) }
+          : {}),
+      });
     }
   };
+  const urlStatusText =
+    urlStatus.kind === "idle"
+      ? ""
+      : urlStatus.kind === "fetching"
+        ? t("asset.urlFetching")
+        : urlStatus.kind === "decoding"
+          ? t("asset.urlDecoding")
+          : urlStatus.kind === "invalid-url"
+            ? t("asset.urlInvalid")
+            : urlStatus.kind === "invalid-protocol"
+              ? t("asset.urlInvalidProtocol")
+              : urlStatus.code === "http"
+                ? t("asset.urlHttpError", { status: urlStatus.status ?? 0 })
+                : urlStatus.code === "empty-data"
+                  ? t("asset.urlEmptyData")
+                  : urlStatus.code === "empty-playlist"
+                    ? t("asset.urlEmptyPlaylist")
+                    : urlStatus.code === "invalid-playlist-url"
+                      ? t("asset.urlInvalidPlaylist")
+                      : urlStatus.code === "nested-playlist"
+                        ? t("asset.urlNestedPlaylist")
+                        : t("asset.urlError");
   return (
     <article
       className={`pw-module ${selected ? "selected" : ""} ${dropTarget ? "drop-target" : ""} ${module.bypassed ? "bypassed" : ""} ${hasSourceLayout ? "has-source-layout" : ""} ${hasPanelArtwork ? "has-panel-artwork" : ""} status-${module.status}`}
       style={panelStyle}
-      aria-label={`${module.plugin} ${module.model} module`}
+      aria-label={t("module.ariaLabel", { plugin: module.plugin, model: module.model })}
       onPointerDown={onSelect}
       onContextMenu={onContextMenu}
       onPointerEnter={() => onModuleHover(true)}
@@ -306,8 +363,12 @@ export function ModulePanel({
         <button
           type="button"
           className="pw-bypass"
-          aria-label={`${module.bypassed ? "Enable" : "Bypass"} ${module.model}`}
-          title={module.bypassed ? "Enable module" : "Bypass module"}
+          aria-label={
+            module.bypassed
+              ? t("module.enableLabel", { module: module.model })
+              : t("module.bypassLabel", { module: module.model })
+          }
+          title={module.bypassed ? t("module.enable") : t("module.bypass")}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={onBypass}
         >
@@ -315,7 +376,7 @@ export function ModulePanel({
         </button>
         <button
           type="button"
-          aria-label={`Remove ${module.model}`}
+          aria-label={t("module.removeLabel", { module: module.model })}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={onRemove}
         >
@@ -388,12 +449,12 @@ export function ModulePanel({
         <i />
         <span>
           {module.status === "ready"
-            ? "WASM READY"
+            ? t("module.status.ready")
             : module.status === "resolving"
-              ? "RESOLVING"
+              ? t("module.status.resolving")
               : module.status === "source-required"
-                ? "SOURCE BUILD NEEDED"
-                : "LOAD ERROR"}
+                ? t("module.status.sourceRequired")
+                : t("module.status.loadError")}
         </span>
       </div>
       {module.status === "ready" ? (
@@ -415,13 +476,18 @@ export function ModulePanel({
         />
       ) : (
         <div className="pw-missing">
-          <p>{module.description || "This module is not compiled for the web runtime yet."}</p>
+          <p>{module.description || t("module.webRuntimeUnavailable")}</p>
           {module.sourceUrl && (
             <a href={module.sourceUrl} target="_blank" rel="noreferrer">
-              Source repository ↗
+              {t("module.sourceRepository")} ↗
             </a>
           )}
-          <small>{module.license || module.error}</small>
+          <small>
+            {module.license ||
+              (module.status === "source-required"
+                ? t("module.registryUnavailable")
+                : t("module.runtimeLoadFailed"))}
+          </small>
         </div>
       )}
       {definition?.runtime?.asset && (
@@ -429,19 +495,22 @@ export function ModulePanel({
           {definition.runtime.asset.url && (
             <form className="pw-url-load" onSubmit={loadAssetUrl}>
               <input
-                aria-label={`${module.model} audio URL`}
+                aria-label={t("asset.audioUrlLabel", { module: module.model })}
                 type="url"
                 placeholder="https://…/stream.mp3 or .m3u"
                 value={assetUrl}
-                onChange={(event) => setAssetUrl(event.target.value)}
+                onChange={(event) => {
+                  setAssetUrl(event.target.value);
+                  setUrlStatus({ kind: "idle" });
+                }}
                 onBlur={() => {
                   if (assetUrl.trim()) onData({ url: assetUrl.trim() });
                 }}
               />
               <button type="submit" disabled={!assetUrl.trim()}>
-                Load URL
+                {t("asset.loadUrl")}
               </button>
-              {urlStatus && <small title={urlStatus}>{urlStatus}</small>}
+              {urlStatusText && <small title={urlStatusText}>{urlStatusText}</small>}
             </form>
           )}
           <label
@@ -449,7 +518,10 @@ export function ModulePanel({
           >
             <input
               ref={assetInputRef}
-              aria-label={`${module.model} ${definition.runtime.asset.type} asset`}
+              aria-label={t("asset.inputLabel", {
+                module: module.model,
+                type: definition.runtime.asset.type,
+              })}
               type="file"
               accept={
                 definition.runtime.asset.type === "image"
@@ -472,31 +544,48 @@ export function ModulePanel({
             />
             <b>
               {selectedAsset
-                ? `${assetSlots > 1 ? `Channel ${assetSlot + 1} · ` : ""}${selectedAsset.name}`
-                : `${assetSlots > 1 ? `Channel ${assetSlot + 1} · ` : ""}${definition.runtime.asset.type === "image" ? "Load image" : definition.runtime.asset.type === "binary" ? "Load NES ROM" : definition.runtime.asset.type === "midi" ? "Load MIDI file" : definition.runtime.asset.type === "script" ? "Load Lua script" : "Load audio sample"}`}
+                ? `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${selectedAsset.name}`
+                : `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${definition.runtime.asset.type === "image" ? t("asset.loadImage") : definition.runtime.asset.type === "binary" ? t("asset.loadNesRom") : definition.runtime.asset.type === "midi" ? t("asset.loadMidiFile") : definition.runtime.asset.type === "script" ? t("asset.loadLuaScript") : t("asset.loadAudioSample")}`}
             </b>
             <small>
               {selectedAsset
                 ? definition.runtime.asset.type === "image"
-                  ? `${selectedAsset.sampleRate}×${Math.floor(selectedAsset.frames / selectedAsset.sampleRate)} RGBA`
+                  ? t("asset.imageDetails", {
+                      width: selectedAsset.sampleRate,
+                      height: Math.floor(selectedAsset.frames / selectedAsset.sampleRate),
+                    })
                   : definition.runtime.asset.type === "binary" ||
                       definition.runtime.asset.type === "midi" ||
                       definition.runtime.asset.type === "script"
-                    ? `${selectedAsset.frames.toLocaleString()} bytes · stored locally`
+                    ? t("asset.bytesStored", { count: selectedAsset.frames })
                     : definition.runtime.asset.maxSeconds > 0
-                      ? `${(selectedAsset.frames / selectedAsset.sampleRate).toFixed(1)}s · ${selectedAsset.channels === 2 ? "stereo" : "mono"}`
-                      : `${selectedAsset.frames.toLocaleString()} samples · ${selectedAsset.channels === 2 ? "stereo" : "mono"}`
+                      ? t("asset.durationDetails", {
+                          duration: secondsFormatter.format(
+                            selectedAsset.frames / selectedAsset.sampleRate,
+                          ),
+                          channels:
+                            selectedAsset.channels === 2 ? t("asset.stereo") : t("asset.mono"),
+                        })
+                      : t("asset.sampleDetails", {
+                          count: selectedAsset.frames,
+                          channels:
+                            selectedAsset.channels === 2 ? t("asset.stereo") : t("asset.mono"),
+                        })
                 : definition.runtime.asset.type === "image"
-                  ? "PNG, JPEG or WebP · decoded locally"
+                  ? t("asset.imageFormats")
                   : definition.runtime.asset.type === "binary"
-                    ? `iNES .nes file · up to ${definition.runtime.asset.maxSamples.toLocaleString()} bytes`
+                    ? t("asset.nesLimit", { count: definition.runtime.asset.maxSamples })
                     : definition.runtime.asset.type === "midi"
-                      ? `Standard MIDI File · up to ${definition.runtime.asset.maxSamples.toLocaleString()} bytes`
+                      ? t("asset.midiLimit", { count: definition.runtime.asset.maxSamples })
                       : definition.runtime.asset.type === "script"
-                        ? `UTF-8 Lua script · up to ${definition.runtime.asset.maxSamples.toLocaleString()} bytes`
+                        ? t("asset.luaLimit", { count: definition.runtime.asset.maxSamples })
                         : definition.runtime.asset.maxSeconds > 0
-                          ? `WAV, MP3, AIFF, M4A, OGG or FLAC · first ${definition.runtime.asset.maxSeconds}s`
-                          : `WAV, MP3, AIFF, M4A, OGG or FLAC · up to ${definition.runtime.asset.maxSamples.toLocaleString()} samples`}
+                          ? t("asset.audioDurationLimit", {
+                              seconds: definition.runtime.asset.maxSeconds,
+                            })
+                          : t("asset.audioSampleLimit", {
+                              count: definition.runtime.asset.maxSamples,
+                            })}
             </small>
           </label>
         </>
@@ -512,8 +601,12 @@ export function ModulePanel({
             <i />
             <span>
               {recording
-                ? `Stop & download ${definition.runtime.capture.format.toUpperCase()}`
-                : `Record ${definition.runtime.capture.format.toUpperCase()}`}
+                ? t("capture.stopAndDownload", {
+                    format: definition.runtime.capture.format.toUpperCase(),
+                  })
+                : t("capture.record", {
+                    format: definition.runtime.capture.format.toUpperCase(),
+                  })}
             </span>
           </button>
         )}
@@ -553,7 +646,7 @@ export function ModulePanel({
       />
       {module.status === "ready" && (
         <button type="button" className="pw-test-clock" onClick={onClock}>
-          Run WASM block
+          {t("module.runWasmBlock")}
         </button>
       )}
     </article>

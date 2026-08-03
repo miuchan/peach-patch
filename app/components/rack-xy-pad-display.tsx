@@ -1,4 +1,5 @@
 import { type PointerEvent } from "react";
+import { useI18n } from "../i18n/provider";
 
 export function RackXYPadDisplay({
   values,
@@ -29,6 +30,7 @@ export function RackXYPadDisplay({
   onParam: (id: number, value: number) => void;
   onMomentary: (id: number, active: boolean) => void;
 }) {
+  const { t } = useI18n();
   const valid = Boolean(values && values.length >= 6 && (values.length - 6) % 2 === 0),
     ballX = valid ? values![0] : displayWidth / 2,
     ballY = valid ? values![1] : displayHeight / 2,
@@ -63,7 +65,7 @@ export function RackXYPadDisplay({
   return (
     <svg
       className="pw-rack-xy-pad"
-      aria-label="XY Pad recordable trajectory display"
+      aria-label={t("display.xyPad")}
       viewBox={`0 0 ${displayWidth} ${displayHeight}`}
       preserveAspectRatio="none"
       style={{

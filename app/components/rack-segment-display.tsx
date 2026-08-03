@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import segmentFontUrl from "../assets/fonts/braids-segment14/Segment14.ttf?url";
+import { useI18n } from "../i18n/provider";
 
 export function RackSegmentDisplay({
   value,
@@ -18,6 +19,7 @@ export function RackSegmentDisplay({
   height: number;
   scaleX?: number;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -65,7 +67,7 @@ export function RackSegmentDisplay({
       ref={ref}
       className="pw-rack-segment"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
-      aria-label="Live Rack segment display"
+      aria-label={t("display.rackSegment")}
     />
   );
 }

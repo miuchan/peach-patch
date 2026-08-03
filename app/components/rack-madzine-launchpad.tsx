@@ -1,4 +1,5 @@
 import { useRef, useState, type PointerEvent } from "react";
+import { useI18n } from "../i18n/provider";
 
 const cellColors = ["#323437", "#8c6446", "#3c8264", "#a0463c", "#b49650", "#785a3c", "#b46450"];
 const speedPresets = [-8, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 8];
@@ -42,6 +43,7 @@ export function RackMadzineLaunchpad({
   values?: number[];
   onMomentary: (id: number, active: boolean) => void;
 }) {
+  const { locale, t } = useI18n();
   const gridRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<number | null>(null);
   const dragRef = useRef<{
@@ -119,7 +121,7 @@ export function RackMadzineLaunchpad({
           <button
             key={cell}
             type="button"
-            aria-label={`Launchpad cell ${row + 1}-${column + 1}`}
+            aria-label={t("launchpad.cell", { row: row + 1, column: column + 1 })}
             className={`${pressed === cell ? "pressed " : ""}${dropTarget === cell && pressed !== cell ? "drop-target " : ""}state-${state}`}
             style={{
               left: column * spacingX * scaleX,
@@ -204,10 +206,17 @@ export function RackMadzineLaunchpad({
               }}
             >
               <b>
-                Cell {row + 1}-{column + 1} · {speed.toFixed(2)}×
+                {t("launchpad.speedHeading", {
+                  row: row + 1,
+                  column: column + 1,
+                  speed: new Intl.NumberFormat(locale, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }).format(speed),
+                })}
               </b>
               <input
-                aria-label={`Cell ${row + 1}-${column + 1} playback speed`}
+                aria-label={t("launchpad.speed", { row: row + 1, column: column + 1 })}
                 type="range"
                 min="0"
                 max="1000"
@@ -222,12 +231,15 @@ export function RackMadzineLaunchpad({
                 onChange={(event) => setSpeed(speedCell, Number(event.target.value) / 1000)}
               />
               <select
-                aria-label={`Cell ${row + 1}-${column + 1} speed preset`}
+                aria-label={t("launchpad.speedPreset", {
+                  row: row + 1,
+                  column: column + 1,
+                })}
                 defaultValue={speedPresets.includes(speed) ? String(speed) : ""}
                 onPointerDown={(event) => event.stopPropagation()}
                 onChange={(event) => setSpeed(speedCell, speedToKnob(Number(event.target.value)))}
               >
-                <option value="">Custom</option>
+                <option value="">{t("common.custom")}</option>
                 {speedPresets.map((value) => (
                   <option key={value} value={value}>
                     {value}×
@@ -236,7 +248,7 @@ export function RackMadzineLaunchpad({
               </select>
               <button
                 type="button"
-                aria-label="Close speed menu"
+                aria-label={t("launchpad.closeSpeed")}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={() => setSpeedCell(null)}
               >

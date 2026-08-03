@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 type Props = {
   samples?: number[][];
@@ -45,6 +46,7 @@ export function RackElementaryCaDisplay({
   labelHeight,
   scaleX,
 }: Props) {
+  const { t } = useI18n();
   const scaleCv = samples?.[2]?.at(-1),
     ref = useRef<HTMLCanvasElement>(null),
     rule = clamp(Math.floor((params[ruleParam] ?? 0) + last(samples?.[0])), 0, 255),
@@ -98,7 +100,7 @@ export function RackElementaryCaDisplay({
         ref={ref}
         className="pw-elementary-ca"
         style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
-        aria-label={`Elementary cellular automaton rule ${rule}, seed ${seed}`}
+        aria-label={t("display.elementaryCa", { rule, seed })}
       />
       <span
         className="pw-elementary-ca-label"

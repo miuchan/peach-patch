@@ -7,6 +7,7 @@ import {
 } from "../../lib/patch-automation";
 import type { PatchDocument } from "../../lib/patch-types";
 import type { RackAudioEngine } from "../../lib/rack-audio-engine";
+import { message, type UserMessage } from "../i18n/user-message";
 
 type PatchCommitter = (update: PatchDocument | ((patch: PatchDocument) => PatchDocument)) => void;
 type PatchMutator = (update: (patch: PatchDocument) => PatchDocument) => void;
@@ -18,7 +19,7 @@ type RackAutomationOptions = {
   commitPatch: PatchCommitter;
   mutatePatch: PatchMutator;
   checkpointPatch: (patch: PatchDocument) => void;
-  onStatus: (message: string) => void;
+  onStatus: (message: UserMessage) => void;
 };
 
 function applyAutomationEvent(patch: PatchDocument, event: PatchAutomationEvent): PatchDocument {
@@ -57,7 +58,7 @@ export function useRackAutomation({
   }, []);
 
   const finishPlayback = useCallback(
-    (message: string) => {
+    (status: UserMessage) => {
       clearPlaybackTimers();
       audioRef.current?.stopAutomation();
       const beforePlayback = beforePlaybackRef.current;
@@ -65,7 +66,7 @@ export function useRackAutomation({
       playbackStructureRef.current = "";
       if (beforePlayback) checkpointPatch(beforePlayback);
       setPlaying(false);
-      onStatus(message);
+      onStatus(status);
     },
     [audioRef, checkpointPatch, clearPlaybackTimers, onStatus],
   );
@@ -90,32 +91,35 @@ export function useRackAutomation({
         events.at(-1)?.timeMs ?? 0,
       );
       if (!events.length) {
-        onStatus("Automation recording stopped · no parameter changes captured");
+        onStatus(message("status.automation.recordingEmpty"));
         return;
       }
       commitPatch((current) => patchWithAutomationClip(current, { durationMs, events }));
       onStatus(
-        `Automation captured · ${events.length} events · ${(durationMs / 1000).toFixed(1)}s · saved in patch`,
+        message("status.automation.captured", {
+          events: message("count.events", { count: events.length }),
+          seconds: Math.round(durationMs / 100) / 10,
+        }),
       );
       return;
     }
 
-    if (playing) finishPlayback("Automation playback stopped for recording");
+    if (playing) finishPlayback(message("status.automation.stoppedForRecording"));
     recordedEventsRef.current = [];
     recordingStartRef.current = performance.now();
     recordingRef.current = true;
-    onStatus("Automation recording · move module controls or mapped MIDI CCs");
+    onStatus(message("status.automation.recording"));
   }, [commitPatch, finishPlayback, onStatus, playing]);
 
   const togglePlayback = useCallback(() => {
     if (playing) {
-      finishPlayback("Automation playback stopped · undo is available");
+      finishPlayback(message("status.automation.playbackStopped"));
       return;
     }
 
     const clip = automationClipFromPatch(patch);
     if (!clip?.events.length) {
-      onStatus("Record parameter automation before playing it");
+      onStatus(message("status.automation.recordFirst"));
       return;
     }
     if (recordingRef.current) toggleRecording();
@@ -125,7 +129,7 @@ export function useRackAutomation({
       return targetModule && event.paramId >= 0 && event.paramId < targetModule.params.length;
     });
     if (!validEvents.length) {
-      onStatus("Automation targets are not present in this patch");
+      onStatus(message("status.automation.targetsMissing"));
       return;
     }
 
@@ -137,7 +141,9 @@ export function useRackAutomation({
     if (audioRef.current) {
       audioRef.current.playAutomation(validEvents, clip.durationMs);
       onStatus(
-        `AudioWorklet automation playing · ${validEvents.length} events · sample-accurate audio clock`,
+        message("status.automation.workletPlaying", {
+          events: message("count.events", { count: validEvents.length }),
+        }),
       );
       return;
     }
@@ -153,12 +159,19 @@ export function useRackAutomation({
     playbackTimersRef.current.push(
       window.setTimeout(
         () =>
-          finishPlayback(`Automation played · ${validEvents.length} events · undo is available`),
+          finishPlayback(
+            message("status.automation.played", {
+              events: message("count.events", { count: validEvents.length }),
+            }),
+          ),
         Math.max(clip.durationMs, validEvents.at(-1)?.timeMs ?? 0) + 10,
       ),
     );
     onStatus(
-      `Automation playing · ${validEvents.length} events · ${(clip.durationMs / 1000).toFixed(1)}s`,
+      message("status.automation.playing", {
+        events: message("count.events", { count: validEvents.length }),
+        seconds: Math.round(clip.durationMs / 100) / 10,
+      }),
     );
   }, [
     audioRef,
@@ -185,7 +198,7 @@ export function useRackAutomation({
 
   useEffect(() => {
     if (playing && playbackStructureRef.current && playbackStructureRef.current !== structureKey) {
-      finishPlayback("Automation stopped because the patch structure changed · undo is available");
+      finishPlayback(message("status.automation.structureChanged"));
     }
   }, [finishPlayback, playing, structureKey]);
 

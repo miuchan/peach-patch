@@ -11,6 +11,26 @@ import { getWebPlugin } from "./runtime-plugin-registry.ts";
 type PatchUpdater = (updater: (patch: PatchDocument) => PatchDocument) => void;
 type PatchCommitter = (updater: (patch: PatchDocument) => PatchDocument) => void;
 
+export type RackAudioControllerStatus =
+  | {
+      type: "recording-captured";
+      name: string;
+      format: RackRecording["format"];
+      frames: number;
+      sampleRate: number;
+      channels: number;
+    }
+  | { type: "midi-learn-target-unavailable" }
+  | {
+      type: "midi-learned";
+      inputName: string | null;
+      cc: number;
+      module: string;
+      parameter: string | null;
+      parameterNumber: number;
+    }
+  | { type: "automation-complete"; eventCount: number };
+
 export type RackAudioControllerContext = {
   applyRackHostControl: (control: RackHostControl) => void;
   recordAutomationValue: (moduleId: string, paramId: number, value: number) => void;
@@ -22,7 +42,7 @@ export type RackAudioControllerContext = {
   midiLearnTargetRef: { current: { moduleId: string; paramId: number } | null };
   audioPatchRef: { current: PatchDocument };
   audioRef: { current: RackAudioEngine | null };
-  setStatus: (status: string) => void;
+  onStatus: (status: RackAudioControllerStatus) => void;
   setAutomationPlaying: (playing: boolean) => void;
   automationBeforeRef: { current: PatchDocument | null };
   automationStructureRef: { current: string };
@@ -72,11 +92,14 @@ function handleRecordingComplete(recording: RackRecording, context: RackAudioCon
   anchor.download = name;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  context.setStatus(
-    recording.format === "midi"
-      ? `${name} captured · ${recording.frames} bytes`
-      : `${name} captured · ${(recording.frames / recording.sampleRate).toFixed(1)}s · ${recording.channels === 2 ? "stereo" : "mono"}`,
-  );
+  context.onStatus({
+    type: "recording-captured",
+    name,
+    format: recording.format,
+    frames: recording.frames,
+    sampleRate: recording.sampleRate,
+    channels: recording.channels,
+  });
 }
 
 function handleMidiLearn(inputName: string, bytes: number[], context: RackAudioControllerContext) {
@@ -88,7 +111,7 @@ function handleMidiLearn(inputName: string, bytes: number[], context: RackAudioC
   context.midiLearnTargetRef.current = null;
   context.setMidiLearnArmed(false);
   if (!target || !midiMap) {
-    context.setStatus("MIDI learn target or Core MIDI-Map is no longer available");
+    context.onStatus({ type: "midi-learn-target-unavailable" });
     return;
   }
   const data =
@@ -124,12 +147,15 @@ function handleMidiLearn(inputName: string, bytes: number[], context: RackAudioC
     ),
   }));
   const definition = getWebPlugin(target.key),
-    paramName =
-      definition?.params.find((param) => param.id === targetRef.paramId)?.name ??
-      `parameter ${targetRef.paramId + 1}`;
-  context.setStatus(
-    `MIDI learn · ${inputName || "default input"} CC ${map.cc} → ${target.plugin}/${target.model} ${paramName}`,
-  );
+    paramName = definition?.params.find((param) => param.id === targetRef.paramId)?.name ?? null;
+  context.onStatus({
+    type: "midi-learned",
+    inputName: inputName || null,
+    cc: map.cc,
+    module: `${target.plugin}/${target.model}`,
+    parameter: paramName,
+    parameterNumber: targetRef.paramId + 1,
+  });
 }
 
 export function createRackAudioEngine(context: RackAudioControllerContext) {
@@ -147,9 +173,10 @@ export function createRackAudioEngine(context: RackAudioControllerContext) {
       context.automationStructureRef.current = "";
       if (before) context.checkpointHistory(before);
       context.setAutomationPlaying(false);
-      context.setStatus(
-        `AudioWorklet automation complete · ${context.automationPlaybackCountRef.current} events · undo is available`,
-      );
+      context.onStatus({
+        type: "automation-complete",
+        eventCount: context.automationPlaybackCountRef.current,
+      });
     },
     onPortPeaks: (moduleId, inputs, outputs, inputScopes, outputScopes) =>
       context.setPortPeaks({ moduleId, inputs, outputs, inputScopes, outputScopes }),

@@ -82,7 +82,7 @@ export type RackCanvasGestureOptions = RackCanvasGestureRefs & {
   >;
   setSelectedIds: Dispatch<SetStateAction<Set<string>>>;
   setSelectedCableIds: Dispatch<SetStateAction<Set<string>>>;
-  setStatus: Dispatch<SetStateAction<string>>;
+  onMarqueeStatus: (added: number, selected: number) => void;
   mutatePatch: (updater: (current: PatchDocument) => PatchDocument) => void;
   checkpointPatch: (patch: PatchDocument) => void;
   bumpLayoutRevision: () => void;
@@ -106,7 +106,7 @@ export function useRackCanvasGestures({
   setMarquee,
   setSelectedIds,
   setSelectedCableIds,
-  setStatus,
+  onMarqueeStatus,
   mutatePatch,
   checkpointPatch,
   bumpLayoutRevision,
@@ -452,9 +452,7 @@ export function useRackCanvasGestures({
         for (const id of hits) next.add(id);
         setSelectedIds(next);
         setSelectedCableIds(new Set());
-        setStatus(
-          `${hits.length} module${hits.length === 1 ? "" : "s"} added by marquee · ${next.size} selected`,
-        );
+        onMarqueeStatus(hits.length, next.size);
         marqueeRef.current = null;
         setMarquee(null);
       }
@@ -528,7 +526,7 @@ export function useRackCanvasGestures({
       setMarquee,
       setSelectedCableIds,
       setSelectedIds,
-      setStatus,
+      onMarqueeStatus,
       touchPointsRef,
       viewportRef,
     ],

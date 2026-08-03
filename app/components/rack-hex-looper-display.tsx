@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 type Point = { x: number; y: number };
 
@@ -77,6 +78,7 @@ export const RackHexLooperDisplay = memo(function RackHexLooperDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null),
     geometry = useMemo(() => hexGeometry(radius), [radius]);
   useEffect(() => {
@@ -136,7 +138,7 @@ export const RackHexLooperDisplay = memo(function RackHexLooperDisplay({
   return (
     <canvas
       ref={canvasRef}
-      aria-label="Live three-dimensional looper memory"
+      aria-label={t("display.threeDimensionalLooper")}
       style={{
         position: "absolute",
         left: x * scaleX,

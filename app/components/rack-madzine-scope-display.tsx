@@ -1,4 +1,5 @@
 import { useId, useMemo } from "react";
+import { useI18n } from "../i18n/provider";
 
 export function RackMadzineScopeDisplay({
   values,
@@ -23,6 +24,7 @@ export function RackMadzineScopeDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const clipPrefix = useId().replaceAll(":", ""),
     trackHeight = height / Math.max(1, tracks),
     paths = useMemo(
@@ -42,7 +44,7 @@ export function RackMadzineScopeDisplay({
   return (
     <svg
       className="pw-rack-madzine-scope"
-      aria-label={`${tracks}-track MADZINE oscilloscope`}
+      aria-label={t("display.madzineOscilloscope", { tracks })}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       style={{

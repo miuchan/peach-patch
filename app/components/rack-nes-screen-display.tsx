@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 export function RackNesScreenDisplay({
   values,
@@ -19,6 +20,7 @@ export function RackNesScreenDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export function RackNesScreenDisplay({
   return (
     <canvas
       ref={canvasRef}
-      aria-label="RackNES live screen"
+      aria-label={t("display.rackNesScreen")}
       width={bufferWidth}
       height={bufferHeight}
       style={{

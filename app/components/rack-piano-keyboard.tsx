@@ -1,4 +1,5 @@
 import { useRef, type PointerEvent } from "react";
+import { useI18n } from "../i18n/provider";
 
 const keyboardLayouts = {
   small: {
@@ -86,6 +87,7 @@ export function RackPianoKeyboard({
   rightClick?: boolean;
   onMomentary: (id: number, active: boolean) => void;
 }) {
+  const { t } = useI18n();
   const activeRef = useRef<{
     pointerId: number;
     action: number;
@@ -147,7 +149,7 @@ export function RackPianoKeyboard({
     <div
       className="pw-piano-keyboard"
       role="group"
-      aria-label={voices > 1 ? "Chord keyboard" : "Piano keyboard"}
+      aria-label={t(voices > 1 ? "display.chordKeyboard" : "display.pianoKeyboard")}
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
       onPointerDown={(event) => {
         if (event.button !== 0 && !(rightClick && event.button === 2)) return;

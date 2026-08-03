@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/provider";
+
 const STYLE_NAMES = [
     "W.African",
     "Afro-Cuban",
@@ -59,11 +61,12 @@ export function RackUniversalRhythmDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const rowHeight = displayHeight / 8;
   return (
     <svg
       className="pw-rack-universal-rhythm"
-      aria-label="Universal Rhythm eight-voice pattern display"
+      aria-label={t("display.universalRhythm")}
       viewBox={`0 0 ${width} ${height}`}
       style={{
         position: "absolute",

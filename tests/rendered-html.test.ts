@@ -38,6 +38,8 @@ test("ships product metadata and removes starter preview", async () => {
   assert.doesNotMatch(html, /\/og\.png/);
   assert.match(main, /createBrowserRouter/);
   assert.match(main, /HydrateFallback:RackLoadingFallback/);
+  assert.match(main, /initializeI18n\(\)/);
+  assert.match(main, /<I18nProvider initialLocale=\{initialLocale\}>/);
   assert.match(main, /<RouterProvider router=\{router\} \/>/);
   assert.match(main, /import\("\.\/rack-web-studio"\)/);
   assert.match(main, /return \{ Component: RackWebStudio \}/);
@@ -80,6 +82,19 @@ test("large racks keep viewport gestures off the React render path", async () =>
     styles,
     /\.pw-world\.viewport-overview\s+\.pw-module\s*>\s*\*\s*\{\s*display:\s*none\s*!important/,
   );
+});
+
+test("Registry completion invalidates restored module panels without a click", async () => {
+  const [studio, moduleLayer] = await Promise.all([
+    readSearchableSource("app/rack-web-studio.tsx"),
+    readSearchableSource("app/components/rack-studio-module-layer.tsx"),
+  ]);
+
+  assert.match(studio, /definitions=\{registry\}/);
+  assert.match(moduleLayer, /definitions:\s*readonly\s+WebPluginModule\[\]/);
+  assert.match(moduleLayer, /definitionsByKey=useMemo\(/);
+  assert.match(moduleLayer, /previous\.definitions===next\.definitions/);
+  assert.doesNotMatch(moduleLayer, /getDefinition/);
 });
 
 test("cable endpoint previews use an isolated Canvas without React pointer-move state", async () => {
@@ -182,7 +197,7 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(visuals, /RackUniversalRhythmDisplay/);
   assert.match(visuals, /visual\.kind==="universal-rhythm"/);
   assert.match(visuals, /visual\.kind==="song-mode-sequence"/);
-  assert.match(visuals, /aria-label="Playback sequence"/);
+  assert.match(visuals, /aria-label=\{t\("visual\.playbackSequence"\)\}/);
   assert.match(visuals, /RackMadzineLaunchpad/);
   assert.match(visuals, /visual\.kind==="madzine-launchpad"/);
   assert.match(visuals, /RackTheKickSample/);
@@ -198,7 +213,7 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(corrupter, /BND/);
   assert.match(visuals, /RackTapestryDisplay/);
   assert.match(visuals, /visual\.kind==="tapestry-display"/);
-  assert.match(tapestry, /rack-tapestry-display|Tapestry reel waveform/);
+  assert.match(tapestry, /rack-tapestry-display|display\.tapestryEditor/);
   assert.match(tapestry, /deleteActionBase/);
   assert.match(tapestry, /Math\.pow\(peak,\.7\)/);
   assert.match(paramVisual, /rackParamKnobAsset/);
@@ -251,8 +266,8 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(panel, /direction="out"/);
   assert.match(studio, /normalizeRestoredPatch\(restored\.patch, getWebPlugin\)/);
   assert.match(studio, /parseAutosavedPatch\(localStorage\.getItem/);
-  assert.match(dialogs, /PATCH NOT LOADED/);
-  assert.match(dialogs, /Unsupported or invalid VCV patch/);
+  assert.match(dialogs, /dialog\.failure\.invalidEyebrow/);
+  assert.match(dialogs, /dialog\.failure\.invalidTitle/);
   assert.match(studio, /layoutPatchCables\(patch, registry, cableTension\)/);
   assert.doesNotMatch(
     studio,
@@ -276,10 +291,10 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(studio, /setManualHelpHover/);
   assert.match(studio, /onPortHover=/);
   assert.doesNotMatch(studio, /choose a Library module to insert it on this cable/);
-  assert.match(manual, /aria-label="Search MADZINE manual"/);
+  assert.match(manual, /aria-label=\{t\("manual\.search"\)\}/);
   assert.match(manual, /onData\(\{language:1\}\)/);
   assert.match(manual, /onData\(\{fontSize:20\}\)/);
-  assert.match(arpeggiator, /order, range, and mode display/);
+  assert.match(arpeggiator, /display\.arpeggiator/);
   assert.match(arpeggiator, /className="active"/);
   assert.match(styles, /\.pw-rack\{overflow:clip;/);
 });

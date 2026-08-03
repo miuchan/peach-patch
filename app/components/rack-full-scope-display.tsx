@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "../i18n/provider";
 
 function hueColor(hue: number) {
   const normalized = ((hue % 1) + 1) % 1;
@@ -22,6 +23,7 @@ export function RackFullScopeDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const [rotation, setRotation] = useState(0),
     valid = values?.length === points * 2 + 7,
     lissajous = valid ? values[points * 2] >= 0.5 : true,
@@ -65,7 +67,7 @@ export function RackFullScopeDisplay({
   return (
     <svg
       className="pw-rack-full-scope"
-      aria-label={lissajous ? "FullScope Lissajous display" : "FullScope waveform display"}
+      aria-label={t(lissajous ? "display.fullScopeLissajous" : "display.fullScopeWaveform")}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       style={{ position: "absolute", left: x * scaleX, top: y, width: width * scaleX, height }}

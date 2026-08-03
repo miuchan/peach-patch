@@ -25,7 +25,10 @@ import {
   type RackPlugSignal,
 } from "../lib/rack-audio-engine";
 import { dataFromState } from "../lib/patch-state";
-import { createRackAudioEngine } from "../lib/rack-audio-controller";
+import {
+  createRackAudioEngine,
+  type RackAudioControllerStatus,
+} from "../lib/rack-audio-controller";
 import { applyRackHostViewportControl } from "../lib/rack-viewport-control";
 import {
   normalizeRestoredPatch,
@@ -98,6 +101,8 @@ import { usePeachRegistry } from "./hooks/use-peach-registry";
 import { useRackAutomation } from "./hooks/use-rack-automation";
 import { useRackAudioRuntime } from "./hooks/use-rack-audio-runtime";
 import { useRackStrokeControls } from "./hooks/use-rack-stroke-controls";
+import { useI18n } from "./i18n/provider";
+import { formatUserMessage, issue, message, type UserMessage } from "./i18n/user-message";
 
 const CABLES = ["#ef5265", "#f6c94a", "#43b5df", "#55cf91", "#ac79ee", "#f28a49"];
 const EMPTY_RACK_PATCH_URL = "https://patchstorage.com/meditation-patch/";
@@ -160,7 +165,34 @@ type BrowserFileHandle = {
 type FilePickerWindow = Window & {
   showSaveFilePicker?: (options: Record<string, unknown>) => Promise<BrowserFileHandle>;
 };
+type ModuleTelemetry = {
+  peaks: Array<{ port: string; value: number }>;
+  activeLights: number;
+};
+
+async function decodePatchStorageFailure(response: Response): Promise<unknown> {
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    if (typeof payload.error === "string")
+      return { kind: "legacy", status: response.status, detail: payload.error };
+    if (payload.error && typeof payload.error === "object") {
+      const error = payload.error as { code?: unknown; params?: unknown };
+      if (typeof error.code === "string")
+        return {
+          kind: "structured",
+          status: response.status,
+          code: error.code,
+          params: error.params && typeof error.params === "object" ? error.params : undefined,
+        };
+    }
+  } catch {
+    // Non-JSON upstream failures still use the localized client fallback.
+  }
+  return { kind: "http", status: response.status };
+}
+
 export function RackWebStudio() {
+  const { formatNumber, t } = useI18n();
   const history = usePatchHistory(studioHelpers.emptyPatch),
     patch = history.value;
   const commitHistory = history.commit,
@@ -172,7 +204,7 @@ export function RackWebStudio() {
   const [moduleQuery, setModuleQuery] = useState("");
   const [patchUrl, setPatchUrl] = useState("");
   const [patchUrlOpen, setPatchUrlOpen] = useState(false);
-  const [patchUrlError, setPatchUrlError] = useState("");
+  const [patchUrlError, setPatchUrlError] = useState<UserMessage | null>(null);
   const [patchOpenFailure, setPatchOpenFailure] = useState<PatchOpenFailure | null>(null);
   const [replaceMode, setReplaceMode] = useState(false);
   const [quickAdd, setQuickAdd] = useState<RackStudioQuickAddState | null>(null);
@@ -192,7 +224,9 @@ export function RackWebStudio() {
     top: number;
     cableId: string;
   } | null>(null);
-  const [status, setStatus] = useState("Loading modules from the GitHub registry…");
+  const [status, setStatus] = useState<UserMessage>(() =>
+    message("status.registry.loadingModules"),
+  );
   const [busy, setBusy] = useState(false),
     [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set()),
     [selectedCableIds, setSelectedCableIds] = useState<Set<string>>(() => new Set()),
@@ -226,7 +260,7 @@ export function RackWebStudio() {
     [patchName, setPatchName] = useState("Peach-Patch.vcv");
   const [pan, setPan] = useState({ x: 30, y: 72 }),
     [zoom, setZoom] = useState(0.9),
-    [telemetry, setTelemetry] = useState<Record<string, string>>({});
+    [telemetry, setTelemetry] = useState<Record<string, ModuleTelemetry>>({});
   const [rackViewportSize, setRackViewportSize] = useState({
     width: 0,
     height: 0,
@@ -311,8 +345,7 @@ export function RackWebStudio() {
   const resolveModule = useCallback(async (url: string) => {
     const response = await fetch(`/api/library/resolve?url=${encodeURIComponent(url)}`),
       result = (await response.json()) as ResolveResult;
-    if (!response.ok || result.error)
-      throw new Error(result.error || "Module could not be resolved");
+    if (!response.ok || result.error) throw result;
     const runtime = getWebPlugin(result.key);
     return { ...result, compiled: Boolean(runtime), runtime: runtime ?? null };
   }, []);
@@ -399,6 +432,45 @@ export function RackWebStudio() {
     audioRef.current?.setVisualUpdatesEnabled(!active && !directInteractingRef.current);
   }, [cableDraft, cableDrag]);
 
+  const handleAudioControllerStatus = useCallback((event: RackAudioControllerStatus) => {
+    switch (event.type) {
+      case "recording-captured":
+        setStatus(
+          event.format === "midi"
+            ? message("status.capture.midiCaptured", {
+                file: event.name,
+                bytes: message("count.bytes", { count: event.frames }),
+              })
+            : message("status.capture.audioCaptured", {
+                file: event.name,
+                duration: event.sampleRate > 0 ? event.frames / event.sampleRate : 0,
+                channels: message(event.channels === 2 ? "asset.stereo" : "asset.mono"),
+              }),
+        );
+        return;
+      case "midi-learn-target-unavailable":
+        setStatus(message("status.midi.learnTargetUnavailable"));
+        return;
+      case "midi-learned":
+        setStatus(
+          message("status.midi.learned", {
+            input: event.inputName ?? message("midi.defaultInput"),
+            cc: event.cc,
+            module: event.module,
+            parameter:
+              event.parameter ?? message("midi.parameterNumber", { number: event.parameterNumber }),
+          }),
+        );
+        return;
+      case "automation-complete":
+        setStatus(
+          message("status.automation.workletComplete", {
+            events: message("count.events", { count: event.eventCount }),
+          }),
+        );
+    }
+  }, []);
+
   const createAudioEngine = useCallback(
     () =>
       createRackAudioEngine({
@@ -412,7 +484,7 @@ export function RackWebStudio() {
         midiLearnTargetRef,
         audioPatchRef,
         audioRef,
-        setStatus,
+        onStatus: handleAudioControllerStatus,
         setAutomationPlaying,
         automationBeforeRef,
         automationStructureRef,
@@ -428,6 +500,7 @@ export function RackWebStudio() {
       automationStructureRef,
       checkpointHistory,
       commitHistory,
+      handleAudioControllerStatus,
       mutateHistory,
       recordAutomationValue,
       setAutomationPlaying,
@@ -477,7 +550,7 @@ export function RackWebStudio() {
     const finishOutsideRack = (event: globalThis.PointerEvent) => {
       if (rackRef.current?.contains(event.target as Node)) return;
       cancelDraft();
-      setStatus("Cable drag cancelled");
+      setStatus(message("status.cable.dragCancelled"));
     };
     window.addEventListener("pointerup", finishOutsideRack);
     window.addEventListener("pointercancel", cancelDraft);
@@ -491,17 +564,17 @@ export function RackWebStudio() {
     if (registryState !== "ready") {
       setStatus(
         registryState === "error"
-          ? "GitHub registry is unavailable"
-          : "Wait for the GitHub registry to finish loading",
+          ? message("errors.registryUnavailable")
+          : message("status.registry.wait"),
       );
       return;
     }
     if (modulesLocked) {
-      setStatus("Exit Perform mode before adding a module");
+      setStatus(message("status.edit.exitPerformToAddModule"));
       return;
     }
     setBusy(true);
-    setStatus("Reading official Library module metadata…");
+    setStatus(message("status.registry.readingModuleMetadata"));
     try {
       const result = await resolveModule(moduleUrl);
       const addRuntime = (runtime: WebPluginModule) => {
@@ -523,9 +596,8 @@ export function RackWebStudio() {
       if (result.runtime) {
         const runtime = result.runtime;
         addRuntime(runtime);
-        setStatus(`${result.key} loaded from the GitHub registry`);
+        setStatus(message("status.registry.moduleLoaded", { module: result.key }));
       } else {
-        const registryError = `${result.key} is not available in the GitHub registry`;
         const viewport = viewportControlRef.current,
           origin = {
             x: (-viewport.pan.x + 80) / viewport.zoom,
@@ -547,16 +619,15 @@ export function RackWebStudio() {
             screenshotUrl: result.screenshotUrl,
             sourceUrl: result.sourceUrl,
             license: result.license,
-            error: registryError,
           };
         history.commit((current) => ({
           ...current,
           modules: [...current.modules, instance],
         }));
-        setStatus(registryError);
+        setStatus(message("status.registry.moduleUnavailable", { module: result.key }));
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Module load failed");
+      setStatus(issue(error, "errors.moduleLoadFailed"));
     } finally {
       setBusy(false);
     }
@@ -564,12 +635,12 @@ export function RackWebStudio() {
 
   const openPatch = async (file: File) => {
     if (registryState !== "ready") {
-      const message =
+      const registryMessage =
         registryState === "error"
-          ? "GitHub registry is unavailable"
-          : "Wait for the GitHub registry to finish loading";
-      setPatchOpenFailure({ kind: "invalid", message });
-      setStatus(message);
+          ? message("errors.registryUnavailable")
+          : message("status.registry.wait");
+      setPatchOpenFailure({ kind: "invalid", message: registryMessage });
+      setStatus(registryMessage);
       return;
     }
     setPatchOpenFailure(null);
@@ -598,16 +669,20 @@ export function RackWebStudio() {
       setLibraryOpen(false);
       setPatchName(`${file.name.replace(/\.vcv$/i, "")}-web.vcv`);
       setStatus(
-        `${file.name} opened · ${modules.length} modules · ${cables.length} cables · all modules ready`,
+        message("status.patch.opened", {
+          file: file.name,
+          modules: message("count.modules", { count: modules.length }),
+          cables: message("count.cables", { count: cables.length }),
+        }),
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Invalid .vcv patch";
+      const failure = issue(error, "errors.patchInvalid");
       setPatchOpenFailure(
         error instanceof BlockedVcvPatchError
           ? { kind: "blocked", error }
-          : { kind: "invalid", message },
+          : { kind: "invalid", message: failure },
       );
-      setStatus(message);
+      setStatus(failure);
     } finally {
       setBusy(false);
     }
@@ -624,20 +699,11 @@ export function RackWebStudio() {
     const requested = url.trim();
     if (!requested) return;
     setBusy(true);
-    setPatchUrlError("");
-    setStatus("Loading patch from PatchStorage…");
+    setPatchUrlError(null);
+    setStatus(message("status.patch.loadingPatchStorage"));
     try {
       const response = await fetch(`/api/patchstorage?url=${encodeURIComponent(requested)}`);
-      if (!response.ok) {
-        let message = `PatchStorage import returned ${response.status}`;
-        try {
-          const result = (await response.json()) as { error?: unknown };
-          if (typeof result.error === "string") message = result.error;
-        } catch {
-          // Keep the status-based fallback when an upstream proxy returns non-JSON.
-        }
-        throw new Error(message);
-      }
+      if (!response.ok) throw await decodePatchStorageFailure(response);
       const filename = response.headers.get("x-patch-filename") || "PatchStorage.vcv";
       const file = new File([await response.arrayBuffer()], filename, {
         type: "application/octet-stream",
@@ -646,10 +712,9 @@ export function RackWebStudio() {
       setPatchUrlOpen(false);
       await openPatch(file);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not load the PatchStorage patch";
-      setPatchUrlError(message);
-      setStatus(message);
+      const failure = issue(error, "errors.patchStorageLoadFailed");
+      setPatchUrlError(failure);
+      setStatus(failure);
     } finally {
       setBusy(false);
     }
@@ -658,11 +723,11 @@ export function RackWebStudio() {
   const loadSample = async (module: ModuleInstance, file: File, slot = 0) => {
     const assetContract = getWebPlugin(module.key)?.runtime?.asset;
     if (!assetContract) {
-      setStatus(`${module.plugin}/${module.model} does not expose a browser audio asset input`);
+      setStatus(message("status.asset.notExposed", { module: `${module.plugin}/${module.model}` }));
       return;
     }
     setBusy(true);
-    setStatus(`Decoding ${file.name} locally…`);
+    setStatus(message("status.asset.decoding", { file: file.name }));
     try {
       const loaded = await loadBrowserAsset(file, assetContract);
       const { ref } = loaded;
@@ -682,13 +747,36 @@ export function RackWebStudio() {
             : item,
         ),
       }));
+      const detail =
+        loaded.detail.kind === "image"
+          ? message("status.assetDetail.image", {
+              width: loaded.detail.width,
+              height: loaded.detail.height,
+            })
+          : loaded.detail.kind === "audio"
+            ? message("status.assetDetail.audio", {
+                seconds: loaded.detail.seconds,
+                channels:
+                  loaded.detail.channels === 1
+                    ? message("asset.mono")
+                    : loaded.detail.channels === 2
+                      ? message("asset.stereo")
+                      : message("status.assetDetail.channels", {
+                          count: loaded.detail.channels,
+                        }),
+              })
+            : message("status.assetDetail.bytes", { count: loaded.detail.bytes });
       setStatus(
-        `${file.name} loaded${assetContract.slots && assetContract.slots > 1 ? ` into channel ${slot + 1}` : ""} · ${loaded.detail} · stored in this browser`,
+        assetContract.slots && assetContract.slots > 1
+          ? message("status.asset.loadedIntoChannel", {
+              file: file.name,
+              channel: slot + 1,
+              detail,
+            })
+          : message("status.asset.loaded", { file: file.name, detail }),
       );
     } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : "Browser could not decode this audio file",
-      );
+      setStatus(issue(error, "errors.assetDecodeFailed"));
     } finally {
       setBusy(false);
     }
@@ -756,20 +844,22 @@ export function RackWebStudio() {
       if (module.key === "Fundamental/ADSR") input.fill(10, testInput * 128, (testInput + 1) * 128);
       else if (definition.inputs.length) input[testInput * 128] = 10;
       wasm.rack_web_process(128, 48000);
-      const peaks = definition.outputs
-          .map(
-            (port) =>
-              `${port.name} ${Math.max(...Array.from(output.slice(port.id * 128, port.id * 128 + 128), (value) => Math.abs(value))).toFixed(2)}V`,
-          )
-          .join(" · "),
+      const peaks = definition.outputs.map((port) => ({
+          port: port.name,
+          value: Math.max(
+            ...Array.from(output.slice(port.id * 128, port.id * 128 + 128), (value) =>
+              Math.abs(value),
+            ),
+          ),
+        })),
         activeLights = Array.from(lights).filter((value) => value > 0.5).length;
       setTelemetry((current) => ({
         ...current,
-        [module.id]: `${peaks || "No signal ports"} · ${activeLights} lights`,
+        [module.id]: { peaks, activeLights },
       }));
-      setStatus(`${module.key} processed 128 frames in WebAssembly`);
+      setStatus(message("status.wasm.processed", { module: module.key, frames: 128 }));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "WASM failed");
+      setStatus(issue(error, "errors.wasmFailed"));
     }
   };
 
@@ -779,7 +869,7 @@ export function RackWebStudio() {
       return;
     }
     if (modulesLocked) {
-      setStatus("Exit Perform mode before changing cables");
+      setStatus(message("status.edit.exitPerformToChangeCables"));
       setPending(null);
       return;
     }
@@ -802,25 +892,25 @@ export function RackWebStudio() {
     );
     if (!next) {
       setPending(null);
-      setStatus("That exact cable connection already exists");
+      setStatus(message("status.cable.duplicateConnection"));
       return;
     }
     commitHistory(next);
     setSelectedCableIds(new Set());
     setPending(null);
-    setStatus("Cable connected · undo is available");
+    setStatus(message("status.cable.connected"));
   };
 
   const connectDraggedPorts = useCallback(
     (first: PortClick, second: PortClick) => {
       if (modulesLocked) {
         setPending(null);
-        setStatus("Exit Perform mode before changing cables");
+        setStatus(message("status.edit.exitPerformToChangeCables"));
         return;
       }
       if (first.direction === second.direction || first.moduleId === second.moduleId) {
         setPending(null);
-        setStatus("Drag between an output and an input on different modules");
+        setStatus(message("status.cable.incompatiblePorts"));
         return;
       }
       const from = first.direction === "out" ? first : second,
@@ -834,12 +924,12 @@ export function RackWebStudio() {
         );
       setPending(null);
       if (!next) {
-        setStatus("That exact cable connection already exists");
+        setStatus(message("status.cable.duplicateConnection"));
         return;
       }
       commitHistory(next);
       setSelectedCableIds(new Set());
-      setStatus("Cable added to port stack · undo is available");
+      setStatus(message("status.cable.addedToStack"));
     },
     [commitHistory, modulesLocked, patch],
   );
@@ -860,7 +950,7 @@ export function RackWebStudio() {
       event.preventDefault();
       event.stopPropagation();
       if (modulesLocked) {
-        setStatus("Exit Perform mode before changing cables");
+        setStatus(message("status.edit.exitPerformToChangeCables"));
         return;
       }
       if (event.metaKey || event.ctrlKey) {
@@ -885,7 +975,7 @@ export function RackWebStudio() {
           initialPoint,
           rackOrigin,
         });
-        setStatus("Stacking a new cable · release on a compatible port");
+        setStatus(message("status.cable.stacking"));
         return;
       }
       const port =
@@ -903,9 +993,7 @@ export function RackWebStudio() {
         viewportControlRef.current,
       );
       setCableDrag({ cableId: path.id, side, port, initialPoint, rackOrigin });
-      setStatus(
-        "Dragging cable end · release on another compatible port to reconnect, or empty rack to disconnect",
-      );
+      setStatus(message("status.cable.draggingEnd"));
     },
     [modulesLocked, patch.cables.length, rackRef],
   );
@@ -936,7 +1024,7 @@ export function RackWebStudio() {
         initialPoint,
         rackOrigin,
       });
-      setStatus("Dragging a new cable · release on a compatible port to connect");
+      setStatus(message("status.cable.draggingNew"));
     },
     [cableTension, modulesLocked, patch, registry, startCableDrag],
   );
@@ -968,7 +1056,7 @@ export function RackWebStudio() {
         cableDrag.port.direction === target.direction ||
         cableDrag.port.moduleId === target.moduleId
       ) {
-        setStatus("Cable end needs the opposite port on another module");
+        setStatus(message("status.cable.oppositePortNeeded"));
         setCableDrag(null);
         setPending(null);
         return true;
@@ -976,8 +1064,8 @@ export function RackWebStudio() {
       const next = reconnectPatchCableEndpoint(patch, cableDrag.cableId, cableDrag.side, target);
       if (next) {
         commitHistory(next);
-        setStatus("Cable reconnected · port stacks preserved · undo is available");
-      } else setStatus("That exact cable connection already exists");
+        setStatus(message("status.cable.reconnected"));
+      } else setStatus(message("status.cable.duplicateConnection"));
       setCableDrag(null);
       setPending(null);
       return true;
@@ -1149,21 +1237,30 @@ export function RackWebStudio() {
     setSelectedIds(new Set([targetId]));
     setSelectedCableIds(new Set());
     setStatus(
-      `${target.key} replaced with ${definition.key} · compatible parameters and cables kept${result.droppedCables ? ` · ${result.droppedCables} incompatible cable(s) removed` : ""} · undo is available`,
+      result.droppedCables
+        ? message("status.module.replacedWithDroppedCables", {
+            previousModule: target.key,
+            module: definition.key,
+            cables: message("count.cables", { count: result.droppedCables }),
+          })
+        : message("status.module.replaced", {
+            previousModule: target.key,
+            module: definition.key,
+          }),
     );
     return true;
   };
 
   const addRegistryModule = (definition: WebPluginModule) => {
     if (modulesLocked) {
-      setStatus("Exit Perform mode before adding or inserting a module");
+      setStatus(message("status.edit.exitPerformToAddOrInsertModule"));
       return;
     }
     if (replaceMode && selectedIds.size === 1) {
       const targetId = selectedIds.values().next().value;
       if (targetId && replaceModule(targetId, definition)) return;
       setReplaceMode(false);
-      setStatus("The selected module is no longer available to replace");
+      setStatus(message("status.module.replacementUnavailable"));
       return;
     }
     const selectedCableId =
@@ -1216,7 +1313,7 @@ export function RackWebStudio() {
         commitHistory(next);
         setSelectedIds(new Set([instance.id]));
         setSelectedCableIds(new Set());
-        setStatus(`${definition.key} inserted on cable · input 1 → output 1 · undo is available`);
+        setStatus(message("status.module.insertedOnCable", { module: definition.key }));
         return;
       }
     }
@@ -1227,7 +1324,7 @@ export function RackWebStudio() {
     }));
     setSelectedIds(new Set([instance.id]));
     setSelectedCableIds(new Set());
-    setStatus(`${definition.key} loaded`);
+    setStatus(message("status.module.loaded", { module: definition.key }));
   };
 
   const addQuickModule = (definition: WebPluginModule) => {
@@ -1244,7 +1341,7 @@ export function RackWebStudio() {
     setSelectedIds(new Set([instance.id]));
     setSelectedCableIds(new Set());
     setQuickAdd(null);
-    setStatus(`${definition.key} added at the requested rack position`);
+    setStatus(message("status.module.addedAtPosition", { module: definition.key }));
   };
 
   const selectModule = (id: string, event: PointerEvent<HTMLElement>) => {
@@ -1329,7 +1426,7 @@ export function RackWebStudio() {
 
   const copySelection = useCallback(() => {
     if (!selectedIds.size) {
-      setStatus("Select modules to copy");
+      setStatus(message("status.selection.selectToCopy"));
       return;
     }
     const wanted = new Set(selectedIds),
@@ -1348,13 +1445,18 @@ export function RackWebStudio() {
           rack: cable.rack ? { ...cable.rack } : undefined,
         }));
     clipboardRef.current = { modules, cables };
-    setStatus(`${modules.length} modules copied · ${cables.length} internal cables`);
+    setStatus(
+      message("status.selection.copied", {
+        modules: message("count.modules", { count: modules.length }),
+        cables: message("count.internalCables", { count: cables.length }),
+      }),
+    );
   }, [patch, selectedIds]);
 
   const pasteSelection = useCallback(() => {
     const copied = clipboardRef.current;
     if (!copied) {
-      setStatus("Copy modules before pasting");
+      setStatus(message("status.selection.copyBeforePasting"));
       return;
     }
     const stamp = Date.now(),
@@ -1390,12 +1492,16 @@ export function RackWebStudio() {
       cables: [...current.cables, ...cables],
     }));
     setSelectedIds(new Set(modules.map((module) => module.id)));
-    setStatus(`${modules.length} modules pasted · undo is available`);
+    setStatus(
+      message("status.selection.pasted", {
+        modules: message("count.modules", { count: modules.length }),
+      }),
+    );
   }, [commitHistory]);
 
   const duplicateSelection = useCallback(() => {
     if (!selectedIds.size) {
-      setStatus("Select modules to duplicate");
+      setStatus(message("status.selection.selectToDuplicate"));
       return;
     }
     const result = duplicatePatchModules(
@@ -1409,7 +1515,10 @@ export function RackWebStudio() {
     setSelectedIds(new Set(result.moduleIds));
     setSelectedCableIds(new Set());
     setStatus(
-      `${result.moduleIds.length} module${result.moduleIds.length === 1 ? "" : "s"} duplicated · ${result.cableCount} internal cable${result.cableCount === 1 ? "" : "s"} preserved`,
+      message("status.selection.duplicated", {
+        modules: message("count.modules", { count: result.moduleIds.length }),
+        cables: message("count.internalCables", { count: result.cableCount }),
+      }),
     );
   }, [commitHistory, patch, selectedIds]);
 
@@ -1419,7 +1528,7 @@ export function RackWebStudio() {
       if (!next) return;
       commitHistory(next);
       setStatus(
-        `${module.plugin}/${module.model} controls reset to source defaults · undo is available`,
+        message("status.module.controlsReset", { module: `${module.plugin}/${module.model}` }),
       );
     },
     [commitHistory, patch],
@@ -1431,7 +1540,9 @@ export function RackWebStudio() {
       if (!next) return;
       commitHistory(next);
       setStatus(
-        `${module.plugin}/${module.model} controls randomized within source ranges · undo is available`,
+        message("status.module.controlsRandomized", {
+          module: `${module.plugin}/${module.model}`,
+        }),
       );
     },
     [commitHistory, patch],
@@ -1442,14 +1553,21 @@ export function RackWebStudio() {
       const result = disconnectModuleCables(patch, module.id);
       if (!result) return;
       if (!result.removedCables) {
-        setStatus(`${module.plugin}/${module.model} has no connected cables`);
+        setStatus(
+          message("status.module.noConnectedCables", {
+            module: `${module.plugin}/${module.model}`,
+          }),
+        );
         return;
       }
       commitHistory(result.patch);
       setSelectedCableIds(new Set());
       setPending(null);
       setStatus(
-        `${result.removedCables} cable${result.removedCables === 1 ? "" : "s"} disconnected from ${module.plugin}/${module.model} · undo is available`,
+        message("status.module.cablesDisconnected", {
+          cables: message("count.cables", { count: result.removedCables }),
+          module: `${module.plugin}/${module.model}`,
+        }),
       );
     },
     [commitHistory, patch],
@@ -1468,7 +1586,11 @@ export function RackWebStudio() {
       setSelectedIds((current) => new Set([...current].filter((id) => !ids.has(id))));
       setSelectedCableIds(new Set());
       setPending((current) => (current && ids.has(current.moduleId) ? null : current));
-      setStatus(`${ids.size} module${ids.size === 1 ? "" : "s"} removed · undo is available`);
+      setStatus(
+        message("status.selection.modulesRemoved", {
+          modules: message("count.modules", { count: ids.size }),
+        }),
+      );
     },
     [commitHistory],
   );
@@ -1488,13 +1610,24 @@ export function RackWebStudio() {
     setSelectedCableIds(new Set());
     setPending(null);
     setStatus(
-      `${modules.size ? `${modules.size} module${modules.size === 1 ? "" : "s"}` : ""}${modules.size && cables.size ? " and " : ""}${cables.size ? `${cables.size} cable${cables.size === 1 ? "" : "s"}` : ""} removed · undo is available`,
+      modules.size && cables.size
+        ? message("status.selection.modulesAndCablesRemoved", {
+            modules: message("count.modules", { count: modules.size }),
+            cables: message("count.cables", { count: cables.size }),
+          })
+        : modules.size
+          ? message("status.selection.modulesRemoved", {
+              modules: message("count.modules", { count: modules.size }),
+            })
+          : message("status.selection.cablesRemoved", {
+              cables: message("count.cables", { count: cables.size }),
+            }),
     );
   }, [commitHistory, selectedCableIds, selectedIds]);
 
   const healDeleteSelection = useCallback(() => {
     if (selectedIds.size !== 1) {
-      setStatus("Heal delete needs one selected module");
+      setStatus(message("status.selection.healRequiresOne"));
       return;
     }
     const moduleId = selectedIds.values().next().value,
@@ -1503,7 +1636,7 @@ export function RackWebStudio() {
         ? removeModuleAndHealCable(patch, moduleId, `cable-${crypto.randomUUID()}`)
         : null;
     if (!next) {
-      setStatus("Heal delete needs exactly one incoming and one outgoing cable");
+      setStatus(message("status.selection.healRequiresPath"));
       return;
     }
     commitHistory(next);
@@ -1511,7 +1644,11 @@ export function RackWebStudio() {
     setSelectedCableIds(new Set());
     setPending(null);
     setStatus(
-      `${selectedModule?.plugin}/${selectedModule?.model} removed and signal path healed · undo is available`,
+      message("status.selection.healed", {
+        module: selectedModule
+          ? `${selectedModule.plugin}/${selectedModule.model}`
+          : message("common.unknown"),
+      }),
     );
   }, [commitHistory, patch, selectedIds]);
 
@@ -1532,7 +1669,13 @@ export function RackWebStudio() {
     setMarquee,
     setSelectedIds,
     setSelectedCableIds,
-    setStatus,
+    onMarqueeStatus: (added, selected) =>
+      setStatus(
+        message("status.selection.marquee", {
+          modules: message("count.modules", { count: added }),
+          selected,
+        }),
+      ),
     mutatePatch: history.mutate,
     checkpointPatch: history.checkpoint,
     bumpLayoutRevision: () => setLayoutRevision((revision) => revision + 1),
@@ -1548,7 +1691,12 @@ export function RackWebStudio() {
     if (!fitted) return;
     setZoom(fitted.zoom);
     setPan(fitted.pan);
-    setStatus(`Patch fitted · ${patch.modules.length} modules · ${patch.cables.length} cables`);
+    setStatus(
+      message("status.patch.fitted", {
+        modules: message("count.modules", { count: patch.modules.length }),
+        cables: message("count.cables", { count: patch.cables.length }),
+      }),
+    );
   };
 
   const adjustZoom = useCallback((delta: number, absoluteZoom?: number) => {
@@ -1568,11 +1716,7 @@ export function RackWebStudio() {
     setModulesLocked(next);
     setPending(null);
     if (next) setLibraryOpen(false);
-    setStatus(
-      next
-        ? "Perform mode · parameters stay live; layout and patching are locked"
-        : "Edit mode · module movement and patching restored",
-    );
+    setStatus(message(next ? "status.mode.perform" : "status.mode.edit"));
   }, [modulesLocked]);
 
   const focusModule = (moduleId: string, requestedZoom?: number) => {
@@ -1597,7 +1741,9 @@ export function RackWebStudio() {
       y: rack.clientHeight / 2 - (focusedModule.y + 190) * nextZoom,
     });
     setStatus(
-      `Focused ${focusedModule.plugin}/${focusedModule.model} · double-click another module to follow it`,
+      message("status.module.focused", {
+        module: `${focusedModule.plugin}/${focusedModule.model}`,
+      }),
     );
   };
 
@@ -1611,7 +1757,7 @@ export function RackWebStudio() {
           suggestedName: patchName,
           types: [
             {
-              description: "VCV Rack patch",
+              description: t("picker.vcvPatch"),
               accept: { "application/json": [".vcv"] },
             },
           ],
@@ -1622,12 +1768,12 @@ export function RackWebStudio() {
         await writable.close();
         patchFileHandleRef.current = handle;
         setPatchName(handle.name);
-        setStatus(`${handle.name} saved in place · Rack-compatible JSON .vcv`);
+        setStatus(message("status.patch.savedInPlace", { file: handle.name }));
         return;
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setStatus(error instanceof Error ? error.message : "Patch save failed");
+      setStatus(issue(error, "errors.patchSaveFailed"));
       return;
     }
     const blob = new Blob([contents], { type: "application/json" }),
@@ -1637,7 +1783,7 @@ export function RackWebStudio() {
     anchor.download = patchName;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    setStatus(`${patchName} downloaded · Rack-compatible JSON .vcv`);
+    setStatus(message("status.patch.downloaded", { file: patchName }));
   };
 
   const saveStrokePreset = (module: ModuleInstance, asDefault: boolean) => {
@@ -1655,7 +1801,11 @@ export function RackWebStudio() {
     anchor.download = `${module.plugin}-${module.model}${asDefault ? "-default" : ""}.vcvm`;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    setStatus(`${module.plugin}/${module.model} ${asDefault ? "default " : ""}preset downloaded`);
+    setStatus(
+      message(asDefault ? "status.preset.defaultDownloaded" : "status.preset.downloaded", {
+        module: `${module.plugin}/${module.model}`,
+      }),
+    );
   };
 
   const requestPresetLoad = (module: ModuleInstance) => {
@@ -1668,27 +1818,39 @@ export function RackWebStudio() {
     if (!moduleId) return;
     try {
       const preset = JSON.parse(await file.text()) as unknown;
-      if (!preset || typeof preset !== "object" || Array.isArray(preset))
-        throw new Error("Preset must contain one Rack module object");
+      if (!preset || typeof preset !== "object" || Array.isArray(preset)) {
+        setStatus(message("errors.presetInvalid"));
+        return;
+      }
       const targetModule = patch.modules.find((item) => item.id === moduleId),
         definition = targetModule ? getWebPlugin(targetModule.key) : undefined;
-      if (!targetModule || !definition) throw new Error("Preset target is no longer available");
+      if (!targetModule || !definition) {
+        setStatus(message("errors.presetTargetUnavailable"));
+        return;
+      }
       const next = applyRackModulePreset(
         patch,
         moduleId,
         preset as Record<string, unknown>,
         definition,
       );
-      if (!next)
-        throw new Error(
-          `Preset is for another model; expected ${targetModule.plugin}/${targetModule.model}`,
+      if (!next) {
+        setStatus(
+          message("errors.presetWrongModel", {
+            module: `${targetModule.plugin}/${targetModule.model}`,
+          }),
         );
+        return;
+      }
       commitHistory(next);
       setStatus(
-        `${file.name} loaded into ${targetModule.plugin}/${targetModule.model} · undo is available`,
+        message("status.preset.loaded", {
+          file: file.name,
+          module: `${targetModule.plugin}/${targetModule.model}`,
+        }),
       );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Preset load failed");
+      setStatus(issue(error, "errors.presetLoadFailed"));
     } finally {
       presetTargetRef.current = null;
     }
@@ -1780,7 +1942,14 @@ export function RackWebStudio() {
           }
         }
         setStatus(
-          `Autosave restored · ${restoredPatch.modules.length} modules${restored.repaired ? ` · repaired ${restored.repaired} duplicate ID` : ""}`,
+          restored.repaired
+            ? message("status.autosave.restoredRepaired", {
+                modules: message("count.modules", { count: restoredPatch.modules.length }),
+                repaired: restored.repaired,
+              })
+            : message("status.autosave.restored", {
+                modules: message("count.modules", { count: restoredPatch.modules.length }),
+              }),
         );
       }
     } finally {
@@ -1791,8 +1960,8 @@ export function RackWebStudio() {
     if (!autosaveReady) return;
     try {
       localStorage.setItem(studioHelpers.AUTOSAVE_KEY, serializeAutosavePatch(patch));
-    } catch {
-      setStatus("Autosave storage is full");
+    } catch (error) {
+      setStatus(issue(error, "errors.autosaveStorageFull"));
     }
   }, [autosaveReady, patch]);
   const selectedId = selectedIds.size === 1 ? selectedIds.values().next().value : undefined;
@@ -1800,7 +1969,36 @@ export function RackWebStudio() {
       ? patch.modules.find((module) => module.id === selectedId)
       : undefined,
     selectedDefinition = selectedModule ? getWebPlugin(selectedModule.key) : undefined,
-    selectedPeaks = portPeaks?.moduleId === selectedId ? portPeaks : undefined;
+    selectedPeaks = portPeaks?.moduleId === selectedId ? portPeaks : undefined,
+    selectedTelemetry = selectedId ? telemetry[selectedId] : undefined;
+  const telemetryMessage = selectedTelemetry
+      ? message("telemetry.signalSummary", {
+          ports: selectedTelemetry.peaks.length
+            ? selectedTelemetry.peaks
+                .map((peak) =>
+                  t("telemetry.portPeak", {
+                    port: peak.port,
+                    value: Math.round(peak.value * 100) / 100,
+                  }),
+                )
+                .join(" · ")
+            : message("telemetry.noSignalPorts"),
+          lights: message("count.lights", { count: selectedTelemetry.activeLights }),
+        })
+      : null,
+    selectionMessage =
+      selectedIds.size && selectedCableIds.size
+        ? message("selection.summary.mixed", {
+            modules: message("count.modules", { count: selectedIds.size }),
+            cables: message("count.cables", { count: selectedCableIds.size }),
+          })
+        : selectedIds.size
+          ? message("selection.summary.modules", {
+              modules: message("count.modules", { count: selectedIds.size }),
+            })
+          : message("selection.summary.cables", {
+              cables: message("count.cables", { count: selectedCableIds.size }),
+            });
   const contextModule = moduleMenu
       ? patch.modules.find((module) => module.id === moduleMenu.moduleId)
       : undefined,
@@ -1865,7 +2063,7 @@ export function RackWebStudio() {
     setCableDraft(null);
     setCableDrag(null);
     setLibraryOpen(true);
-    setStatus("New empty patch");
+    setStatus(message("status.patch.newEmpty"));
   };
   const patchFileInput = (
     <input
@@ -1907,7 +2105,7 @@ export function RackWebStudio() {
         onNewPatch={handleNewPatch}
         onOpenPatch={() => void choosePatchFile()}
         onOpenPatchUrl={() => {
-          setPatchUrlError("");
+          setPatchUrlError(null);
           setPatchUrlOpen(true);
         }}
         onSavePatch={() => void savePatch()}
@@ -1925,7 +2123,7 @@ export function RackWebStudio() {
           busy={busy}
           onChange={(value) => {
             setPatchUrl(value);
-            setPatchUrlError("");
+            setPatchUrlError(null);
           }}
           onSubmit={() => void openPatchStoragePatch()}
           onDismiss={() => setPatchUrlOpen(false)}
@@ -1938,7 +2136,7 @@ export function RackWebStudio() {
         />
       ) : null}
       <output className="pw-status-sr" aria-live="polite">
-        {status}
+        {formatUserMessage(t, status)}
       </output>
       <RackStudioLibrary
         moduleUrl={moduleUrl}
@@ -1959,7 +2157,7 @@ export function RackWebStudio() {
       <section
         ref={rackRef}
         className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${directInteractionActive ? "direct-interaction" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
-        aria-label="Peach Patch modular rack"
+        aria-label={t("rack.label")}
         onPointerMove={(event) => {
           const cableInteraction = cableDrag ?? cableDraft;
           if (cableInteraction && cablePreviewSession) {
@@ -1983,7 +2181,7 @@ export function RackWebStudio() {
             if ((event.target as Element).closest(".pw-ports button")) return;
             setCableDraft(null);
             setPending(null);
-            setStatus("Cable drag cancelled");
+            setStatus(message("status.cable.dragCancelled"));
             return;
           }
           if (cableDrag) {
@@ -1994,7 +2192,7 @@ export function RackWebStudio() {
             }));
             setCableDrag(null);
             setPending(null);
-            setStatus("Cable disconnected · undo is available");
+            setStatus(message("status.cable.disconnected"));
             return;
           }
           pointerUp(event);
@@ -2008,7 +2206,7 @@ export function RackWebStudio() {
             setCableDrag(null);
             setCableDraft(null);
             setPending(null);
-            setStatus("Cable drag cancelled");
+            setStatus(message("status.cable.dragCancelled"));
             return;
           }
           pointerUp(event);
@@ -2059,7 +2257,7 @@ export function RackWebStudio() {
           if (target.closest(".pw-module,.pw-cables,.pw-inspector,.pw-zoom,.pw-telemetry")) return;
           event.preventDefault();
           if (modulesLocked) {
-            setStatus("Exit Perform mode before adding a module");
+            setStatus(message("status.edit.exitPerformToAddModule"));
             return;
           }
           const rack = rackRef.current;
@@ -2097,7 +2295,12 @@ export function RackWebStudio() {
               midiLearnTargetRef.current = { moduleId: selectedModule.id, paramId };
               setMidiLearnArmed(true);
               setStatus(
-                `MIDI learn armed for ${selectedModule.plugin}/${selectedModule.model} ${selectedDefinition.params.find((param) => param.id === paramId)?.name ?? "parameter"} · move a CC`,
+                message("status.midi.learnArmed", {
+                  module: `${selectedModule.plugin}/${selectedModule.model}`,
+                  parameter:
+                    selectedDefinition.params.find((param) => param.id === paramId)?.name ??
+                    message("common.parameter"),
+                }),
               );
             }}
             onSetParam={setModuleParam}
@@ -2106,7 +2309,9 @@ export function RackWebStudio() {
               setReplaceMode(true);
               setLibraryOpen(true);
               setStatus(
-                `Choose a Library module to replace ${selectedModule.plugin}/${selectedModule.model}`,
+                message("status.module.chooseReplacement", {
+                  module: `${selectedModule.plugin}/${selectedModule.model}`,
+                }),
               );
             }}
             onDuplicate={duplicateSelection}
@@ -2169,7 +2374,7 @@ export function RackWebStudio() {
           <RackStudioModuleLayer
             modules={patch.modules}
             cables={patch.cables}
-            getDefinition={getWebPlugin}
+            definitions={registry}
             selectedIds={selectedIds}
             pending={pending}
             jackSignalLevels={jackSignalLevels}
@@ -2208,7 +2413,7 @@ export function RackWebStudio() {
             onDragStart={(module, event) => {
               if (modulesLocked) {
                 event.stopPropagation();
-                setStatus("Module movement is locked · use Stroke or unlock it first");
+                setStatus(message("status.module.movementLocked"));
                 return;
               }
               startDrag(module, event);
@@ -2277,12 +2482,14 @@ export function RackWebStudio() {
                 ),
               }));
               setStatus(
-                module.plugin +
-                  "/" +
-                  module.model +
-                  " MIDI " +
-                  (deviceName || "default route") +
-                  " selected",
+                deviceName
+                  ? message("status.midi.routeSelected", {
+                      module: `${module.plugin}/${module.model}`,
+                      route: deviceName,
+                    })
+                  : message("status.midi.defaultRouteSelected", {
+                      module: `${module.plugin}/${module.model}`,
+                    }),
               );
             }}
             onBypass={(module) => {
@@ -2298,7 +2505,7 @@ export function RackWebStudio() {
             onPort={connectPort}
             onPortDragStart={(port) => {
               if (modulesLocked) {
-                setStatus("Exit Perform mode before changing cables");
+                setStatus(message("status.edit.exitPerformToChangeCables"));
                 return;
               }
               setPending(port);
@@ -2312,14 +2519,14 @@ export function RackWebStudio() {
             onCapture={(module) => void toggleCapture(module.id, recordingIds.has(module.id))}
             onRemove={(module) => {
               if (modulesLocked) {
-                setStatus("Exit Perform mode before removing a module");
+                setStatus(message("status.edit.exitPerformToRemoveModule"));
                 return;
               }
               deleteModules(new Set([module.id]));
             }}
             onReplaceDrop={(module, key) => {
               if (modulesLocked) {
-                setStatus("Exit Perform mode before replacing a module");
+                setStatus(message("status.edit.exitPerformToReplaceModule"));
                 return;
               }
               const definition = getWebPlugin(key);
@@ -2384,7 +2591,11 @@ export function RackWebStudio() {
             setReplaceMode(true);
             setLibraryOpen(true);
             setModuleMenu(null);
-            setStatus(`Choose a Library module to replace ${module.plugin}/${module.model}`);
+            setStatus(
+              message("status.module.chooseReplacement", {
+                module: `${module.plugin}/${module.model}`,
+              }),
+            );
           }}
           onDeleteModule={(module) => {
             deleteModules(new Set([module.id]));
@@ -2399,12 +2610,12 @@ export function RackWebStudio() {
               ),
             }));
             setCableMenu(null);
-            setStatus("Cable color changed · undo is available");
+            setStatus(message("status.cable.colorChanged"));
           }}
           onInsertCable={() => {
             setCableMenu(null);
             setLibraryOpen(true);
-            setStatus("Choose a compatible Library module to insert on this cable");
+            setStatus(message("status.cable.chooseInsert"));
           }}
           onDeleteCable={(cable) => {
             commitHistory((current) => ({
@@ -2413,7 +2624,7 @@ export function RackWebStudio() {
             }));
             setSelectedCableIds(new Set());
             setCableMenu(null);
-            setStatus("Cable removed · undo is available");
+            setStatus(message("status.cable.removed"));
           }}
         />
         {marquee && (
@@ -2429,26 +2640,17 @@ export function RackWebStudio() {
           />
         )}
         {selectedIds.size + selectedCableIds.size > 1 && (
-          <div className="pw-selection-count">
-            {selectedIds.size
-              ? `${selectedIds.size} module${selectedIds.size === 1 ? "" : "s"}`
-              : ""}
-            {selectedIds.size && selectedCableIds.size ? " + " : ""}
-            {selectedCableIds.size
-              ? `${selectedCableIds.size} cable${selectedCableIds.size === 1 ? "" : "s"}`
-              : ""}{" "}
-            selected · delete is undoable
-          </div>
+          <div className="pw-selection-count">{formatUserMessage(t, selectionMessage)}</div>
         )}
         {!patch.modules.length && (
           <div className="pw-empty">
-            <b>Empty rack.</b>
-            <span>Paste a Library URL or open a .vcv patch.</span>
+            <b>{t("rack.emptyTitle")}</b>
+            <span>{t("rack.emptyHelp")}</span>
             <button
               disabled={registryState !== "ready" || busy}
               onClick={() => void openPatchStoragePatch(EMPTY_RACK_PATCH_URL)}
             >
-              Load the Meditation patch
+              {t("rack.loadMeditation")}
             </button>
           </div>
         )}
@@ -2456,17 +2658,17 @@ export function RackWebStudio() {
           <button
             type="button"
             onClick={() => adjustZoom(-0.1)}
-            aria-label="Zoom out"
-            title="Zoom out"
+            aria-label={t("rack.zoomOut")}
+            title={t("rack.zoomOut")}
           >
             −
           </button>
-          <span>{Math.round(zoom * 100)}%</span>
+          <span>{formatNumber(Math.round(zoom * 100))}%</span>
           <button
             type="button"
             onClick={() => adjustZoom(0.1)}
-            aria-label="Zoom in"
-            title="Zoom in"
+            aria-label={t("rack.zoomIn")}
+            title={t("rack.zoomIn")}
           >
             ＋
           </button>
@@ -2475,14 +2677,14 @@ export function RackWebStudio() {
             className="pw-zoom-fit"
             onClick={fitPatch}
             disabled={!patch.modules.length}
-            aria-label="Fit complete patch in view"
-            title="Fit complete patch in view"
+            aria-label={t("rack.fit")}
+            title={t("rack.fit")}
           >
             <Maximize2 aria-hidden="true" size={11} strokeWidth={2.25} />
           </button>
         </div>
-        {selectedId && telemetry[selectedId] && (
-          <output className="pw-telemetry">{telemetry[selectedId]}</output>
+        {telemetryMessage && (
+          <output className="pw-telemetry">{formatUserMessage(t, telemetryMessage)}</output>
         )}
       </section>
     </main>

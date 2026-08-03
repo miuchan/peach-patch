@@ -1,3 +1,6 @@
+import { useMemo } from "react";
+import { useI18n } from "../i18n/provider";
+
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 export function cvNoteFromVoltage(voltage: number) {
@@ -40,13 +43,22 @@ export function RackCvNoteDisplay({
   height: number;
   scaleX?: number;
 }) {
+  const { locale, t } = useI18n();
+  const voltageFormatter = useMemo(
+    () => new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    [locale],
+  );
   const voltage = samples?.at(-1) ?? 0;
   const reading = cvNoteFromVoltage(voltage);
   return (
     <div
       className="pw-rack-cv-note"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
-      aria-label={`CV tuner ${reading.note}, ${reading.cents} cents, ${voltage.toFixed(2)} volts`}
+      aria-label={t("display.cvTuner", {
+        note: reading.note,
+        cents: reading.cents,
+        voltage: voltageFormatter.format(voltage),
+      })}
     >
       <strong>{reading.note}</strong>
       <span>{reading.valid ? `${reading.cents > 0 ? "+" : ""}${reading.cents}` : ""}</span>

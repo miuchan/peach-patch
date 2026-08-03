@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import dseg7FontUrl from "../assets/fonts/dseg7-classic-mini/DSEG7ClassicMini-Bold.ttf?url";
+import { useI18n } from "../i18n/provider";
 
 const MM_TO_RACK_PX = 75 / 25.4;
 
@@ -20,6 +21,7 @@ export function RackParamNumericDisplay({
   height: number;
   scaleX?: number;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -62,7 +64,7 @@ export function RackParamNumericDisplay({
       ref={ref}
       className="pw-rack-segment"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
-      aria-label={`${digits}-digit parameter display`}
+      aria-label={t("display.parameterDigits", { count: digits })}
     />
   );
 }

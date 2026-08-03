@@ -11,7 +11,10 @@ export type BrowserAssetContract = {
 export type LoadedBrowserAsset = {
   ref: SampleAssetRef;
   samples: Float32Array;
-  detail: string;
+  detail:
+    | { kind: "image"; width: number; height: number }
+    | { kind: "bytes"; bytes: number }
+    | { kind: "audio"; seconds: number; channels: 1 | 2 | 3 | 4 };
 };
 
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
@@ -50,7 +53,7 @@ async function loadImage(file: File, contract: BrowserAssetContract): Promise<Lo
     return {
       ref: assetRef(file, width, 4, width * height),
       samples,
-      detail: `${width}×${height} RGBA`,
+      detail: { kind: "image", width, height },
     };
   } finally {
     bitmap.close();
@@ -98,7 +101,7 @@ async function loadBinary(file: File, contract: BrowserAssetContract): Promise<L
   return {
     ref: assetRef(file, 1, 1, bytes.length),
     samples,
-    detail: `${bytes.length.toLocaleString()} bytes`,
+    detail: { kind: "bytes", bytes: bytes.length },
   };
 }
 
@@ -106,7 +109,7 @@ async function loadAudio(file: File, contract: BrowserAssetContract): Promise<Lo
   const decoder = new AudioContext();
   try {
     const buffer = await decoder.decodeAudioData(await file.arrayBuffer());
-    const channels = Math.min(contract.channels, buffer.numberOfChannels);
+    const channels = Math.min(contract.channels, buffer.numberOfChannels) as 1 | 2 | 3 | 4;
     const frames = Math.min(
       buffer.length,
       contract.maxSeconds > 0 ? Math.floor(buffer.sampleRate * contract.maxSeconds) : buffer.length,
@@ -119,7 +122,7 @@ async function loadAudio(file: File, contract: BrowserAssetContract): Promise<Lo
     return {
       ref: assetRef(file, buffer.sampleRate, channels, frames),
       samples,
-      detail: `${(frames / buffer.sampleRate).toFixed(1)}s · ${channels === 2 ? "stereo" : "mono"}`,
+      detail: { kind: "audio", seconds: frames / buffer.sampleRate, channels },
     };
   } finally {
     await decoder.close();

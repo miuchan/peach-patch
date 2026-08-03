@@ -4,11 +4,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import "./globals.css";
+import { I18nProvider, initializeI18n, useI18n } from "./i18n/provider";
 
 function RackLoadingFallback() {
+  const { t } = useI18n();
   return (
     <main className="pw-app-loading" aria-live="polite">
-      Loading Peach Patch…
+      {t("loading.app")}
     </main>
   );
 }
@@ -26,9 +28,12 @@ const router = createBrowserRouter([
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Peach Patch root element is missing");
+const initialLocale = initializeI18n();
 
 createRoot(root).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <I18nProvider initialLocale={initialLocale}>
+      <RouterProvider router={router} />
+    </I18nProvider>
   </StrictMode>,
 );

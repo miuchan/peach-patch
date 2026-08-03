@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { useI18n } from "../i18n/provider";
 
 const COLORS = ["#ff3333", "#ffd456", "#72ea65", "#13ecc4", "#ebebeb"];
 
@@ -21,6 +22,7 @@ export function RackBpmDisplay({
   height: number;
   scaleX?: number;
 }) {
+  const { t } = useI18n();
   const voltage = samples?.at(-1),
     bpm = Math.max(
       0,
@@ -33,7 +35,7 @@ export function RackBpmDisplay({
     <div
       className="pw-rack-bpm-display"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height, color } as CSSProperties}
-      aria-label={`${bpm} BPM`}
+      aria-label={t("display.bpm", { bpm })}
     >
       {String(bpm).padStart(3, " ")}
     </div>

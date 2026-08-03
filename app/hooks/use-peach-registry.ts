@@ -3,12 +3,13 @@ import type { PatchDocument } from "../../lib/patch-types";
 import { hydrateModulesWithDefinitions } from "../../lib/patch-hydrate";
 import { loadPeachRegistry } from "../../lib/peach-registry-client";
 import { allWebPlugins, replaceRegistryModules } from "../../lib/runtime-plugin-registry";
+import { issue, message, type UserMessage } from "../i18n/user-message";
 
 export type PeachRegistryState = "loading" | "ready" | "error";
 
 type UsePeachRegistryOptions = {
   mutatePatch: (update: (patch: PatchDocument) => PatchDocument) => void;
-  onStatus: (message: string) => void;
+  onStatus: (message: UserMessage) => void;
 };
 
 /**
@@ -37,16 +38,18 @@ export function usePeachRegistry({ mutatePatch, onStatus }: UsePeachRegistryOpti
             ? current
             : { ...current, modules: hydratedModules };
         });
-        onStatus(`GitHub registry ready · ${nextModules.length} verified modules`);
+        onStatus(
+          message("status.registry.ready", {
+            modules: message("count.modules", { count: nextModules.length }),
+          }),
+        );
       } catch (error) {
         if (controller.signal.aborted) return;
 
         replaceRegistryModules([]);
         setModules([]);
         setState("error");
-        onStatus(
-          `GitHub registry unavailable · ${error instanceof Error ? error.message : "request failed"}`,
-        );
+        onStatus(issue(error, "errors.registryUnavailable"));
       }
     }
 

@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { useI18n } from "../i18n/provider";
 
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_NAMES_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
@@ -40,6 +41,7 @@ export function RackNoteMeterDisplay({
   rowHeight: number;
   scaleX?: number;
 }) {
+  const { t } = useI18n();
   const mode = Math.max(0, Math.min(2, Math.round(params[1] ?? 0))),
     decimals = Math.round(params[2] ?? 5),
     flats = (params[0] ?? 0) >= 0.5,
@@ -65,7 +67,13 @@ export function RackNoteMeterDisplay({
           "--note-row-height": `${rowHeight}px`,
         } as CSSProperties
       }
-      aria-label={`Note meter ${mode === 0 ? "note names" : mode === 1 ? "volts" : "frequency"}`}
+      aria-label={t(
+        mode === 0
+          ? "display.noteMeter.noteNames"
+          : mode === 1
+            ? "display.noteMeter.volts"
+            : "display.noteMeter.frequency",
+      )}
     >
       <b>{mode === 0 ? "" : mode === 1 ? "V" : "Hz"}</b>
       {readings.map((reading, index) => (

@@ -11,6 +11,7 @@ import {
   audioFileFromUrl,
   boundedAudioResponse,
   firstPlaylistEntry,
+  RemoteAudioError,
 } from "../lib/rack-module-remote-audio.ts";
 
 function keyboard(
@@ -75,14 +76,21 @@ test("playlist parsing resolves PLS and M3U entries against their source URL", (
   );
   assert.throws(
     () => firstPlaylistEntry("#EXTM3U\n# no entries", "https://example.test/list.m3u"),
-    /contains no audio URL/,
+    (error) => error instanceof RemoteAudioError && error.code === "empty-playlist",
+  );
+  assert.throws(
+    () => firstPlaylistEntry("http://[invalid", "https://example.test/list.m3u"),
+    (error) => error instanceof RemoteAudioError && error.code === "invalid-playlist-url",
   );
 });
 
 test("bounded audio reads reject HTTP errors and never exceed the byte cap", async () => {
   const bytes = await boundedAudioResponse(new Response(Uint8Array.from([1, 2, 3, 4])), 3, 1_000);
   assert.deepEqual([...bytes], [1, 2, 3]);
-  await assert.rejects(boundedAudioResponse(new Response("no", { status: 503 })), /HTTP 503/);
+  await assert.rejects(
+    boundedAudioResponse(new Response("no", { status: 503 })),
+    (error) => error instanceof RemoteAudioError && error.code === "http" && error.status === 503,
+  );
 });
 
 test("remote audio follows one playlist and returns a named bounded File", async () => {

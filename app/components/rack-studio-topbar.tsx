@@ -1,5 +1,6 @@
 import { Play, Square } from "lucide-react";
 import type { ReactNode } from "react";
+import { useI18n } from "../i18n/provider";
 
 const GITHUB_REPOSITORY_URL = "https://github.com/miuchan/peach-patch";
 
@@ -50,6 +51,7 @@ export function RackStudioTopbar({
   fileInput,
   presetInput,
 }: RackStudioTopbarProps) {
+  const { locale, setLocale, t } = useI18n();
   return (
     <header className="pw-topbar">
       <div className="pw-brand">
@@ -57,65 +59,65 @@ export function RackStudioTopbar({
         <span>PEACH</span>
         <b>PATCH</b>
       </div>
-      <nav className="pw-actions" aria-label="Peach Patch application menu">
-        <div className="pw-action-group" aria-label="File actions">
+      <nav className="pw-actions" aria-label={t("topbar.applicationMenu")}>
+        <div className="pw-action-group" aria-label={t("topbar.fileActions")}>
           <button
             type="button"
             disabled={modulesLocked}
-            title="Create a new patch"
+            title={t("topbar.newTitle")}
             onClick={onNewPatch}
           >
-            New
+            {t("topbar.new")}
           </button>
           <button
             type="button"
             onClick={onOpenPatch}
             disabled={modulesLocked || !registryReady}
-            title="Open a .vcv patch"
+            title={t("topbar.openTitle")}
           >
-            Open
+            {t("topbar.open")}
           </button>
           <button
             type="button"
             onClick={onOpenPatchUrl}
             disabled={modulesLocked || !registryReady}
-            title="Open a patch from PatchStorage"
+            title={t("topbar.linkTitle")}
           >
-            Link
+            {t("topbar.link")}
           </button>
           {fileInput}
           {presetInput}
-          <button type="button" onClick={onSavePatch} title="Save the current .vcv patch">
-            Save
+          <button type="button" onClick={onSavePatch} title={t("topbar.saveTitle")}>
+            {t("topbar.save")}
           </button>
         </div>
-        <div className="pw-action-group" aria-label="History actions">
+        <div className="pw-action-group" aria-label={t("topbar.historyActions")}>
           <button
             type="button"
             onClick={onUndo}
             disabled={modulesLocked || !canUndo}
-            title="Undo · ⌘/Ctrl+Z"
+            title={t("topbar.undoTitle")}
           >
-            Undo
+            {t("topbar.undo")}
           </button>
           <button
             type="button"
             onClick={onRedo}
             disabled={modulesLocked || !canRedo}
-            title="Redo · ⇧⌘/Ctrl+Z"
+            title={t("topbar.redoTitle")}
           >
-            Redo
+            {t("topbar.redo")}
           </button>
         </div>
-        <div className="pw-action-group" aria-label="View actions">
+        <div className="pw-action-group" aria-label={t("topbar.viewActions")}>
           <button
             type="button"
             className={libraryOpen ? "active" : ""}
             aria-pressed={libraryOpen}
             onClick={onToggleLibrary}
-            title="Show or hide the module Library"
+            title={t("topbar.libraryTitle")}
           >
-            Library
+            {t("topbar.library")}
           </button>
         </div>
         <button
@@ -123,22 +125,33 @@ export function RackStudioTopbar({
           className={`pw-audio-action ${audioRunning ? "audio-live" : ""}`}
           onClick={onToggleAudio}
           disabled={busy || !registryReady}
-          title={audioRunning ? "Stop browser audio" : "Start browser audio"}
+          title={audioRunning ? t("topbar.stopAudioTitle") : t("topbar.startAudioTitle")}
         >
           {audioRunning ? (
             <Square aria-hidden="true" size={11} strokeWidth={2.25} />
           ) : (
             <Play aria-hidden="true" size={11} strokeWidth={2.25} />
           )}
-          <span>{audioRunning ? "Stop audio" : "Start audio"}</span>
+          <span>{audioRunning ? t("topbar.stopAudio") : t("topbar.startAudio")}</span>
         </button>
+        <label className="pw-locale-picker" title={t("locale.label")}>
+          <span>{t("locale.label")}</span>
+          <select
+            aria-label={t("locale.label")}
+            value={locale}
+            onChange={(event) => setLocale(event.target.value === "zh-CN" ? "zh-CN" : "en")}
+          >
+            <option value="en">{t("locale.english")}</option>
+            <option value="zh-CN">{t("locale.chineseSimplified")}</option>
+          </select>
+        </label>
         <a
           className="pw-github-link"
           href={GITHUB_REPOSITORY_URL}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label="View Peach Patch on GitHub"
-          title="View Peach Patch on GitHub"
+          aria-label={t("topbar.github")}
+          title={t("topbar.github")}
         >
           <GitHubIcon />
         </a>

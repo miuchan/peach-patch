@@ -3,6 +3,7 @@ import { PortScope } from "./port-scope";
 import type { ModuleInstance } from "../../lib/patch-types";
 import type { ParamSpec, WebPluginModule } from "../../lib/web-plugin-registry";
 import { rackLegacyUi } from "../../lib/rack-module-compatibility";
+import { useI18n } from "../i18n/provider";
 
 type Peaks = {
   inputs: number[];
@@ -60,6 +61,7 @@ export function RackStudioInspector({
   onSavePreset,
   onLoadPreset,
 }: RackStudioInspectorProps) {
+  const { formatNumber, t } = useI18n();
   const compatibilityUi = rackLegacyUi(module),
     hiddenParamIds = new Set(compatibilityUi.hiddenParamIds),
     hiddenStateIds = new Set(compatibilityUi.hiddenStateIds),
@@ -82,7 +84,7 @@ export function RackStudioInspector({
     if (stateKey.type === "boolean") {
       return (
         <input
-          aria-label={`${module.model} ${label} state`}
+          aria-label={t("inspector.stateLabel", { module: module.model, state: label })}
           type="checkbox"
           checked={Boolean(value)}
           onChange={(event) => onSetState(module.id, [[id, event.target.checked ? 1 : 0]])}
@@ -92,13 +94,13 @@ export function RackStudioInspector({
     if (stateKey.type === "string-enum") {
       return (
         <select
-          aria-label={`${module.model} ${label} state`}
+          aria-label={t("inspector.stateLabel", { module: module.model, state: label })}
           value={Math.round(value)}
           onChange={(event) => onSetState(module.id, [[id, Number(event.target.value)]])}
         >
           {(stateKey.values ?? []).map((option, index) => (
             <option key={`${option}-${index}`} value={index}>
-              {option || `(empty ${index})`}
+              {option || t("inspector.emptyOption", { index })}
             </option>
           ))}
         </select>
@@ -106,7 +108,7 @@ export function RackStudioInspector({
     }
     return (
       <input
-        aria-label={`${module.model} ${label} state`}
+        aria-label={t("inspector.stateLabel", { module: module.model, state: label })}
         type="number"
         step={stateKey.type === "integer" ? 1 : "any"}
         value={value}
@@ -121,38 +123,54 @@ export function RackStudioInspector({
   return (
     <aside
       className="pw-inspector"
-      aria-label={`Live inspector for ${module.plugin}/${module.model}`}
+      aria-label={t("inspector.aria", { module: `${module.plugin}/${module.model}` })}
     >
       <header>
-        <span>{audioRunning ? "LIVE PORTS" : "MODULE INSPECTOR"}</span>
+        <span>{t(audioRunning ? "inspector.livePorts" : "inspector.moduleInspector")}</span>
         <b>{module.model}</b>
         <small>{module.plugin}</small>
       </header>
       <div className="pw-inspector-ports">
         {definition.inputs.map((port) => (
           <label key={`in-${port.id}`}>
-            <span>IN · {port.name}</span>
+            <span>
+              {t("inspector.input")} · {port.name}
+            </span>
             <PortScope
               samples={peaks?.inputScopes[port.id] ?? []}
-              label={`${port.name} input waveform`}
+              label={t("inspector.inputWaveform", { port: port.name })}
             />
-            <em>{(peaks?.inputs[port.id] ?? 0).toFixed(2)}V</em>
+            <em>
+              {formatNumber(peaks?.inputs[port.id] ?? 0, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+              V
+            </em>
           </label>
         ))}
         {definition.outputs.map((port) => (
           <label key={`out-${port.id}`}>
-            <span>OUT · {port.name}</span>
+            <span>
+              {t("inspector.output")} · {port.name}
+            </span>
             <PortScope
               samples={peaks?.outputScopes[port.id] ?? []}
-              label={`${port.name} output waveform`}
+              label={t("inspector.outputWaveform", { port: port.name })}
             />
-            <em>{(peaks?.outputs[port.id] ?? 0).toFixed(2)}V</em>
+            <em>
+              {formatNumber(peaks?.outputs[port.id] ?? 0, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+              V
+            </em>
           </label>
         ))}
       </div>
       {visibleParams.length > 0 && (
         <details className="pw-inspector-params">
-          <summary>PARAMETERS · {visibleParams.length}</summary>
+          <summary>{t("inspector.parameters", { count: visibleParams.length })}</summary>
           <div>
             {visibleParams.map((param: ParamSpec) => {
               const value = module.params[param.id] ?? param.default;
@@ -160,7 +178,10 @@ export function RackStudioInspector({
                 <label key={param.id}>
                   <span title={param.name}>{param.name}</span>
                   <input
-                    aria-label={`${module.model} ${param.name} inspector control`}
+                    aria-label={t("inspector.parameterControl", {
+                      module: module.model,
+                      parameter: param.name,
+                    })}
                     type="range"
                     min={param.min}
                     max={param.max}
@@ -180,7 +201,12 @@ export function RackStudioInspector({
                       onSetParam(module.id, param.id, Number(event.target.value))
                     }
                   />
-                  <output>{Number(value).toFixed(param.snap ? 0 : 3)}</output>
+                  <output>
+                    {formatNumber(Number(value), {
+                      minimumFractionDigits: param.snap ? 0 : 3,
+                      maximumFractionDigits: param.snap ? 0 : 3,
+                    })}
+                  </output>
                 </label>
               );
             })}
@@ -193,7 +219,7 @@ export function RackStudioInspector({
           open={inspectorStateOpen}
           onToggle={(event) => setInspectorStateOpen(event.currentTarget.open)}
         >
-          <summary>MODULE STATE · {stateKeys.length}</summary>
+          <summary>{t("inspector.moduleState", { count: stateKeys.length })}</summary>
           {inspectorStateOpen && (
             <div>
               {stateKeys.map(({ stateKey, id }) => {
@@ -217,9 +243,9 @@ export function RackStudioInspector({
       {compatibleParams.length > 0 && (
         <div className="pw-midi-learn">
           <label>
-            <span>MIDI LEARN TARGET</span>
+            <span>{t("inspector.midiLearnTarget")}</span>
             <select
-              aria-label={`${module.model} MIDI learn parameter`}
+              aria-label={t("inspector.midiLearnParameter", { module: module.model })}
               value={
                 hiddenParamIds.has(selectedLearnParamId)
                   ? compatibleParams[0].id
@@ -240,10 +266,10 @@ export function RackStudioInspector({
             disabled={!audioRunning || !midiMapAvailable}
             title={
               !midiMapAvailable
-                ? "Add a Core MIDI-Map module first"
+                ? t("inspector.midiMapRequired")
                 : !audioRunning
-                  ? "Start audio to receive Web MIDI"
-                  : "Move the next MIDI CC to create a mapping"
+                  ? t("inspector.startAudioForMidi")
+                  : t("inspector.moveNextCc")
             }
             onClick={() =>
               onArmMidiLearn(
@@ -253,44 +279,44 @@ export function RackStudioInspector({
               )
             }
           >
-            {midiLearnArmed ? "Waiting for CC…" : "Map next MIDI CC"}
+            {t(midiLearnArmed ? "inspector.waitingForCc" : "inspector.mapNextCc")}
           </button>
         </div>
       )}
       <div className="pw-inspector-actions">
         {module.sourceUrl && (
           <a href={module.sourceUrl} target="_blank" rel="noreferrer">
-            Original source
+            {t("inspector.originalSource")}
           </a>
         )}
         <button type="button" disabled={modulesLocked} onClick={onReplace}>
-          Replace from Library…
+          {t("inspector.replaceFromLibrary")}
         </button>
         <button type="button" disabled={modulesLocked} onClick={onDuplicate} title="⌘/Ctrl+D">
-          Duplicate
+          {t("inspector.duplicate")}
         </button>
         <button
           type="button"
           disabled={modulesLocked || !definition.params.length}
           onClick={onReset}
         >
-          Initialize controls
+          {t("inspector.initializeControls")}
         </button>
         <button
           type="button"
           disabled={modulesLocked || !definition.params.length}
           onClick={onRandomize}
         >
-          Randomize controls
+          {t("inspector.randomizeControls")}
         </button>
         <button type="button" disabled={modulesLocked} onClick={onDisconnect}>
-          Disconnect cables
+          {t("inspector.disconnectCables")}
         </button>
         <button type="button" onClick={onSavePreset}>
-          Save .vcvm preset
+          {t("inspector.savePreset")}
         </button>
         <button type="button" disabled={modulesLocked} onClick={onLoadPreset}>
-          Load .vcvm preset…
+          {t("inspector.loadPreset")}
         </button>
       </div>
     </aside>

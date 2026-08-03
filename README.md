@@ -18,6 +18,7 @@ Module metadata and immutable WebAssembly artifacts are loaded from the [Peach P
 - **One live graph.** Run compatible module DSP, polyphonic cables, feedback edges, bypass routes, and supported expanders inside a patch-wide AudioWorklet graph.
 - **Performance tools.** Use Web MIDI, Core MIDI/CV modules, next-CC MIDI learn, `.vcvm` presets, parameter automation, live port scopes, and module-provided WAV or MIDI capture.
 - **Browser-local assets.** Decode supported audio, image, MIDI, ROM, and script assets locally, then keep their samples in IndexedDB and patch autosave state in `localStorage`.
+- **Localized host interface.** Use Peach Patch in English or Simplified Chinese, including dialogs, status messages, controls, and accessibility labels.
 
 ## Compatibility boundary
 
@@ -76,6 +77,12 @@ Open the local URL printed by Vite, then choose a patch or create one from the L
 5. Choose **Save** to write through a supported browser file handle or download a JSON `.vcv` fallback.
 
 PatchStorage imports use the same-origin `/api/patchstorage` Worker route, accept public HTTPS PatchStorage pages only, and enforce a 25 MB patch limit.
+
+### Choose the interface language
+
+Use the **Language** selector in the top bar to switch between English and Simplified Chinese. The change applies immediately and is saved for future visits. On a first visit, Peach Patch uses the first supported language in the browser preferences and falls back to English when neither language is present. If browser storage is unavailable, the selected language still applies for the current session.
+
+Localization covers the Peach Patch host interface. Module names, panel artwork, and text authored by Rack plugins remain in their upstream form so the browser representation stays consistent with the original module.
 
 ### Production build and preview
 

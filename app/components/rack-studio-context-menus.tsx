@@ -1,5 +1,6 @@
 import type { PatchCable, ModuleInstance } from "../../lib/patch-types";
 import type { WebPluginModule } from "../../lib/web-plugin-registry";
+import { useI18n } from "../i18n/provider";
 
 type MenuPosition = { left: number; top: number };
 
@@ -54,6 +55,7 @@ export function RackStudioContextMenus({
   onInsertCable,
   onDeleteCable,
 }: RackStudioContextMenusProps) {
+  const { formatNumber, t } = useI18n();
   if (!moduleMenu && !cableMenu) return null;
   return (
     <>
@@ -62,17 +64,17 @@ export function RackStudioContextMenus({
           className="pw-module-menu"
           style={{ left: moduleMenu.left, top: moduleMenu.top }}
           role="menu"
-          aria-label={`${module.plugin}/${module.model} actions`}
+          aria-label={t("moduleMenu.aria", { module: `${module.plugin}/${module.model}` })}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <header>
-            <span>MODULE</span>
+            <span>{t("moduleMenu.header")}</span>
             <b>{module.model}</b>
             <small>{module.plugin}</small>
           </header>
           {definition?.params.some((param) => param.contextOnly) && (
-            <section className="pw-module-menu-params" aria-label="Module context controls">
-              <small>MODULE CONTROLS</small>
+            <section className="pw-module-menu-params" aria-label={t("moduleMenu.controlsAria")}>
+              <small>{t("moduleMenu.controlsHeading")}</small>
               {definition.params
                 .filter((param) => param.contextOnly)
                 .map((param) => {
@@ -94,7 +96,7 @@ export function RackStudioContextMenus({
                           onPointerDown={() => onSetParam(module.id, param.id, 1)}
                           onPointerUp={() => onSetParam(module.id, param.id, 0)}
                         >
-                          Trigger
+                          {t("moduleMenu.trigger")}
                         </button>
                       ) : param.snap ? (
                         <select
@@ -107,7 +109,7 @@ export function RackStudioContextMenus({
                         >
                           {options.map((option, index) => (
                             <option key={option} value={option}>
-                              {param.values?.[index] ?? option}
+                              {param.values?.[index] ?? formatNumber(option)}
                             </option>
                           ))}
                         </select>
@@ -125,7 +127,12 @@ export function RackStudioContextMenus({
                           }
                         />
                       )}
-                      <output>{Number(value).toFixed(param.snap ? 0 : 3)}</output>
+                      <output>
+                        {formatNumber(Number(value), {
+                          minimumFractionDigits: param.snap ? 0 : 3,
+                          maximumFractionDigits: param.snap ? 0 : 3,
+                        })}
+                      </output>
                     </label>
                   );
                 })}
@@ -143,13 +150,13 @@ export function RackStudioContextMenus({
                 <section
                   key={`scribble-editor-${index}`}
                   className="pw-module-menu-params"
-                  aria-label="Scribble strip label"
+                  aria-label={t("moduleMenu.scribbleAria")}
                 >
-                  <small>LABEL</small>
+                  <small>{t("moduleMenu.labelHeading")}</small>
                   <label>
-                    <span>Edit this strip&apos;s label</span>
+                    <span>{t("moduleMenu.editLabel")}</span>
                     <input
-                      aria-label={`${module.model} label text`}
+                      aria-label={t("moduleMenu.labelTextAria", { module: module.model })}
                       disabled={modulesLocked}
                       type="text"
                       value={value}
@@ -157,14 +164,17 @@ export function RackStudioContextMenus({
                         onSetData(module.id, { [visual.dataKey]: event.target.value })
                       }
                     />
-                    <output>{value.length}</output>
+                    <output>{formatNumber(value.length)}</output>
                   </label>
                 </section>
               );
             })}
           {definition?.stateKeys?.some((state) => state.contextOnly) && (
-            <section className="pw-module-menu-params" aria-label="Module context state controls">
-              <small>MODULE OPTIONS</small>
+            <section
+              className="pw-module-menu-params"
+              aria-label={t("moduleMenu.stateControlsAria")}
+            >
+              <small>{t("moduleMenu.optionsHeading")}</small>
               {definition.stateKeys
                 .map((state, id) => ({ state, id }))
                 .filter(({ state }) => state.contextOnly)
@@ -216,9 +226,9 @@ export function RackStudioContextMenus({
                       <output>
                         {state.type === "boolean"
                           ? value
-                            ? "On"
-                            : "Off"
-                          : (state.values?.[Math.round(value)] ?? value)}
+                            ? t("moduleMenu.on")
+                            : t("moduleMenu.off")
+                          : (state.values?.[Math.round(value)] ?? formatNumber(value))}
                       </output>
                     </label>
                   );
@@ -226,10 +236,10 @@ export function RackStudioContextMenus({
             </section>
           )}
           <button type="button" role="menuitem" onClick={() => onToggleBypass(module)}>
-            {module.bypassed ? "Enable module" : "Bypass module"}
+            {t(module.bypassed ? "moduleMenu.enable" : "moduleMenu.bypass")}
           </button>
           <button type="button" role="menuitem" disabled={modulesLocked} onClick={onDuplicate}>
-            Duplicate <kbd>⌘D</kbd>
+            {t("moduleMenu.duplicate")} <kbd>⌘D</kbd>
           </button>
           <button
             type="button"
@@ -237,7 +247,7 @@ export function RackStudioContextMenus({
             disabled={modulesLocked || !definition?.params.length}
             onClick={() => definition && onReset(module, definition)}
           >
-            Initialize controls
+            {t("moduleMenu.initializeControls")}
           </button>
           <button
             type="button"
@@ -245,7 +255,7 @@ export function RackStudioContextMenus({
             disabled={modulesLocked || !definition?.params.length}
             onClick={() => definition && onRandomize(module, definition)}
           >
-            Randomize controls
+            {t("moduleMenu.randomizeControls")}
           </button>
           <button
             type="button"
@@ -253,10 +263,10 @@ export function RackStudioContextMenus({
             disabled={modulesLocked}
             onClick={() => onDisconnect(module)}
           >
-            Disconnect cables
+            {t("moduleMenu.disconnectCables")}
           </button>
           <button type="button" role="menuitem" onClick={() => onSavePreset(module)}>
-            Save .vcvm preset
+            {t("moduleMenu.savePreset")}
           </button>
           <button
             type="button"
@@ -264,7 +274,7 @@ export function RackStudioContextMenus({
             disabled={modulesLocked}
             onClick={() => onLoadPreset(module)}
           >
-            Load .vcvm preset…
+            {t("moduleMenu.loadPreset")}
           </button>
           <button
             type="button"
@@ -272,7 +282,7 @@ export function RackStudioContextMenus({
             disabled={modulesLocked}
             onClick={() => onReplace(module)}
           >
-            Replace from Library…
+            {t("moduleMenu.replaceFromLibrary")}
           </button>
           <button
             type="button"
@@ -281,7 +291,7 @@ export function RackStudioContextMenus({
             disabled={modulesLocked}
             onClick={() => onDeleteModule(module)}
           >
-            Delete module
+            {t("moduleMenu.deleteModule")}
           </button>
         </div>
       )}
@@ -290,21 +300,21 @@ export function RackStudioContextMenus({
           className="pw-cable-menu"
           style={{ left: cableMenu.left, top: cableMenu.top }}
           role="menu"
-          aria-label={`Cable ${cable.id} actions`}
+          aria-label={t("cableMenu.aria", { id: cable.id })}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <header>
-            <span>CABLE</span>
-            <b>Signal connection</b>
+            <span>{t("cableMenu.header")}</span>
+            <b>{t("cableMenu.signalConnection")}</b>
           </header>
-          <div aria-label="Cable color">
+          <div aria-label={t("cableMenu.colorAria")}>
             {colors.map((color) => (
               <button
                 key={color}
                 type="button"
                 role="menuitem"
                 className={cable.color === color ? "active" : ""}
-                aria-label={`Use cable color ${color}`}
+                aria-label={t("cableMenu.useColor", { color })}
                 style={{ backgroundColor: color }}
                 disabled={modulesLocked}
                 onClick={() => onColor(color)}
@@ -312,7 +322,7 @@ export function RackStudioContextMenus({
             ))}
           </div>
           <button type="button" role="menuitem" disabled={modulesLocked} onClick={onInsertCable}>
-            Insert module here…
+            {t("cableMenu.insertModule")}
           </button>
           <button
             type="button"
@@ -321,7 +331,7 @@ export function RackStudioContextMenus({
             disabled={modulesLocked}
             onClick={() => onDeleteCable(cable)}
           >
-            Delete cable
+            {t("cableMenu.deleteCable")}
           </button>
         </div>
       )}

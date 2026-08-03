@@ -1,4 +1,5 @@
 import { useMemo, useRef, type PointerEvent } from "react";
+import { useI18n } from "../i18n/provider";
 
 const VOICE_COLORS = [
   "#ffc864",
@@ -42,6 +43,7 @@ export function RackMadzineWaveformDisplay({
   onLoopEnd: (value: number) => void;
   onLoopEndReset: () => void;
 }) {
+  const { t } = useI18n();
   const dragging = useRef<{ pointerId: number; lastX: number } | null>(null),
     recorded = Math.max(0, Math.round(values?.[0] ?? 0)),
     flags = Math.max(0, Math.round(values?.[2] ?? 0)),
@@ -100,7 +102,7 @@ export function RackMadzineWaveformDisplay({
   return (
     <svg
       className="pw-rack-madzine-waveform"
-      aria-label="Weiii Documenta stereo recording waveform"
+      aria-label={t("display.weiiiDocumentaWaveform")}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       style={{

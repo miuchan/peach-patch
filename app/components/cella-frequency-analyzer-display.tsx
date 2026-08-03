@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import { useI18n } from "../i18n/provider";
 
 const FFT_SIZE = 2048,
   SAMPLE_RATE = 48_000,
@@ -95,6 +96,7 @@ export const CellaFrequencyAnalyzerDisplay = memo(function CellaFrequencyAnalyze
   width,
   height,
 }: Props) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null),
     historyRef = useRef<number[][]>([[], []]),
     displayedRef = useRef<number[][]>(Array.from({ length: 3 }, () => BANDS.map(() => 0))),
@@ -309,7 +311,7 @@ export const CellaFrequencyAnalyzerDisplay = memo(function CellaFrequencyAnalyze
       ref={canvasRef}
       className="pw-rack-spectrum pw-cella-frequency-analyzer"
       style={{ left: x, top: y, width, height }}
-      aria-label="Live Cella frequency analyzer"
+      aria-label={t("display.cellaFrequencyAnalyzer")}
     />
   );
 });

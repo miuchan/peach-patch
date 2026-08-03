@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useI18n } from "../i18n/provider";
 
 const CARTRIDGES = ["CLEAN", "M44-7", "SCRATCH", "680 HP", "Q.BERT", "LO-FI"];
 
@@ -25,6 +26,7 @@ export const RackTemporalDeckDisplay = memo(function RackTemporalDeckDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const displayWidth = width * scaleX;
   const cx = displayWidth / 2;
   const cy = height / 2;
@@ -39,7 +41,14 @@ export const RackTemporalDeckDisplay = memo(function RackTemporalDeckDisplay({
 
   return (
     <div
-      aria-label={`Temporal Deck platter, ${loaded ? (playing ? "playing" : "paused") : "live buffer"}, ${CARTRIDGES[cartridge]} cartridge`}
+      aria-label={t(
+        loaded
+          ? playing
+            ? "display.temporalDeckPlaying"
+            : "display.temporalDeckPaused"
+          : "display.temporalDeckLiveBuffer",
+        { cartridge: CARTRIDGES[cartridge] },
+      )}
       style={{
         position: "absolute",
         left: x * scaleX,

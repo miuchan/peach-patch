@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/provider";
+
 const DISPLAY_STYLES = [
   { foreground: "#e40707", background: "#4e0c09", screen: "#3a1013" },
   { foreground: "#cdfffe", background: "#274699", screen: "#253b63" },
@@ -32,6 +34,7 @@ export function RackWolframDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { t } = useI18n();
   const menuActive = (values?.[0] ?? 0) > 0.5,
     miniMenuActive = (values?.[1] ?? 0) > 0.5,
     page = clamp(integer(values?.[2]), 0, 3),
@@ -119,11 +122,9 @@ export function RackWolframDisplay({
   return (
     <svg
       className="pw-wolfram-display"
-      aria-label={
-        menuActive
-          ? `Wolfram ${menuLines.join(" ").trim()} menu`
-          : `Wolfram ${engineLabel.trim()} cellular automaton display`
-      }
+      aria-label={t(menuActive ? "display.wolframMenu" : "display.wolframAutomaton", {
+        content: menuActive ? menuLines.join(" ").trim() : engineLabel.trim(),
+      })}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}

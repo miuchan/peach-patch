@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import rackMonoUrl from "../../assets/rack/fonts/ShareTechMono-Regular.ttf?url";
+import { useI18n } from "../i18n/provider";
 
 let rackMonoPromise: Promise<void> | undefined;
 function loadRackMono() {
@@ -12,9 +13,11 @@ function loadRackMono() {
   return rackMonoPromise;
 }
 
-function compactRate(sampleRate: number) {
+function compactRate(sampleRate: number, locale: string) {
   if (!(sampleRate > 0)) return "--- kHz";
-  return `${Number((sampleRate / 1000).toFixed(3))} kHz`;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(
+    sampleRate / 1000,
+  )} kHz`;
 }
 
 export function RackAudioDisplay({
@@ -36,36 +39,45 @@ export function RackAudioDisplay({
   height: number;
   scaleX: number;
 }) {
+  const { formatNumber, locale, t } = useI18n();
   useEffect(() => {
     void loadRackMono().catch(() => undefined);
   }, []);
 
   const text = useMemo(() => {
-    const driver = audio?.driver === 5 ? "Core Audio" : running ? "Web Audio" : "(No driver)",
+    const driver =
+        audio?.driver === 5 ? "Core Audio" : running ? "Web Audio" : t("display.audio.noDriver"),
       outputOffset = Math.max(0, Number(audio?.outputOffset) || 0),
       outputCount = running || audio?.deviceName ? Math.min(channels, 2) : 0,
-      deviceName = String(audio?.deviceName || (running ? "System output" : "")),
+      deviceName = String(audio?.deviceName || (running ? t("display.audio.systemOutput") : "")),
       device = deviceName
-        ? `${deviceName}${outputCount ? ` (${outputOffset + 1}-${outputOffset + outputCount} out)` : ""}`
-        : "(No device)",
+        ? `${deviceName}${
+            outputCount
+              ? ` (${t("display.audio.outputRange", {
+                  start: outputOffset + 1,
+                  end: outputOffset + outputCount,
+                })})`
+              : ""
+          }`
+        : t("display.audio.noDevice"),
       sampleRate = Number(audio?.sampleRate) || (running ? 48000 : 0),
       blockSize = Number(audio?.blockSize) || (running ? 128 : 0);
     return {
       driver,
       device,
-      rate: compactRate(sampleRate),
-      block: blockSize > 0 ? String(blockSize) : "---",
+      rate: compactRate(sampleRate, locale),
+      block: blockSize > 0 ? formatNumber(blockSize) : "---",
     };
-  }, [audio, channels, running]);
+  }, [audio, channels, formatNumber, locale, running, t]);
 
   if (channels === 2)
     return (
       <div
         className="pw-rack-audio-display audio-2"
         style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
-        aria-label="Live Rack audio device display"
+        aria-label={t("display.audioDevice")}
       >
-        <div>{text.device.replace(/^\((.+)\)$/, "$1")}</div>
+        <div>{text.device.replace(/^[（(](.+)[）)]$/, "$1")}</div>
         <span aria-hidden="true">0</span>
         <span aria-hidden="true">−3</span>
         <span aria-hidden="true">−6</span>
@@ -80,13 +92,13 @@ export function RackAudioDisplay({
     <div
       className="pw-rack-audio-display"
       style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
-      aria-label="Live Rack audio device display"
+      aria-label={t("display.audioDevice")}
     >
-      <div>{wide ? `Driver: ${text.driver}` : text.driver}</div>
-      <div>{wide ? `Device: ${text.device}` : text.device}</div>
+      <div>{wide ? t("display.audio.driver", { driver: text.driver }) : text.driver}</div>
+      <div>{wide ? t("display.audio.device", { device: text.device }) : text.device}</div>
       <div className="split">
-        <span>{wide ? `Rate: ${text.rate}` : text.rate}</span>
-        <span>{wide ? `Block size: ${text.block}` : text.block}</span>
+        <span>{wide ? t("display.audio.rate", { rate: text.rate }) : text.rate}</span>
+        <span>{wide ? t("display.audio.blockSize", { block: text.block }) : text.block}</span>
       </div>
     </div>
   );
