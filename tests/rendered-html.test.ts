@@ -72,6 +72,30 @@ test("large racks keep viewport gestures off the React render path", async () =>
   assert.match(styles, /\.pw-world\.viewport-overview \.pw-module>\*\{display:none!important\}/);
 });
 
+test("cable endpoint previews use an isolated Canvas without React pointer-move state", async () => {
+  const [studio, preview, previewLayer, layout, cableLayer] = await Promise.all([
+    readFile(new URL("app/rack-web-studio.tsx", root), "utf8"),
+    readFile(new URL("lib/rack-cable-preview.ts", root), "utf8"),
+    readFile(new URL("app/components/rack-studio-cable-preview-layer.tsx", root), "utf8"),
+    readFile(new URL("lib/rack-cable-layout.ts", root), "utf8"),
+    readFile(new URL("app/components/rack-studio-cable-layer.tsx", root), "utf8"),
+  ]);
+  const rackStart = studio.indexOf("className={`pw-rack");
+  const rackPointerMove = studio.slice(
+    studio.indexOf("onPointerMove=", rackStart),
+    studio.indexOf("onPointerUp=", rackStart),
+  );
+  assert.doesNotMatch(studio, /setCableDragPoint/);
+  assert.doesNotMatch(rackPointerMove, /setCable(?:Drag|Draft)/);
+  assert.match(rackPointerMove, /cablePreviewWriterRef\.current\?\.preview/);
+  assert.match(preview, /at most one preview draw per frame/);
+  assert.match(previewLayer, /<canvas ref=\{canvasRef\} className="pw-cable-preview"/);
+  assert.match(previewLayer, /quadraticCurveTo/);
+  assert.match(layout, /const modulesById = new Map/);
+  assert.match(cableLayer, /data-cable-id=\{path\.id\}/);
+  assert.match(cableLayer, /className="pw-cable-line"/);
+});
+
 test("official source widths stay canonical across image loads and autosave restore", async () => {
   const [panel, studio, cableLayer, styles, manual, arpeggiator, corrupter, tapestry, paramVisual] = await Promise.all([
     readFile(new URL("app/components/module-panel.tsx", root), "utf8"),

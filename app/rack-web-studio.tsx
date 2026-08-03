@@ -2,6 +2,7 @@ import {
   startTransition,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +11,11 @@ import {
 import { Maximize2 } from "lucide-react";
 import type { MadzineManualTarget } from "./components/rack-madzine-manual";
 import { RackStudioCableLayer } from "./components/rack-studio-cable-layer";
+import {
+  RackStudioCablePreviewLayer,
+  type RackCablePreviewLayerHandle,
+  type RackCablePreviewLayout,
+} from "./components/rack-studio-cable-preview-layer";
 import { parseVcvArchive } from "../lib/vcv-patch";
 import type {
   ModuleInstance,
@@ -29,9 +35,13 @@ import {
 import {
   cableSignalLevels,
   layoutPatchCables,
+  layoutRackCablePreview,
   layoutRackCableDraft,
-  type RackCableDragPreview,
+  type RackCablePreviewSession,
 } from "../lib/rack-cable-layout";
+import {
+  createRackCablePreviewWriter,
+} from "../lib/rack-cable-preview";
 import { loadBrowserAsset } from "../lib/browser-asset-loader";
 import { importVcvPatch } from "../lib/vcv-patch-import";
 import {
@@ -112,8 +122,21 @@ const CABLES = [
 ];
 const EMPTY_RACK_PATCH_URL = "https://patchstorage.com/meditation-patch/";
 type PortClick = { moduleId: string; direction: "in" | "out"; portId: number };
-type CableDrag = { cableId: string; side: "input" | "output"; port: PortClick };
-type CableDraft = { port: PortClick; color: string };
+type CablePoint = { x: number; y: number };
+type CableRackOrigin = { left: number; top: number };
+type CableDrag = {
+  cableId: string;
+  side: "input" | "output";
+  port: PortClick;
+  initialPoint: CablePoint;
+  rackOrigin: CableRackOrigin;
+};
+type CableDraft = {
+  port: PortClick;
+  color: string;
+  initialPoint: CablePoint;
+  rackOrigin: CableRackOrigin;
+};
 type PatchOpenFailure =
   | { kind: "blocked"; error: BlockedVcvPatchError }
   | { kind: "invalid"; message: string };
@@ -123,6 +146,18 @@ type RackVisualSignals = {
   scopes: Record<string, number[][]>;
   lights: Record<string, number[]>;
 };
+
+function rackPointFromClient(
+  rackOrigin: CableRackOrigin,
+  clientX: number,
+  clientY: number,
+  viewport: { pan: CablePoint; zoom: number },
+): CablePoint {
+  return {
+    x: (clientX - rackOrigin.left - viewport.pan.x) / viewport.zoom,
+    y: (clientY - rackOrigin.top - viewport.pan.y) / viewport.zoom,
+  };
+}
 type ResolveResult = {
   key: string;
   plugin: string;
@@ -192,8 +227,7 @@ export function RackWebStudio() {
     ),
     [pending, setPending] = useState<PortClick | null>(null),
     [cableDrag, setCableDrag] = useState<CableDrag | null>(null),
-    [cableDraft, setCableDraft] = useState<CableDraft | null>(null),
-    [cableDragPoint, setCableDragPoint] = useState<{ x: number; y: number } | null>(null);
+    [cableDraft, setCableDraft] = useState<CableDraft | null>(null);
   const [manualHelpHover,setManualHelpHover]=useState<{
     moduleId:string;
     type:"module"|"param"|"in"|"out";
@@ -254,9 +288,26 @@ export function RackWebStudio() {
     rackRef = useRef<HTMLDivElement>(null),
     worldRef = useRef<HTMLDivElement>(null),
     viewportInteractingRef = useRef(false),
+    cableInteractingRef = useRef(false),
     deferredVisualSignalsRef = useRef(false),
     visualSignalsRef = useRef(visualSignals),
     wasmRef = useRef(new Map<string, wasmHost.WasmExports>());
+  const cablePreviewLayerRef = useRef<RackCablePreviewLayerHandle | null>(null),
+    cablePreviewWriterRef = useRef<ReturnType<typeof createRackCablePreviewWriter> | null>(null);
+  useEffect(() => {
+    const writer = createRackCablePreviewWriter((preview) => {
+      cablePreviewLayerRef.current?.draw(
+        preview.geometry,
+        preview.viewport,
+        preview.color,
+      );
+    });
+    cablePreviewWriterRef.current = writer;
+    return () => {
+      writer.cancel();
+      cablePreviewWriterRef.current = null;
+    };
+  }, []);
   const viewportControlRef=useRef({pan,zoom}),
     undularLockRef=useRef<{x:number|null;y:number|null}>({x:null,y:null});
   const clipboardRef = useRef<{
@@ -371,7 +422,7 @@ export function RackWebStudio() {
     (updater: (previous: RackVisualSignals) => RackVisualSignals) => {
       const next = updater(visualSignalsRef.current);
       visualSignalsRef.current = next;
-      if (viewportInteractingRef.current) {
+      if (viewportInteractingRef.current || cableInteractingRef.current) {
         deferredVisualSignalsRef.current = true;
         return;
       }
@@ -382,10 +433,18 @@ export function RackWebStudio() {
 
   const handleViewportInteractionChange = useCallback((active: boolean) => {
     viewportInteractingRef.current = active;
-    if (active || !deferredVisualSignalsRef.current) return;
+    if (active || cableInteractingRef.current || !deferredVisualSignalsRef.current) return;
     deferredVisualSignalsRef.current = false;
     startTransition(() => setVisualSignals(visualSignalsRef.current));
   }, []);
+
+  useEffect(() => {
+    const active = Boolean(cableDrag || cableDraft);
+    cableInteractingRef.current = active;
+    if (active || viewportInteractingRef.current || !deferredVisualSignalsRef.current) return;
+    deferredVisualSignalsRef.current = false;
+    startTransition(() => setVisualSignals(visualSignalsRef.current));
+  }, [cableDraft, cableDrag]);
 
   const createAudioEngine = useCallback(
     () =>
@@ -469,7 +528,6 @@ export function RackWebStudio() {
     if (!cableDraft) return;
     const cancelDraft = () => {
       setCableDraft(null);
-      setCableDragPoint(null);
       setPending(null);
     };
     const finishOutsideRack = (event: globalThis.PointerEvent) => {
@@ -583,7 +641,6 @@ export function RackWebStudio() {
       setPending(null);
       setCableDraft(null);
       setCableDrag(null);
-      setCableDragPoint(null);
       setTelemetry({});
       const fitted = fittedPatchViewport(
         modules,
@@ -866,36 +923,33 @@ export function RackWebStudio() {
         : { moduleId: path.fromModule, direction: "out" as const, portId: path.fromPort };
       const rack = rackRef.current;
       if (!rack) return;
-      const rect = rack.getBoundingClientRect();
       const viewport = viewportControlRef.current;
+      const rect = rack.getBoundingClientRect();
+      const rackOrigin = { left: rect.left, top: rect.top };
+      const initialPoint = rackPointFromClient(rackOrigin, event.clientX, event.clientY, viewport);
       setCableDraft({
         port,
         color: CABLES[patch.cables.length % CABLES.length],
+        initialPoint,
+        rackOrigin,
       });
-      setCableDragPoint({
-        x: (event.clientX - rect.left - viewport.pan.x) / viewport.zoom,
-        y: (event.clientY - rect.top - viewport.pan.y) / viewport.zoom,
-      });
-      setPending(port);
-      setSelectedCableIds(new Set());
       setStatus("Stacking a new cable · release on a compatible port");
       return;
     }
     const port = side === "input"
       ? { moduleId: path.fromModule, direction: "out" as const, portId: path.fromPort }
       : { moduleId: path.toModule, direction: "in" as const, portId: path.toPort };
-    setCableDrag({ cableId: path.id, side, port });
     const rack = rackRef.current;
-    if (rack) {
-      const rect = rack.getBoundingClientRect();
-      const viewport = viewportControlRef.current;
-      setCableDragPoint({
-        x: (event.clientX - rect.left - viewport.pan.x) / viewport.zoom,
-        y: (event.clientY - rect.top - viewport.pan.y) / viewport.zoom,
-      });
-    }
-    setPending(port);
-    setSelectedCableIds(new Set([path.id]));
+    if (!rack) return;
+    const rect = rack.getBoundingClientRect();
+    const rackOrigin = { left: rect.left, top: rect.top };
+    const initialPoint = rackPointFromClient(
+      rackOrigin,
+      event.clientX,
+      event.clientY,
+      viewportControlRef.current,
+    );
+    setCableDrag({ cableId: path.id, side, port, initialPoint, rackOrigin });
     setStatus("Dragging cable end · release on another compatible port to reconnect, or empty rack to disconnect");
   }, [modulesLocked, patch.cables.length, rackRef]);
 
@@ -914,20 +968,18 @@ export function RackWebStudio() {
     event.stopPropagation();
     const rack = rackRef.current;
     if (!rack) return;
-    const rect = rack.getBoundingClientRect();
     const viewport = viewportControlRef.current;
+    const rect = rack.getBoundingClientRect();
+    const rackOrigin = { left: rect.left, top: rect.top };
+    const initialPoint = rackPointFromClient(rackOrigin, event.clientX, event.clientY, viewport);
     setCableDraft({
       port,
       color: CABLES[patch.cables.length % CABLES.length],
+      initialPoint,
+      rackOrigin,
     });
-    setCableDragPoint({
-      x: (event.clientX - rect.left - viewport.pan.x) / viewport.zoom,
-      y: (event.clientY - rect.top - viewport.pan.y) / viewport.zoom,
-    });
-    if (!pending) setPending(port);
-    setSelectedCableIds(new Set());
     setStatus("Dragging a new cable · release on a compatible port to connect");
-  }, [cableTension, modulesLocked, patch, pending, registry, startCableDrag]);
+  }, [cableTension, modulesLocked, patch, registry, startCableDrag]);
 
   const finishCableDragOnPort = useCallback((target: PortClick, event: React.PointerEvent<HTMLButtonElement>) => {
     if (cableDraft) {
@@ -937,7 +989,6 @@ export function RackWebStudio() {
       if (samePort) {
         event.stopPropagation();
         setCableDraft(null);
-        setCableDragPoint(null);
         return true;
       }
       event.preventDefault();
@@ -945,7 +996,6 @@ export function RackWebStudio() {
       suppressNextPortClick();
       connectDraggedPorts(cableDraft.port, target);
       setCableDraft(null);
-      setCableDragPoint(null);
       return true;
     }
     if (!cableDrag) return false;
@@ -955,7 +1005,6 @@ export function RackWebStudio() {
     if (cableDrag.port.direction === target.direction || cableDrag.port.moduleId === target.moduleId) {
       setStatus("Cable end needs the opposite port on another module");
       setCableDrag(null);
-      setCableDragPoint(null);
       setPending(null);
       return true;
     }
@@ -965,30 +1014,95 @@ export function RackWebStudio() {
       setStatus("Cable reconnected · port stacks preserved · undo is available");
     } else setStatus("That exact cable connection already exists");
     setCableDrag(null);
-    setCableDragPoint(null);
     setPending(null);
     return true;
   }, [cableDraft, cableDrag, commitHistory, connectDraggedPorts, patch, suppressNextPortClick]);
 
   const cablePaths = useMemo(
-    () => {
-      const cableDragPreview: RackCableDragPreview | undefined = cableDrag && cableDragPoint
-        ? { cableId: cableDrag.cableId, side: cableDrag.side, ...cableDragPoint }
-        : undefined;
-      return layoutPatchCables(patch, registry, cableTension, cableDragPreview);
-    },
-    [cableDrag, cableDragPoint, cableTension, patch, registry],
+    () => layoutPatchCables(patch, registry, cableTension),
+    [cableTension, patch, registry],
   );
   const cableDraftPath = useMemo(
-    () => cableDraft && cableDragPoint
+    () => cableDraft
       ? layoutRackCableDraft(patch, registry, cableTension, {
           ...cableDraft.port,
-          ...cableDragPoint,
+          ...cableDraft.initialPoint,
           color: cableDraft.color,
         })
       : undefined,
-    [cableDraft, cableDragPoint, cableTension, patch, registry],
+    [cableDraft, cableTension, patch, registry],
   );
+  const cableDragPath = useMemo(
+    () => cableDrag
+      ? cablePaths.find((candidate) => candidate.id === cableDrag.cableId)
+      : undefined,
+    [cableDrag, cablePaths],
+  );
+  const cablePreviewSession = useMemo<RackCablePreviewSession | null>(() => {
+    if (cableDrag) {
+      if (!cableDragPath) return null;
+      return {
+        movingSide: cableDrag.side,
+        anchor: cableDrag.side === "input"
+          ? { x: cableDragPath.x1, y: cableDragPath.y1 }
+          : { x: cableDragPath.x2, y: cableDragPath.y2 },
+        initialPoint: cableDrag.initialPoint,
+      };
+    }
+    if (!cableDraft || !cableDraftPath) return null;
+    const movingSide = cableDraft.port.direction === "out" ? "input" : "output";
+    return {
+      movingSide,
+      anchor: movingSide === "input"
+        ? { x: cableDraftPath.x1, y: cableDraftPath.y1 }
+        : { x: cableDraftPath.x2, y: cableDraftPath.y2 },
+      initialPoint: cableDraft.initialPoint,
+    };
+  }, [cableDraft, cableDraftPath, cableDrag, cableDragPath]);
+  const cablePreviewLayout = useMemo<RackCablePreviewLayout | null>(() => {
+    if (!cablePreviewSession) return null;
+    const geometry = layoutRackCablePreview(
+      cablePreviewSession,
+      cablePreviewSession.initialPoint,
+      cableTension,
+    );
+    if (cableDrag) {
+      return cableDragPath ? {
+        ...geometry,
+        color: cableDragPath.color,
+      } : null;
+    }
+    if (!cableDraft) return null;
+    return {
+      ...geometry,
+      color: cableDraft.color,
+    };
+  }, [cableDraft, cableDrag, cableDragPath, cablePreviewSession, cableTension]);
+
+  useLayoutEffect(() => {
+    const writer = cablePreviewWriterRef.current;
+    writer?.cancel();
+    const world = worldRef.current;
+    if (!writer || !world || !cablePreviewLayout) return;
+    const sourceGroup = cableDrag
+      ? world.querySelector<SVGGElement>(
+          `.pw-cable-layout[data-cable-id="${CSS.escape(cableDrag.cableId)}"]`,
+        )
+      : null;
+    const previousVisibility = sourceGroup?.style.visibility ?? "";
+    if (sourceGroup) sourceGroup.style.visibility = "hidden";
+    writer.preview({
+      geometry: cablePreviewLayout,
+      viewport: { pan, zoom },
+      color: cablePreviewLayout.color,
+    });
+    writer.flush();
+    return () => {
+      writer.cancel();
+      if (sourceGroup) sourceGroup.style.visibility = previousVisibility;
+    };
+  }, [cableDrag, cablePreviewLayout, pan, zoom]);
+
   const jackSignalLevels = useMemo(
     () => cableSignalLevels(patch.cables, visualSignals.cables),
     [patch.cables, visualSignals.cables],
@@ -2461,7 +2575,6 @@ export function RackWebStudio() {
     setPending(null);
     setCableDraft(null);
     setCableDrag(null);
-    setCableDragPoint(null);
     setLibraryOpen(true);
     setStatus("New empty patch");
   };
@@ -2631,13 +2744,22 @@ export function RackWebStudio() {
         className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
         aria-label="Peach Patch modular rack"
         onPointerMove={(event) => {
-          if (cableDrag || cableDraft) {
-            const rect = event.currentTarget.getBoundingClientRect();
+          const cableInteraction = cableDrag ?? cableDraft;
+          if (cableInteraction && cablePreviewSession) {
             const viewport = readViewport();
-            setCableDragPoint({
-              x: (event.clientX - rect.left - viewport.pan.x) / viewport.zoom,
-              y: (event.clientY - rect.top - viewport.pan.y) / viewport.zoom,
-            });
+            const point = rackPointFromClient(
+              cableInteraction.rackOrigin,
+              event.clientX,
+              event.clientY,
+              viewport,
+            );
+            cablePreviewWriterRef.current?.preview(
+              {
+                geometry: layoutRackCablePreview(cablePreviewSession, point, cableTension),
+                viewport,
+                color: cablePreviewLayout?.color ?? "#fff",
+              },
+            );
           }
           pointerMove(event);
         }}
@@ -2645,7 +2767,6 @@ export function RackWebStudio() {
           if (cableDraft) {
             if ((event.target as Element).closest(".pw-ports button")) return;
             setCableDraft(null);
-            setCableDragPoint(null);
             setPending(null);
             setStatus("Cable drag cancelled");
             return;
@@ -2657,7 +2778,6 @@ export function RackWebStudio() {
               cables: current.cables.filter((cable) => cable.id !== cableDrag.cableId),
             }));
             setCableDrag(null);
-            setCableDragPoint(null);
             setPending(null);
             setStatus("Cable disconnected · undo is available");
             return;
@@ -2669,7 +2789,13 @@ export function RackWebStudio() {
           pointerUp(event);
         }}
         onPointerCancel={(event) => {
-          if (cableDrag || cableDraft) return;
+          if (cableDrag || cableDraft) {
+            setCableDrag(null);
+            setCableDraft(null);
+            setPending(null);
+            setStatus("Cable drag cancelled");
+            return;
+          }
           pointerUp(event);
         }}
         onPointerDown={(event) => {
@@ -2844,7 +2970,6 @@ export function RackWebStudio() {
           />
           <RackStudioCableLayer
             paths={cablePaths}
-            draft={cableDraftPath}
             surface={rackSurface}
             visible={cablesVisible}
             opacity={cableOpacity}
@@ -2988,6 +3113,12 @@ export function RackWebStudio() {
             }}
           />
         </div>
+        <RackStudioCablePreviewLayer
+          ref={cablePreviewLayerRef}
+          layout={cablePreviewLayout}
+          pan={pan}
+          zoom={zoom}
+        />
         <RackStudioContextMenus
           moduleMenu={moduleMenu}
           cableMenu={cableMenu}

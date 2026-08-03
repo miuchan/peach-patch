@@ -11,12 +11,34 @@ export type RackCableLayout = PatchDocument["cables"][number] & {
   inputAngle: number;
   topOutputPlug: boolean;
   topInputPlug: boolean;
+  curveStartX: number;
+  curveStartY: number;
+  curveControlX: number;
+  curveControlY: number;
+  curveEndX: number;
+  curveEndY: number;
   d: string;
+};
+
+export type RackCableGeometry = Pick<
+  RackCableLayout,
+  | "x1" | "y1" | "x2" | "y2"
+  | "outputAngle" | "inputAngle"
+  | "curveStartX" | "curveStartY"
+  | "curveControlX" | "curveControlY"
+  | "curveEndX" | "curveEndY"
+  | "d"
+>;
+
+export type RackCablePreviewSession = {
+  movingSide: "input" | "output";
+  anchor: { x: number; y: number };
+  initialPoint: { x: number; y: number };
 };
 
 export type RackCableDragPreview = {
   cableId: string;
-  side: "input" | "output";
+  side: RackCablePreviewSession["movingSide"];
   x: number;
   y: number;
 };
@@ -75,11 +97,11 @@ function portPosition(
   return resolvedModulePortPosition(module, direction, portId, ports, definition?.width ?? module.width);
 }
 
-function cableGeometry(
+export function rackCableGeometry(
   output: { x: number; y: number },
   input: { x: number; y: number },
   tension: number,
-) {
+): RackCableGeometry {
   const sag = Math.max(70, Math.abs(input.x - output.x) * 0.22) * (1.5 - tension);
   const slumpX = (output.x + input.x) / 2;
   const slumpY = (output.y + input.y) / 2 + sag;
@@ -97,8 +119,24 @@ function cableGeometry(
     y2: input.y,
     outputAngle,
     inputAngle,
+    curveStartX: startX,
+    curveStartY: startY,
+    curveControlX: slumpX,
+    curveControlY: slumpY,
+    curveEndX: endX,
+    curveEndY: endY,
     d: `M${startX} ${startY} Q${slumpX} ${slumpY},${endX} ${endY}`,
   };
+}
+
+export function layoutRackCablePreview(
+  session: Pick<RackCablePreviewSession, "movingSide" | "anchor">,
+  point: { x: number; y: number },
+  tension: number,
+) {
+  return session.movingSide === "input"
+    ? rackCableGeometry(session.anchor, point, tension)
+    : rackCableGeometry(point, session.anchor, tension);
 }
 
 export function layoutPatchCables(
@@ -108,11 +146,13 @@ export function layoutPatchCables(
   dragPreview?: RackCableDragPreview,
 ): RackCableLayout[] {
   const definitionsByKey = new Map(definitions.map((definition) => [definition.key, definition]));
+  const modulesById = new Map(patch.modules.map((module) => [module.id, module]));
   const ranked = rankedPlugIds(patch);
-  return patch.cables.flatMap((cable) => {
-    const from = patch.modules.find((module) => module.id === cable.fromModule);
-    const to = patch.modules.find((module) => module.id === cable.toModule);
-    if (!from || !to) return [];
+  const layouts: RackCableLayout[] = [];
+  for (const cable of patch.cables) {
+    const from = modulesById.get(cable.fromModule);
+    const to = modulesById.get(cable.toModule);
+    if (!from || !to) continue;
     const fromDefinition = definitionsByKey.get(from.key);
     const toDefinition = definitionsByKey.get(to.key);
     const output = portPosition(from, "out", cable.fromPort, fromDefinition);
@@ -123,13 +163,14 @@ export function layoutPatchCables(
     const previewInput = dragPreview?.cableId === cable.id && dragPreview.side === "input"
       ? { x: dragPreview.x, y: dragPreview.y }
       : input;
-    return [{
+    layouts.push({
       ...cable,
-      ...cableGeometry(previewOutput, previewInput, tension),
+      ...rackCableGeometry(previewOutput, previewInput, tension),
       topOutputPlug: ranked.outputs.get(`${cable.fromModule}:${cable.fromPort}`)?.id === cable.id,
       topInputPlug: ranked.inputs.get(`${cable.toModule}:${cable.toPort}`)?.id === cable.id,
-    }];
-  });
+    });
+  }
+  return layouts;
 }
 
 export function layoutRackCableDraft(
@@ -144,8 +185,8 @@ export function layoutRackCableDraft(
   const anchor = portPosition(module, draft.direction, draft.portId, definition);
   const pointer = { x: draft.x, y: draft.y };
   const geometry = draft.direction === "out"
-    ? cableGeometry(anchor, pointer, tension)
-    : cableGeometry(pointer, anchor, tension);
+    ? rackCableGeometry(anchor, pointer, tension)
+    : rackCableGeometry(pointer, anchor, tension);
   return {
     id: "cable-draft",
     color: draft.color,
