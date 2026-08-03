@@ -8,12 +8,9 @@ export function rackParamIsVisible(
 ) {
   if (param.visibleWhenState) {
     const stateIndex =
-      stateKeys?.findIndex(
-        (item) => item.key === param.visibleWhenState?.key,
-      ) ?? -1;
+      stateKeys?.findIndex((item) => item.key === param.visibleWhenState?.key) ?? -1;
     if (stateIndex < 0) return false;
-    const stateValue =
-      state?.[stateIndex] ?? stateKeys?.[stateIndex]?.default ?? 0;
+    const stateValue = state?.[stateIndex] ?? stateKeys?.[stateIndex]?.default ?? 0;
     if (Math.round(stateValue) !== param.visibleWhenState.equals) return false;
   }
 

@@ -88,31 +88,31 @@ The application currently loads the `main` branch index from [miuchan/peach-patc
 
 ## Development
 
-The application uses React 19, TypeScript, Vite, the Cloudflare Vite plugin, a small Worker API layer, AudioWorklet, and standalone WebAssembly module artifacts. Useful checks before opening a pull request:
+The application uses React 19, TypeScript, Vite, the Cloudflare Vite plugin, a small Worker API layer, AudioWorklet, and standalone WebAssembly module artifacts. Run the same quality gate used by CI before opening a pull request:
 
 ```bash
-npm run typecheck
-npm run lint
-npm test
+npm run check
 ```
 
-`npm test` runs the type check, production build, and coverage-gated Node test suite. The gate requires at least 95% line coverage, 95% function coverage, and 80% branch coverage across the core `lib/` and `server/` TypeScript executed by the suite. Run `npm run test:unit` for a fast test pass or `npm run test:coverage` to inspect the coverage report directly.
+`npm run check` verifies formatting and lint rules, then runs `npm test`. The test command performs the type check, production build, and coverage-gated Node suite. The gate requires at least 95% line coverage, 95% function coverage, and 80% branch coverage across the core `lib/` and `server/` TypeScript executed by the suite. Run `npm run test:unit` for a fast test pass or `npm run test:coverage` to inspect the coverage report directly.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, repository ownership boundaries, validation principles, and the pull-request checklist.
 
 Browser-facing behavior stays covered at the boundary that owns it. The AudioWorklet graph uses its dedicated VM behavior tests, while build and rendered-output tests protect browser integration; those adapters are not folded into the core TypeScript percentage.
 
 ### Project layout
 
-| Directory | Purpose |
-| --- | --- |
-| `app/` | React application, patch editor, Library, and browser UI |
-| `lib/` | Patch domain, registry client, runtime types, and browser adapters |
-| `public/audio/` | AudioWorklet processors used by the browser runtime |
-| `assets/rack/` | Small Rack-derived UI assets required locally by the application |
-| `server/` | Validated API handlers for Library metadata, PatchStorage, and Rack UI assets |
-| `worker/` | Cloudflare Worker router and SPA asset fallback |
-| `build/` | Vite integration used by the hosting environment |
-| `tests/` | Type, registry, patch, runtime, and rendered-output tests |
-| `docs/` | Architecture, WebAssembly runtime, and UX documentation |
+| Directory       | Purpose                                                                       |
+| --------------- | ----------------------------------------------------------------------------- |
+| `app/`          | React composition, page hooks, dialogs, patch editor, Library, and browser UI |
+| `lib/`          | Pure patch domains, registry boundaries, audio coordination, and adapters     |
+| `public/audio/` | AudioWorklet processors used by the browser runtime                           |
+| `assets/rack/`  | Small Rack-derived UI assets required locally by the application              |
+| `server/`       | Validated API handlers for Library metadata, PatchStorage, and Rack UI assets |
+| `worker/`       | Cloudflare Worker router and SPA asset fallback                               |
+| `build/`        | Vite integration used by the hosting environment                              |
+| `tests/`        | Type, registry, patch, runtime, and rendered-output tests                     |
+| `docs/`         | Architecture, WebAssembly runtime, and UX documentation                       |
 
 Build inputs and published WebAssembly artifacts are intentionally maintained in the companion [peach-patch-registry](https://github.com/miuchan/peach-patch-registry), rather than duplicated in this application repository.
 

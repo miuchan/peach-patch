@@ -5,9 +5,18 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import "./globals.css";
 
+function RackLoadingFallback() {
+  return (
+    <main className="pw-app-loading" aria-live="polite">
+      Loading Peach Patch…
+    </main>
+  );
+}
+
 const router = createBrowserRouter([
   {
     path: "*",
+    HydrateFallback: RackLoadingFallback,
     lazy: async () => {
       const { RackWebStudio } = await import("./rack-web-studio");
       return { Component: RackWebStudio };

@@ -82,25 +82,29 @@ export function browserWasiImports(holder: WasmHostState) {
         return 0;
       },
       fd_read(_fd: number, _iovecs: number, _count: number, read: number) {
-        if (holder.runtime)
-          new DataView(holder.runtime.memory.buffer).setUint32(read, 0, true);
+        if (holder.runtime) new DataView(holder.runtime.memory.buffer).setUint32(read, 0, true);
         return 0;
       },
-      fd_sync() { return 0; },
+      fd_sync() {
+        return 0;
+      },
       fd_seek(_fd: number, _offset: bigint, _whence: number, newOffset: number) {
         if (holder.runtime)
           new DataView(holder.runtime.memory.buffer).setBigUint64(newOffset, 0n, true);
         return 0;
       },
       fd_fdstat_get(_fd: number, status: number) {
-        if (holder.runtime)
-          new Uint8Array(holder.runtime.memory.buffer, status, 24).fill(0);
+        if (holder.runtime) new Uint8Array(holder.runtime.memory.buffer, status, 24).fill(0);
         return 0;
       },
       clock_time_get(_clockId: number, _precision: bigint, time: number) {
         if (!holder.runtime) return 0;
         holder.clockNanoseconds = (holder.clockNanoseconds ?? 1_000_000_000n) + 1_000_000n;
-        new DataView(holder.runtime.memory.buffer).setBigUint64(time, holder.clockNanoseconds, true);
+        new DataView(holder.runtime.memory.buffer).setBigUint64(
+          time,
+          holder.clockNanoseconds,
+          true,
+        );
         return 0;
       },
       random_get(buffer: number, length: number) {
@@ -123,8 +127,12 @@ export function browserWasiImports(holder: WasmHostState) {
         view.setUint32(size, 0, true);
         return 0;
       },
-      environ_get() { return 0; },
-      fd_close() { return 0; },
+      environ_get() {
+        return 0;
+      },
+      fd_close() {
+        return 0;
+      },
     },
   };
 }

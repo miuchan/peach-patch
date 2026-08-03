@@ -1,15 +1,14 @@
-// @ts-nocheck
-// @ts-nocheck
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
   appendAutomationEvent,
   automationClipFromPatch,
   patchWithAutomationClip,
+  type PatchAutomationEvent,
 } from "../lib/patch-automation.ts";
 
 test("automation coalesces dense control changes and round-trips in patch data", () => {
-  const events = [];
+  const events: PatchAutomationEvent[] = [];
   appendAutomationEvent(events, { timeMs: 0, moduleId: "vca", paramId: 0, value: 0 });
   appendAutomationEvent(events, { timeMs: 8, moduleId: "vca", paramId: 0, value: 0.5 });
   appendAutomationEvent(events, { timeMs: 20, moduleId: "vca", paramId: 0, value: 1 });
@@ -25,7 +24,7 @@ test("automation coalesces dense control changes and round-trips in patch data",
     ),
     restored = automationClipFromPatch(patch);
   assert.deepEqual(restored, { durationMs: 40, events });
-  assert.equal(patch.rack.version, "2.6.6");
+  assert.equal(patch.rack?.version, "2.6.6");
 });
 
 test("automation reader rejects malformed events", () => {

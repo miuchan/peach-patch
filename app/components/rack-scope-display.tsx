@@ -14,10 +14,10 @@ export function RackScopeDisplay({
   offsetY,
   threshold,
   triggerEnabled,
-  width=195,
-  height=165,
-  left=0,
-  top=38.5,
+  width = 195,
+  height = 165,
+  left = 0,
+  top = 38.5,
 }: {
   x?: number[];
   y?: number[];
@@ -28,10 +28,10 @@ export function RackScopeDisplay({
   offsetY: number;
   threshold: number;
   triggerEnabled: boolean;
-  width?:number;
-  height?:number;
-  left?:number;
-  top?:number;
+  width?: number;
+  height?: number;
+  left?: number;
+  top?: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -53,20 +53,22 @@ export function RackScopeDisplay({
     for (let line = 0; line < 5; line++) {
       const row = 15 + (pixelHeight - 30) * (line / 4);
       context.beginPath();
-      context.moveTo(0, row + .5);
-      context.lineTo(pixelWidth, row + .5);
+      context.moveTo(0, row + 0.5);
+      context.lineTo(pixelWidth, row + 0.5);
       context.stroke();
     }
-    const xs = finite(x), ys = finite(y), count = Math.max(xs.length, ys.length);
+    const xs = finite(x),
+      ys = finite(y),
+      count = Math.max(xs.length, ys.length);
     const normalizedX = (value: number) =>
-      pixelWidth * (.5 + (value + offsetX) * Math.pow(2, Math.round(gainX)) / 20);
+      pixelWidth * (0.5 + ((value + offsetX) * Math.pow(2, Math.round(gainX))) / 20);
     const normalizedY = (value: number, gain: number, offset: number) =>
-      15 + (pixelHeight - 30) * (.5 - (value + offset) * Math.pow(2, Math.round(gain)) / 20);
+      15 + (pixelHeight - 30) * (0.5 - ((value + offset) * Math.pow(2, Math.round(gain))) / 20);
     const drawWave = (samples: number[], color: string, gain: number, offset: number) => {
       if (samples.length < 2) return;
       context.beginPath();
       samples.forEach((value, index) => {
-        const px = index / (samples.length - 1) * pixelWidth,
+        const px = (index / (samples.length - 1)) * pixelWidth,
           py = normalizedY(value, gain, offset);
         if (index) context.lineTo(px, py);
         else context.moveTo(px, py);
@@ -99,8 +101,8 @@ export function RackScopeDisplay({
         context.strokeStyle = "rgba(255,255,255,.12)";
         context.lineWidth = 1;
         context.beginPath();
-        context.moveTo(0, triggerY + .5);
-        context.lineTo(pixelWidth - 12, triggerY + .5);
+        context.moveTo(0, triggerY + 0.5);
+        context.lineTo(pixelWidth - 12, triggerY + 0.5);
         context.stroke();
         context.fillStyle = "rgba(255,255,255,.46)";
         context.beginPath();
@@ -134,5 +136,12 @@ export function RackScopeDisplay({
     statLine("1", xs, 9);
     statLine("2", ys, pixelHeight - 3);
   }, [gainX, gainY, height, lissajous, offsetX, offsetY, threshold, triggerEnabled, width, x, y]);
-  return <canvas ref={ref} className="pw-rack-scope" style={{left,top,width,height}} aria-label="Live Rack oscilloscope" />;
+  return (
+    <canvas
+      ref={ref}
+      className="pw-rack-scope"
+      style={{ left, top, width, height }}
+      aria-label="Live Rack oscilloscope"
+    />
+  );
 }

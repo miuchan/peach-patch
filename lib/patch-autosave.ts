@@ -9,31 +9,54 @@ export type AutosaveRestoreResult = {
 };
 
 function isPatchDocument(value: unknown): value is PatchDocument {
-  if (!isRecord(value) || !Array.isArray(value.modules) || !Array.isArray(value.cables)) return false;
+  if (!isRecord(value) || !Array.isArray(value.modules) || !Array.isArray(value.cables))
+    return false;
   if (value.rack !== undefined && !isRecord(value.rack)) return false;
   if (
     value.rackOrigin !== undefined &&
-    (!Array.isArray(value.rackOrigin) || value.rackOrigin.length !== 2 || !value.rackOrigin.every(isFiniteNumber))
-  ) return false;
-  return value.modules.every((module) => {
-    if (!isRecord(module)) return false;
-    return typeof module.id === "string" && typeof module.key === "string" &&
-      (module.plugin === undefined || typeof module.plugin === "string") &&
-      (module.model === undefined || typeof module.model === "string") &&
-      (module.x === undefined || isFiniteNumber(module.x)) &&
-      (module.y === undefined || isFiniteNumber(module.y)) && isFiniteNumber(module.width) &&
-      Array.isArray(module.params) && module.params.every(isFiniteNumber) &&
-      (module.status === undefined || module.status === "ready" || module.status === "resolving" || module.status === "source-required" || module.status === "error") &&
-      (module.state === undefined || (Array.isArray(module.state) && module.state.every(isFiniteNumber))) &&
-      (module.stateKeys === undefined || (Array.isArray(module.stateKeys) && module.stateKeys.every(isRecord))) &&
-      (module.rack === undefined || isRecord(module.rack));
-  }) && value.cables.every((cable) => {
-    if (!isRecord(cable)) return false;
-    return typeof cable.id === "string" && typeof cable.fromModule === "string" &&
-      typeof cable.toModule === "string" && isFiniteNumber(cable.fromPort) &&
-      isFiniteNumber(cable.toPort) && (cable.color === undefined || typeof cable.color === "string") &&
-      (cable.rack === undefined || isRecord(cable.rack));
-  });
+    (!Array.isArray(value.rackOrigin) ||
+      value.rackOrigin.length !== 2 ||
+      !value.rackOrigin.every(isFiniteNumber))
+  )
+    return false;
+  return (
+    value.modules.every((module) => {
+      if (!isRecord(module)) return false;
+      return (
+        typeof module.id === "string" &&
+        typeof module.key === "string" &&
+        (module.plugin === undefined || typeof module.plugin === "string") &&
+        (module.model === undefined || typeof module.model === "string") &&
+        (module.x === undefined || isFiniteNumber(module.x)) &&
+        (module.y === undefined || isFiniteNumber(module.y)) &&
+        isFiniteNumber(module.width) &&
+        Array.isArray(module.params) &&
+        module.params.every(isFiniteNumber) &&
+        (module.status === undefined ||
+          module.status === "ready" ||
+          module.status === "resolving" ||
+          module.status === "source-required" ||
+          module.status === "error") &&
+        (module.state === undefined ||
+          (Array.isArray(module.state) && module.state.every(isFiniteNumber))) &&
+        (module.stateKeys === undefined ||
+          (Array.isArray(module.stateKeys) && module.stateKeys.every(isRecord))) &&
+        (module.rack === undefined || isRecord(module.rack))
+      );
+    }) &&
+    value.cables.every((cable) => {
+      if (!isRecord(cable)) return false;
+      return (
+        typeof cable.id === "string" &&
+        typeof cable.fromModule === "string" &&
+        typeof cable.toModule === "string" &&
+        isFiniteNumber(cable.fromPort) &&
+        isFiniteNumber(cable.toPort) &&
+        (cable.color === undefined || typeof cable.color === "string") &&
+        (cable.rack === undefined || isRecord(cable.rack))
+      );
+    })
+  );
 }
 
 function normalizePatch(value: PatchDocument): PatchDocument {

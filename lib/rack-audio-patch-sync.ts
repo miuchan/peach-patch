@@ -21,20 +21,17 @@ export function syncRackAudioModules(
     if (module.status !== "ready") continue;
     active.add(module.id);
     const definition = getWebPlugin(module.key);
-    const source = module.rack?.data && typeof module.rack.data === "object"
-      ? module.rack.data as Record<string, unknown>
-      : undefined;
+    const source =
+      module.rack?.data && typeof module.rack.data === "object"
+        ? (module.rack.data as Record<string, unknown>)
+        : undefined;
     const data = dataFromState(
       module.key,
       source,
       module.state,
       module.stateKeys ?? definition?.stateKeys,
     );
-    const controls = JSON.stringify([
-      module.params,
-      module.state ?? [],
-      Boolean(module.bypassed),
-    ]);
+    const controls = JSON.stringify([module.params, module.state ?? [], Boolean(module.bypassed)]);
     const dataSignature = JSON.stringify(data ?? {});
     const previous = cache.get(module.id);
     if (previous?.data !== dataSignature) engine.setStateJson(module.id, data);
@@ -77,9 +74,10 @@ export function applyAudioStateSnapshot(
     ...patch,
     modules: patch.modules.map((module) => {
       if (module.id !== moduleId) return module;
-      const previous = module.rack?.data && typeof module.rack.data === "object"
-        ? module.rack.data as Record<string, unknown>
-        : {};
+      const previous =
+        module.rack?.data && typeof module.rack.data === "object"
+          ? (module.rack.data as Record<string, unknown>)
+          : {};
       const hostData = Object.fromEntries(
         Object.entries(previous).filter(([key]) => key.startsWith("patchworkWeb")),
       );
@@ -94,9 +92,6 @@ export function applyAudioStateSnapshot(
   };
 }
 
-export function findRackModule(
-  patch: PatchDocument,
-  moduleId: string,
-): ModuleInstance | undefined {
+export function findRackModule(patch: PatchDocument, moduleId: string): ModuleInstance | undefined {
   return patch.modules.find((module) => module.id === moduleId);
 }

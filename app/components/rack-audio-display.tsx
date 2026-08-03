@@ -50,7 +50,12 @@ export function RackAudioDisplay({
         : "(No device)",
       sampleRate = Number(audio?.sampleRate) || (running ? 48000 : 0),
       blockSize = Number(audio?.blockSize) || (running ? 128 : 0);
-    return { driver, device, rate: compactRate(sampleRate), block: blockSize > 0 ? String(blockSize) : "---" };
+    return {
+      driver,
+      device,
+      rate: compactRate(sampleRate),
+      block: blockSize > 0 ? String(blockSize) : "---",
+    };
   }, [audio, channels, running]);
 
   if (channels === 2)
@@ -61,8 +66,12 @@ export function RackAudioDisplay({
         aria-label="Live Rack audio device display"
       >
         <div>{text.device.replace(/^\((.+)\)$/, "$1")}</div>
-        <span aria-hidden="true">0</span><span aria-hidden="true">−3</span><span aria-hidden="true">−6</span>
-        <span aria-hidden="true">−12</span><span aria-hidden="true">−24</span><span aria-hidden="true">−36</span>
+        <span aria-hidden="true">0</span>
+        <span aria-hidden="true">−3</span>
+        <span aria-hidden="true">−6</span>
+        <span aria-hidden="true">−12</span>
+        <span aria-hidden="true">−24</span>
+        <span aria-hidden="true">−36</span>
       </div>
     );
 
@@ -75,7 +84,10 @@ export function RackAudioDisplay({
     >
       <div>{wide ? `Driver: ${text.driver}` : text.driver}</div>
       <div>{wide ? `Device: ${text.device}` : text.device}</div>
-      <div className="split"><span>{wide ? `Rate: ${text.rate}` : text.rate}</span><span>{wide ? `Block size: ${text.block}` : text.block}</span></div>
+      <div className="split">
+        <span>{wide ? `Rate: ${text.rate}` : text.rate}</span>
+        <span>{wide ? `Block size: ${text.block}` : text.block}</span>
+      </div>
     </div>
   );
 }

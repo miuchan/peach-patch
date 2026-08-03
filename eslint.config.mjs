@@ -9,7 +9,6 @@ const eslintConfig = defineConfig([
   globalIgnores([
     "out/**",
     "dist/**",
-    "build/**",
     "assets/rack/**",
     ".rack-web-cache/**",
     ".cache/**",
@@ -21,6 +20,12 @@ const eslintConfig = defineConfig([
     ...js.configs.recommended,
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
+    },
+  },
+  {
+    files: ["public/audio/*.js"],
+    languageOptions: {
+      globals: globals.audioWorklet,
     },
   },
   ...tseslint.configs.recommended,
@@ -40,6 +45,15 @@ const eslintConfig = defineConfig([
       "react-hooks/preserve-manual-memoization": "off",
       "react-hooks/set-state-in-effect": "off",
       "react-refresh/only-export-components": "off",
+    },
+  },
+  {
+    files: ["tests/**/*.ts"],
+    rules: {
+      "@typescript-eslint/ban-ts-comment": [
+        "error",
+        { "ts-nocheck": "allow-with-description", minimumDescriptionLength: 12 },
+      ],
     },
   },
 ]);

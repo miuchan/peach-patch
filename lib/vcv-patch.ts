@@ -15,7 +15,7 @@ export type VcvModule = {
   params?: Array<{ id: number; value: number }>;
   data?: Record<string, unknown>;
   version?: string;
-  [key:string]:unknown;
+  [key: string]: unknown;
 };
 
 export type VcvCable = {
@@ -25,7 +25,7 @@ export type VcvCable = {
   inputModuleId: number;
   inputId: number;
   color?: string;
-  [key:string]:unknown;
+  [key: string]: unknown;
 };
 
 export type VcvPatch = {
@@ -34,11 +34,16 @@ export type VcvPatch = {
   gridOffset?: [number, number];
   modules: VcvModule[];
   cables: VcvCable[];
-  [key:string]:unknown;
+  [key: string]: unknown;
 };
 
 function normalizeLegacyVcvPatch(value: unknown): unknown {
-  if (!isRecord(value) || !Array.isArray(value.modules) || !Array.isArray(value.wires) || value.cables !== undefined) {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.modules) ||
+    !Array.isArray(value.wires) ||
+    value.cables !== undefined
+  ) {
     return value;
   }
   const migration = legacyVcvMigration(value.version);
@@ -84,7 +89,8 @@ function normalizeLegacyVcvPatch(value: unknown): unknown {
       !Number.isSafeInteger(inputModuleId) ||
       !Number.isSafeInteger(outputId) ||
       !Number.isSafeInteger(inputId)
-    ) return { ...wire, id };
+    )
+      return { ...wire, id };
     return {
       ...wire,
       id,
@@ -120,17 +126,40 @@ function normalizeLegacyVcvPatch(value: unknown): unknown {
 }
 
 function isVcvPatch(value: unknown): value is VcvPatch {
-  if (!isRecord(value) || !Array.isArray(value.modules) || !Array.isArray(value.cables)) return false;
-  return value.modules.every((module) => {
-    if (!isRecord(module) || !isFiniteNumber(module.id) || typeof module.plugin !== "string" ||
-      typeof module.model !== "string" || !Array.isArray(module.pos) || module.pos.length !== 2 ||
-      !module.pos.every(isFiniteNumber)) return false;
-    if (module.params !== undefined && (!Array.isArray(module.params) || !module.params.every((param) =>
-      isRecord(param) && isFiniteNumber(param.id) && isFiniteNumber(param.value)))) return false;
-    return module.data === undefined || isRecord(module.data);
-  }) && value.cables.every((cable) => isRecord(cable) && isFiniteNumber(cable.id) &&
-    isFiniteNumber(cable.outputModuleId) && isFiniteNumber(cable.outputId) &&
-    isFiniteNumber(cable.inputModuleId) && isFiniteNumber(cable.inputId));
+  if (!isRecord(value) || !Array.isArray(value.modules) || !Array.isArray(value.cables))
+    return false;
+  return (
+    value.modules.every((module) => {
+      if (
+        !isRecord(module) ||
+        !isFiniteNumber(module.id) ||
+        typeof module.plugin !== "string" ||
+        typeof module.model !== "string" ||
+        !Array.isArray(module.pos) ||
+        module.pos.length !== 2 ||
+        !module.pos.every(isFiniteNumber)
+      )
+        return false;
+      if (
+        module.params !== undefined &&
+        (!Array.isArray(module.params) ||
+          !module.params.every(
+            (param) => isRecord(param) && isFiniteNumber(param.id) && isFiniteNumber(param.value),
+          ))
+      )
+        return false;
+      return module.data === undefined || isRecord(module.data);
+    }) &&
+    value.cables.every(
+      (cable) =>
+        isRecord(cable) &&
+        isFiniteNumber(cable.id) &&
+        isFiniteNumber(cable.outputModuleId) &&
+        isFiniteNumber(cable.outputId) &&
+        isFiniteNumber(cable.inputModuleId) &&
+        isFiniteNumber(cable.inputId),
+    )
+  );
 }
 
 function decodeTarEntry(bytes: Uint8Array, wanted: string): string {
@@ -152,16 +181,20 @@ function decodeTarEntry(bytes: Uint8Array, wanted: string): string {
 
 export function parseVcvArchive(source: ArrayBuffer | Uint8Array): VcvPatch {
   const compressed = source instanceof Uint8Array ? source : new Uint8Array(source);
-  const first=compressed.find(byte=>byte!==9&&byte!==10&&byte!==13&&byte!==32);
-  const decoded = first===123
-    ? parseJson(new TextDecoder().decode(compressed))
-    : parseJson(decodeTarEntry(decompress(compressed), "patch.json"));
+  const first = compressed.find((byte) => byte !== 9 && byte !== 10 && byte !== 13 && byte !== 32);
+  const decoded =
+    first === 123
+      ? parseJson(new TextDecoder().decode(compressed))
+      : parseJson(decodeTarEntry(decompress(compressed), "patch.json"));
   const patch = normalizeLegacyVcvPatch(decoded);
   if (!isVcvPatch(patch)) {
-    const version = isRecord(decoded) && typeof decoded.version === "string"
-      ? `VCV Rack ${decoded.version}`
-      : "The VCV";
-    throw new Error(`${version} patch could not be loaded because its module graph format is unsupported or invalid`);
+    const version =
+      isRecord(decoded) && typeof decoded.version === "string"
+        ? `VCV Rack ${decoded.version}`
+        : "The VCV";
+    throw new Error(
+      `${version} patch could not be loaded because its module graph format is unsupported or invalid`,
+    );
   }
   return patch;
 }

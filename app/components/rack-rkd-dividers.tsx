@@ -1,10 +1,4 @@
-export function RackRkdDividers({
-  values,
-  scaleX,
-}: {
-  values?: number[];
-  scaleX: number;
-}) {
+export function RackRkdDividers({ values, scaleX }: { values?: number[]; scaleX: number }) {
   const labels = Array.from({ length: 8 }, (_, row) => {
     const first = Math.round(values?.[row * 2] ?? 45);
     const second = Math.round(values?.[row * 2 + 1] ?? 45);

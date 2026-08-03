@@ -1,8 +1,11 @@
-// @ts-nocheck
+// @ts-nocheck -- Boundary fixtures stay incomplete until parsers fill trusted fields.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { hydrateModuleWithDefinition, hydrateModulesWithDefinitions } from "../lib/patch-hydrate.ts";
+import {
+  hydrateModuleWithDefinition,
+  hydrateModulesWithDefinitions,
+} from "../lib/patch-hydrate.ts";
 import { dataFromState, stateFromData } from "../lib/patch-state.ts";
 import { findRackModule } from "../lib/rack-audio-patch-sync.ts";
 import {
@@ -56,7 +59,14 @@ test("module hydration rejects malformed saved controls and applies trusted meta
     params: [],
     status: "resolving",
     rack: {
-      params: [null, "bad", { id: -1, value: 1 }, { id: 1, value: 1 }, { id: 0, value: Number.NaN }, { id: 0, value: 0.75 }],
+      params: [
+        null,
+        "bad",
+        { id: -1, value: 1 },
+        { id: 1, value: 1 },
+        { id: 0, value: Number.NaN },
+        { id: 0, value: 0.75 },
+      ],
       data: { enabled: false },
       patchworkWebLegacyUi: { width: 60, hidePanelArtwork: true },
     },
@@ -90,8 +100,24 @@ test("module hydration preserves matching modules and ignores blanks or unknown 
     stateKeys: definition.stateKeys,
     status: "ready",
   };
-  const blank = { id: "blank", key: "Core/Blank", x: 45, y: 0, width: 45, params: [], status: "ready" };
-  const unknown = { id: "unknown", key: "Other/Unknown", x: 90, y: 0, width: 45, params: [], status: "resolving" };
+  const blank = {
+    id: "blank",
+    key: "Core/Blank",
+    x: 45,
+    y: 0,
+    width: 45,
+    params: [],
+    status: "ready",
+  };
+  const unknown = {
+    id: "unknown",
+    key: "Other/Unknown",
+    x: 90,
+    y: 0,
+    width: 45,
+    params: [],
+    status: "resolving",
+  };
   const modules = [matching, blank, unknown];
   assert.equal(hydrateModulesWithDefinitions(modules, [definition]), modules);
 
@@ -119,14 +145,34 @@ test("Rack state adapters preserve typed nested state and legacy module data", (
   assert.equal(serialized.gain, 0.75);
   assert.equal(dataFromState("Example/Test", undefined, undefined, keys), undefined);
 
-  assert.deepEqual(stateFromData("Fundamental/SEQ3", { running: true, clockPassthrough: false, gates: [1, 0] }), [1, 0, 1, 0]);
+  assert.deepEqual(
+    stateFromData("Fundamental/SEQ3", { running: true, clockPassthrough: false, gates: [1, 0] }),
+    [1, 0, 1, 0],
+  );
   assert.deepEqual(stateFromData("AudibleInstruments/Branches", { modes: [0, 1] }), [0, 1]);
   assert.deepEqual(stateFromData("AudibleInstruments/Tides", { sheep: true }), [1, 1, 1]);
-  assert.deepEqual(stateFromData("AudibleInstruments/Rings", { polyphony: 2, model: 3, easterEgg: true }), [2, 3, 1]);
-  assert.deepEqual(dataFromState("Fundamental/SEQ3", {}, [1, 0, 1, 0]), { running: true, clockPassthrough: false, gates: [true, false] });
-  assert.deepEqual(dataFromState("AudibleInstruments/Branches", {}, [1, 0]), { modes: [true, false] });
-  assert.deepEqual(dataFromState("AudibleInstruments/Tides", {}, [2, 3, 1]), { mode: 2, range: 3, sheep: true });
-  assert.deepEqual(dataFromState("AudibleInstruments/Rings", {}, [2, 3, 1]), { polyphony: 2, model: 3, easterEgg: true });
+  assert.deepEqual(
+    stateFromData("AudibleInstruments/Rings", { polyphony: 2, model: 3, easterEgg: true }),
+    [2, 3, 1],
+  );
+  assert.deepEqual(dataFromState("Fundamental/SEQ3", {}, [1, 0, 1, 0]), {
+    running: true,
+    clockPassthrough: false,
+    gates: [true, false],
+  });
+  assert.deepEqual(dataFromState("AudibleInstruments/Branches", {}, [1, 0]), {
+    modes: [true, false],
+  });
+  assert.deepEqual(dataFromState("AudibleInstruments/Tides", {}, [2, 3, 1]), {
+    mode: 2,
+    range: 3,
+    sheep: true,
+  });
+  assert.deepEqual(dataFromState("AudibleInstruments/Rings", {}, [2, 3, 1]), {
+    polyphony: 2,
+    model: 3,
+    easterEgg: true,
+  });
 });
 
 test("studio helpers cover bounded concurrency, keyboard translation, and host metadata", async () => {
@@ -149,9 +195,24 @@ test("studio helpers cover bounded concurrency, keyboard translation, and host m
   assert.equal(sampleAssetsFromData(undefined), undefined);
   assert.equal(sampleAssetsFromData({ patchworkWebAssets: "invalid" }), undefined);
   assert.equal(sampleAssetsFromData({ patchworkWebAssets: [null, "invalid"] }), undefined);
-  assert.deepEqual(sampleAssetsFromData({ patchworkWebAssets: [null, {
-    storageKey: "asset", name: "kick.wav", sampleRate: 48_000, channels: 1, frames: 12,
-  }] }), [undefined, { storageKey: "asset", name: "kick.wav", sampleRate: 48_000, channels: 1, frames: 12 }]);
+  assert.deepEqual(
+    sampleAssetsFromData({
+      patchworkWebAssets: [
+        null,
+        {
+          storageKey: "asset",
+          name: "kick.wav",
+          sampleRate: 48_000,
+          channels: 1,
+          frames: 12,
+        },
+      ],
+    }),
+    [
+      undefined,
+      { storageKey: "asset", name: "kick.wav", sampleRate: 48_000, channels: 1, frames: 12 },
+    ],
+  );
 
   const keyboard = (key: string, code = key, modifiers = {}) => ({ key, code, ...modifiers });
   assert.equal(rackKeyFromKeyboard(keyboard("a")), 65);
@@ -159,9 +220,18 @@ test("studio helpers cover bounded concurrency, keyboard translation, and host m
   assert.equal(rackKeyFromKeyboard(keyboard("Escape")), 256);
   assert.equal(rackKeyFromKeyboard(keyboard("F25")), 314);
   assert.equal(rackKeyFromKeyboard(keyboard("Unknown")), -1);
-  assert.equal(rackModifiersFromKeyboard(keyboard("a", "KeyA", { shiftKey: true, ctrlKey: true, altKey: true, metaKey: true })), 15);
+  assert.equal(
+    rackModifiersFromKeyboard(
+      keyboard("a", "KeyA", { shiftKey: true, ctrlKey: true, altKey: true, metaKey: true }),
+    ),
+    15,
+  );
 
-  const definitionModule = moduleFromDefinition({ ...definition, key: "Stoermelder-P1/Stroke" }, 0, 0);
+  const definitionModule = moduleFromDefinition(
+    { ...definition, key: "Stoermelder-P1/Stroke" },
+    0,
+    0,
+  );
   assert.equal(definitionModule.state.length, 51);
   const bindings = strokeBindings({
     ...definitionModule,
@@ -189,15 +259,37 @@ test("open-position fallback and viewport locks stay deterministic at their limi
   assert.deepEqual(findOpenPosition(occupiedRows, 15, { x: 0, y: 0 }), { x: 0, y: 24 * 380 });
 
   const control = {
-    jumpUp: false, jumpDown: false, jumpLeft: false, jumpRight: false,
-    x: undefined, y: undefined, zoom: Number.NaN, opacity: undefined, tension: undefined,
-    padding: 0, xStep: 1, yStep: 1, lockX: false, lockY: true,
-    xConnected: false, yConnected: false, leftConnected: false, rightConnected: false,
-    upConnected: false, downConnected: false,
+    jumpUp: false,
+    jumpDown: false,
+    jumpLeft: false,
+    jumpRight: false,
+    x: undefined,
+    y: undefined,
+    zoom: Number.NaN,
+    opacity: undefined,
+    tension: undefined,
+    padding: 0,
+    xStep: 1,
+    yStep: 1,
+    lockX: false,
+    lockY: true,
+    xConnected: false,
+    yConnected: false,
+    leftConnected: false,
+    rightConnected: false,
+    upConnected: false,
+    downConnected: false,
   };
-  const first = applyRackHostViewportControl(control, {
-    pan: { x: 0, y: -80 }, zoom: 1, lockX: 12, lockY: null,
-  }, { modules: [], width: 0, height: 0 });
+  const first = applyRackHostViewportControl(
+    control,
+    {
+      pan: { x: 0, y: -80 },
+      zoom: 1,
+      lockX: 12,
+      lockY: null,
+    },
+    { modules: [], width: 0, height: 0 },
+  );
   const second = applyRackHostViewportControl(control, first, { modules: [], width: 0, height: 0 });
   assert.equal(first.lockX, null);
   assert.equal(first.lockY, 80);

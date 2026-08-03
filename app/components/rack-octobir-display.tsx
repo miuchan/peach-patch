@@ -47,10 +47,8 @@ function LcdFile({
         padding: `0 ${4 * scaleX}px`,
         border: "1px solid #24231b",
         borderRadius: 2,
-        background:
-          "linear-gradient(180deg,#d8a63b 0%,#f6cc5f 18%,#e0b34a 78%,#a97720 100%)",
-        boxShadow:
-          "inset 0 2px 3px #3a2b16aa,inset 0 -1px #fff4,0 1px 1px #0008",
+        background: "linear-gradient(180deg,#d8a63b 0%,#f6cc5f 18%,#e0b34a 78%,#a97720 100%)",
+        boxShadow: "inset 0 2px 3px #3a2b16aa,inset 0 -1px #fff4,0 1px 1px #0008",
         color: "#1c1c30",
         cursor: "pointer",
         font: `${Math.max(5, 7 * scaleX)}px var(--mono)`,
@@ -75,15 +73,11 @@ export function RackOctobirDisplay({
 }: Props) {
   const levelDb = Number.isFinite(values?.[0]) ? Number(values?.[0]) : -60;
   const blend = Number.isFinite(values?.[1]) ? Number(values?.[1]) : 0;
-  const litInput = Math.max(
-    0,
-    Math.min(SEGMENTS, Math.ceil(((levelDb + 60) / 60) * SEGMENTS)),
-  );
+  const litInput = Math.max(0, Math.min(SEGMENTS, Math.ceil(((levelDb + 60) / 60) * SEGMENTS)));
   const blendNorm = Math.max(0, Math.min(1, (blend + 1) / 2));
   const blendPosition = blendNorm * SEGMENTS;
   const thresholdX = 8 + Math.max(0, Math.min(1, (threshold + 60) / 60)) * 554;
-  const rangeX =
-    8 + Math.max(0, Math.min(1, (threshold + range + 60) / 60)) * 554;
+  const rangeX = 8 + Math.max(0, Math.min(1, (threshold + range + 60) / 60)) * 554;
   return (
     <>
       <LcdFile slot={0} filename={filenames[0]} scaleX={scaleX} onLoad={onLoad} />
@@ -121,7 +115,15 @@ export function RackOctobirDisplay({
         </text>
         {[0, 1].map((row) => (
           <g key={row}>
-            <rect x="8" y={row ? 44 : 15} width="554" height="11" rx="2" fill="none" stroke="#1c1c30" />
+            <rect
+              x="8"
+              y={row ? 44 : 15}
+              width="554"
+              height="11"
+              rx="2"
+              fill="none"
+              stroke="#1c1c30"
+            />
             {Array.from({ length: SEGMENTS }, (_, index) => {
               const lit =
                 row === 0

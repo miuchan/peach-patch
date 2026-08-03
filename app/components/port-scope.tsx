@@ -1,12 +1,6 @@
 import { useEffect, useRef } from "react";
 
-export function PortScope({
-  samples,
-  label,
-}: {
-  samples: number[];
-  label: string;
-}) {
+export function PortScope({ samples, label }: { samples: number[]; label: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -14,10 +8,8 @@ export function PortScope({
     const ratio = Math.max(1, window.devicePixelRatio || 1),
       width = Math.max(1, canvas.clientWidth),
       height = Math.max(1, canvas.clientHeight);
-    if (canvas.width !== Math.round(width * ratio))
-      canvas.width = Math.round(width * ratio);
-    if (canvas.height !== Math.round(height * ratio))
-      canvas.height = Math.round(height * ratio);
+    if (canvas.width !== Math.round(width * ratio)) canvas.width = Math.round(width * ratio);
+    if (canvas.height !== Math.round(height * ratio)) canvas.height = Math.round(height * ratio);
     const context = canvas.getContext("2d");
     if (!context) return;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);

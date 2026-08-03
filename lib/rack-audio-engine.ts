@@ -2,9 +2,20 @@ import type { PatchDocument } from "./patch-types";
 import { getSample } from "./sample-store";
 import { getWebPlugin } from "./runtime-plugin-registry";
 import { dataFromState } from "./patch-state";
-import { createWavBlob, floatPcm16Part } from "./wav-encoder";
 import { fetchVerifiedWasm } from "./peach-registry-client";
 import type { WebPluginModule } from "./web-plugin-registry";
+import {
+  applyRackAudioCaptureEvent,
+  createRackAudioCaptureBlob,
+  type RackAudioCapture,
+} from "./rack-audio-capture.ts";
+import { decodeRackAudioMidiOutput } from "./rack-audio-midi.ts";
+import {
+  parseRackAudioWorkletEvent,
+  type RackAudioCaptureEvent,
+  type RackAudioHostControl,
+  type RackAudioPlugSignal,
+} from "./rack-audio-worklet-events.ts";
 
 export type RackAudioStats = {
   activeModules: number;
@@ -15,35 +26,13 @@ export type RackAudioStats = {
   midiOutputs: number;
 };
 
-export type RackPlugSignal = { voltage:number; rms:number; channels:number; rgb:[number,number,number] };
-export type RackHostControl = {
-  moduleId: string;
-  jumpUp: boolean;
-  jumpDown: boolean;
-  jumpLeft: boolean;
-  jumpRight: boolean;
-  x?: number;
-  y?: number;
-  zoom?: number;
-  opacity?: number;
-  tension?: number;
-  padding: number;
-  xStep: number;
-  yStep: number;
-  lockX: boolean;
-  lockY: boolean;
-  xConnected: boolean;
-  yConnected: boolean;
-  leftConnected: boolean;
-  rightConnected: boolean;
-  upConnected: boolean;
-  downConnected: boolean;
-};
+export type RackPlugSignal = RackAudioPlugSignal;
+export type RackHostControl = RackAudioHostControl;
 
 export type RackRecording = {
   moduleId: string;
   blob: Blob;
-  format: "wav"|"midi";
+  format: "wav" | "midi";
   frames: number;
   channels: number;
   sampleRate: number;
@@ -73,18 +62,10 @@ export type RackAudioCallbacks = {
   ) => void;
 };
 
-type RecordingParts = {
-  parts: BlobPart[];
-  frames: number;
-  channels: number;
-  sampleRate: number;
-  format: "wav"|"midi";
-};
-
 export class RackAudioEngine {
   private context: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
-  private readonly recordings = new Map<string, RecordingParts>();
+  private readonly recordings = new Map<string, RackAudioCapture>();
   private stopRequest = 0;
   private stopResolvers = new Map<number, () => void>();
   private midiAccess: MIDIAccess | null = null;
@@ -114,72 +95,35 @@ export class RackAudioEngine {
         };
       this.callbacks.onMidiDevices?.(
         [...access.inputs.values()].map((input) => input.name || "Unnamed input"),
-        [...access.outputs.values()].map(
-          (output) => output.name || "Unnamed output",
-        ),
+        [...access.outputs.values()].map((output) => output.name || "Unnamed output"),
       );
     };
     bindInputs();
     access.onstatechange = bindInputs;
   }
 
-  private handleCaptureMessage(data: Record<string, unknown>) {
-    const moduleId = String(data.moduleId || "");
-    if (!moduleId) return;
-    if (data.type === "capture-start") {
-      const format=data.format==="midi"?"midi":"wav";
-      this.recordings.set(moduleId, {
-        parts: [],
-        frames: 0,
-        channels: Math.max(1, Math.min(2, Number(data.channels) || 1)),
-        sampleRate: Math.max(1, Number(data.sampleRate) || 48000),
-        format,
-      });
-      this.callbacks.onCaptureState?.(moduleId, true);
+  private handleCaptureEvent(event: RackAudioCaptureEvent) {
+    const transition = applyRackAudioCaptureEvent(this.recordings.get(event.moduleId), event);
+    if (transition.type === "started") {
+      this.recordings.set(event.moduleId, transition.capture);
+      this.callbacks.onCaptureState?.(event.moduleId, true);
       return;
     }
-    if (data.type === "capture-data") {
-      const samples =
-          data.samples instanceof Float32Array
-            ? data.samples
-            : new Float32Array(data.samples as ArrayBuffer),
-        channels = Math.max(1, Math.min(2, Number(data.channels) || 1)),
-        format=data.format==="midi"?"midi":"wav",
-        recording = this.recordings.get(moduleId) ?? {
-          parts: [],
-          frames: 0,
-          channels,
-          sampleRate: Math.max(1, Number(data.sampleRate) || 48000),
-          format,
-        };
-      recording.parts.push(recording.format==="midi"?Uint8Array.from(samples,(sample)=>Math.max(0,Math.min(255,Math.round(sample)))):floatPcm16Part(samples));
-      recording.frames += Math.min(
-        Number(data.frames) || 0,
-        Math.floor(samples.length / channels),
-      );
-      recording.channels = channels;
-      this.recordings.set(moduleId, recording);
+    if (transition.type === "updated") {
+      this.recordings.set(event.moduleId, transition.capture);
       return;
     }
-    if (data.type === "capture-stop") {
-      const recording = this.recordings.get(moduleId);
-      this.recordings.delete(moduleId);
-      this.callbacks.onCaptureState?.(moduleId, false);
-      if (recording)
-        this.callbacks.onRecordingComplete?.({
-          moduleId,
-          format: recording.format,
-          frames: recording.frames,
-          channels: recording.channels,
-          sampleRate: recording.sampleRate,
-          blob: recording.format==="midi"?new Blob(recording.parts,{type:"audio/midi"}):createWavBlob(
-            recording.parts,
-            recording.frames,
-            recording.channels,
-            recording.sampleRate,
-          ),
-        });
-    }
+    this.recordings.delete(event.moduleId);
+    this.callbacks.onCaptureState?.(event.moduleId, false);
+    if (!transition.capture) return;
+    this.callbacks.onRecordingComplete?.({
+      moduleId: event.moduleId,
+      format: transition.capture.format,
+      frames: transition.capture.frames,
+      channels: transition.capture.channels,
+      sampleRate: transition.capture.sampleRate,
+      blob: createRackAudioCaptureBlob(transition.capture),
+    });
   }
 
   async start(patch: PatchDocument): Promise<RackAudioStats> {
@@ -192,16 +136,10 @@ export class RackAudioEngine {
     await this.stop();
     const context = new AudioContext({ latencyHint: "interactive" });
     this.context = context;
-    await context.audioWorklet.addModule(
-      "/audio/rack-graph-processor.js?abi=0.4",
-    );
+    await context.audioWorklet.addModule("/audio/rack-graph-processor.js?abi=0.4");
 
-    const outgoing = new Set(
-      patch.cables.map((cable) => `${cable.fromModule}:${cable.fromPort}`),
-    );
-    const readyModules = patch.modules.filter(
-      (module) => getWebPlugin(module.key),
-    );
+    const outgoing = new Set(patch.cables.map((cable) => `${cable.fromModule}:${cable.fromPort}`));
+    const readyModules = patch.modules.filter((module) => getWebPlugin(module.key));
     const activeInstances = readyModules.filter((instance) => {
       const definition = getWebPlugin(instance.key)!;
       return (
@@ -238,9 +176,7 @@ export class RackAudioEngine {
           ? await Promise.all(
               Array.from({ length: instance.assets.length }, async (_, slot) => {
                 const ref = instance.assets?.[slot];
-                return ref
-                  ? await getSample(ref.storageKey).catch(() => undefined)
-                  : undefined;
+                return ref ? await getSample(ref.storageKey).catch(() => undefined) : undefined;
               }),
             )
           : undefined;
@@ -306,21 +242,16 @@ export class RackAudioEngine {
         ids.push(instance.id);
         this.midiInputRoutes.set(deviceName, ids);
       }
-      if (definition?.runtime?.midi?.output)
-        this.midiOutputRoutes.set(instance.id, deviceName);
+      if (definition?.runtime?.midi?.output) this.midiOutputRoutes.set(instance.id, deviceName);
     }
     const cables = patch.cables.flatMap((cable) => {
       if (!activeIds.has(cable.fromModule)) return [];
       const target = moduleById.get(cable.toModule);
       const targetDefinition = target ? getWebPlugin(target.key) : undefined;
       if (targetDefinition?.runtime?.audio) {
-        return cable.toPort < 2
-          ? [{ ...cable, toAudio: true, audioModuleId: target!.id }]
-          : [];
+        return cable.toPort < 2 ? [{ ...cable, toAudio: true, audioModuleId: target!.id }] : [];
       }
-      return activeIds.has(cable.toModule)
-        ? [{ ...cable, toAudio: false }]
-        : [];
+      return activeIds.has(cable.toModule) ? [{ ...cable, toAudio: false }] : [];
     });
 
     const node = new AudioWorkletNode(context, "rack-graph-processor", {
@@ -338,188 +269,82 @@ export class RackAudioEngine {
         12_000,
       );
       node.port.onmessage = (event) => {
-        const data = event.data as Record<string, unknown> | undefined;
+        const message = parseRackAudioWorkletEvent(event.data);
+        if (!message) return;
         if (
           !this.visualUpdatesEnabled &&
-          (data?.type === "port-peaks" || data?.type === "visual-signals")
+          (message.type === "port-peaks" || message.type === "visual-signals")
         )
           return;
-        if (data?.type === "ready") {
-          window.clearTimeout(timer);
-          resolve({ feedbackEdges: Number(data.feedbackEdges) || 0 });
-        } else if (data?.type === "error") {
-          window.clearTimeout(timer);
-          reject(
-            new Error(
-              typeof data.message === "string"
-                ? data.message
-                : "Rack graph AudioWorklet failed to load",
-            ),
-          );
-        } else if (data?.type === "state-json") {
-          try {
-            const source =
-                data.bytes instanceof Uint8Array
-                  ? data.bytes
-                  : new Uint8Array(data.bytes as ArrayBuffer),
-              state = JSON.parse(new TextDecoder().decode(source)) as unknown;
-            if (state && typeof state === "object" && !Array.isArray(state))
-              this.callbacks.onStateSnapshot?.(
-                String(data.moduleId || ""),
-                state as Record<string, unknown>,
-              );
-          } catch {
-            // A malformed plugin snapshot must not stop the audio graph.
-          }
-        } else if (data?.type === "midi-output") {
-          const records =
-              data.records instanceof Uint8Array
-                ? data.records
-                : new Uint8Array(data.records as ArrayBuffer),
-            packets = data.packets
-              ? data.packets instanceof Uint8Array
-                ? data.packets
-                : new Uint8Array(data.packets as ArrayBuffer)
-              : new Uint8Array(),
-            requestedName = this.midiOutputRoutes.get(String(data.moduleId || "")) || "",
-            outputs = this.midiAccess ? [...this.midiAccess.outputs.values()] : [],
-            destination =
+        switch (message.type) {
+          case "ready":
+            window.clearTimeout(timer);
+            resolve({ feedbackEdges: message.feedbackEdges });
+            break;
+          case "error":
+            window.clearTimeout(timer);
+            reject(new Error(message.message));
+            break;
+          case "state-json":
+            this.callbacks.onStateSnapshot?.(message.moduleId, message.state);
+            break;
+          case "midi-output": {
+            const requestedName = this.midiOutputRoutes.get(message.moduleId) || "";
+            const outputs = this.midiAccess ? [...this.midiAccess.outputs.values()] : [];
+            const destination =
               outputs.find((output) => output.name === requestedName) ?? outputs[0];
-          if (destination) {
-            for (let offset = 0; offset + 3 < records.length; offset += 4) {
-              const size = Math.max(1, Math.min(3, records[offset] || 1));
-              destination.send([...records.slice(offset + 1, offset + 1 + size)]);
+            if (destination) {
+              for (const bytes of decodeRackAudioMidiOutput(message.records, message.packets)) {
+                destination.send(bytes);
+              }
             }
-            for (let offset = 0; offset + 1 < packets.length; ) {
-              const size = packets[offset] | (packets[offset + 1] << 8),
-                end = offset + 2 + size;
-              if (size < 1 || end > packets.length) break;
-              destination.send([...packets.slice(offset + 2, end)]);
-              offset = end;
-            }
+            break;
           }
-        } else if (data?.type === "midi-param") {
-          this.callbacks.onMidiParam?.(
-            String(data.moduleId || ""),
-            Number(data.id) || 0,
-            Number(data.value) || 0,
-          );
-        } else if (data?.type === "automation-param") {
-          this.callbacks.onMidiParam?.(
-            String(data.moduleId || ""),
-            Number(data.id) || 0,
-            Number(data.value) || 0,
-          );
-        } else if (data?.type === "automation-complete") {
-          this.callbacks.onAutomationComplete?.();
-        } else if (data?.type === "port-peaks") {
-          this.callbacks.onPortPeaks?.(
-            String(data.moduleId || ""),
-            Array.from(
-              (data.inputs as ArrayLike<number> | undefined) ?? [],
-              Number,
-            ),
-            Array.from(
-              (data.outputs as ArrayLike<number> | undefined) ?? [],
-              Number,
-            ),
-            Array.isArray(data.inputScopes)
-              ? data.inputScopes.map((scope) =>
-                  Array.from(
-                    (scope as ArrayLike<number> | undefined) ?? [],
-                    Number,
-                  ),
-                )
-              : [],
-            Array.isArray(data.outputScopes)
-              ? data.outputScopes.map((scope) =>
-                  Array.from(
-                    (scope as ArrayLike<number> | undefined) ?? [],
-                    Number,
-                  ),
-                )
-              : [],
-          );
-        } else if (data?.type === "visual-signals") {
-          const cables =
-              data.cables && typeof data.cables === "object"
-                ? Object.fromEntries(
-                    Object.entries(data.cables as Record<string, unknown>).map(
-                      ([id, value]) => [id, Number(value) || 0],
-                    ),
-                  )
-                : {},
-            plugs =
-              data.plugs && typeof data.plugs === "object"
-                ? Object.fromEntries(
-                    Object.entries(data.plugs as Record<string, unknown>).map(([id,value])=>{
-                      const signal=value&&typeof value==="object"?value as Record<string,unknown>:{};
-                      const rgb=Array.from((signal.rgb as ArrayLike<number>|undefined)??[],value=>Math.max(0,Math.min(1,Number(value)||0)));
-                      return [id,{voltage:Number(signal.voltage)||0,rms:Number(signal.rms)||0,channels:Math.max(0,Number(signal.channels)||0),rgb:[rgb[0]??0,rgb[1]??0,rgb[2]??0] as [number,number,number]}];
-                    }),
-                  )
-                : {},
-            scopes =
-              data.scopes && typeof data.scopes === "object"
-                ? Object.fromEntries(
-                    Object.entries(data.scopes as Record<string, unknown>).map(
-                      ([id, value]) => [
-                        id,
-                        Array.isArray(value)
-                          ? value.map((samples) =>
-                              Array.from(
-                                (samples as ArrayLike<number> | undefined) ?? [],
-                                Number,
-                              ),
-                            )
-                          : [],
-                      ],
-                    ),
-                  )
-                : {},
-            lights =
-              data.lights && typeof data.lights === "object"
-                ? Object.fromEntries(
-                    Object.entries(data.lights as Record<string, unknown>).map(
-                      ([id, value]) => [
-                        id,
-                        Array.from(
-                          (value as ArrayLike<number> | undefined) ?? [],
-                          (brightness) =>
-                            Math.max(0, Number(brightness) || 0),
-                        ),
-                      ],
-                    ),
-                  )
-                : {};
-          this.callbacks.onVisualSignals?.(cables, scopes, plugs, lights);
-          if(data.hostControl&&typeof data.hostControl==="object")
-            this.callbacks.onHostControl?.(data.hostControl as RackHostControl);
-        } else if (
-          data?.type === "capture-start" ||
-          data?.type === "capture-data" ||
-          data?.type === "capture-stop"
-        ) {
-          this.handleCaptureMessage(data);
-        } else if (data?.type === "captures-stopped") {
-          const requestId = Number(data.requestId);
-          this.stopResolvers.get(requestId)?.();
-          this.stopResolvers.delete(requestId);
+          case "midi-param":
+          case "automation-param":
+            this.callbacks.onMidiParam?.(message.moduleId, message.id, message.value);
+            break;
+          case "automation-complete":
+            this.callbacks.onAutomationComplete?.();
+            break;
+          case "port-peaks":
+            this.callbacks.onPortPeaks?.(
+              message.moduleId,
+              message.inputs,
+              message.outputs,
+              message.inputScopes,
+              message.outputScopes,
+            );
+            break;
+          case "visual-signals":
+            this.callbacks.onVisualSignals?.(
+              message.cables,
+              message.scopes,
+              message.plugs,
+              message.lights,
+            );
+            if (message.hostControl) this.callbacks.onHostControl?.(message.hostControl);
+            break;
+          case "capture-start":
+          case "capture-data":
+          case "capture-stop":
+            this.handleCaptureEvent(message);
+            break;
+          case "captures-stopped":
+            this.stopResolvers.get(message.requestId)?.();
+            this.stopResolvers.delete(message.requestId);
+            break;
         }
       };
     });
     const transfer: Transferable[] = [];
     for (const rackModule of modules) {
       transfer.push(rackModule.wasm);
-      if (rackModule.asset)
-        transfer.push(rackModule.asset.samples.buffer as ArrayBuffer);
+      if (rackModule.asset) transfer.push(rackModule.asset.samples.buffer as ArrayBuffer);
       for (const asset of rackModule.assets ?? [])
         if (asset) transfer.push(asset.samples.buffer as ArrayBuffer);
     }
-    node.port.postMessage(
-      { type: "load-graph", modules, cables, audioBoundaries },
-      transfer,
-    );
+    node.port.postMessage({ type: "load-graph", modules, cables, audioBoundaries }, transfer);
     const level = context.createGain();
     level.gain.value = 0.5;
     node.connect(level).connect(context.destination);
@@ -585,12 +410,7 @@ export class RackAudioEngine {
     this.node?.port.postMessage({ type: "bypass", moduleId, bypassed });
   }
 
-  setMidiDevice(
-    moduleId: string,
-    deviceName: string,
-    input: boolean,
-    output: boolean,
-  ) {
+  setMidiDevice(moduleId: string, deviceName: string, input: boolean, output: boolean) {
     if (input) {
       for (const [name, ids] of this.midiInputRoutes) {
         const next = ids.filter((id) => id !== moduleId);

@@ -1,5 +1,3 @@
-// @ts-nocheck
-// @ts-nocheck
 import assert from "node:assert/strict";
 import test from "node:test";
 import {

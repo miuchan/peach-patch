@@ -38,8 +38,8 @@ export function RackBouncyBallsDisplay({
   const movePaddle = (event: PointerEvent<SVGSVGElement>) => {
     if (locked) return;
     const rect = event.currentTarget.getBoundingClientRect(),
-      px = (event.clientX - rect.left) * displayWidth / Math.max(1, rect.width),
-      py = (event.clientY - rect.top) * displayHeight / Math.max(1, rect.height);
+      px = ((event.clientX - rect.left) * displayWidth) / Math.max(1, rect.width),
+      py = ((event.clientY - rect.top) * displayHeight) / Math.max(1, rect.height);
     onState([
       [paddleXState, Math.max(0, Math.min(displayWidth - 100, px - 50))],
       [paddleYState, Math.max(0, Math.min(displayHeight - 10, py))],
@@ -64,7 +64,9 @@ export function RackBouncyBallsDisplay({
       onPointerDown={toggleLock}
     >
       <rect width={displayWidth} height={displayHeight} fill="#000" />
-      {visual[10] >= 0.5 ? <rect x={visual[8]} y={visual[9]} width="100" height="10" fill="#fff" /> : null}
+      {visual[10] >= 0.5 ? (
+        <rect x={visual[8]} y={visual[9]} width="100" height="10" fill="#fff" />
+      ) : null}
       {BALL_COLORS.map((color, index) => (
         <circle
           key={color}

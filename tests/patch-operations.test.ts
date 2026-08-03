@@ -1,5 +1,4 @@
-// @ts-nocheck
-// @ts-nocheck
+// @ts-nocheck -- Domain fixtures omit ModuleInstance fields irrelevant to each operation.
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -39,7 +38,10 @@ test("patch field updates stay immutable and target only the requested module", 
     cables: [],
   };
   const withParam = updateModuleParam(patch, "source", 1, 9);
-  const withState = updateModuleState(withParam, "source", [[0, 1], [2, 4]]);
+  const withState = updateModuleState(withParam, "source", [
+    [0, 1],
+    [2, 4],
+  ]);
   const merged = mergeModuleData(withState, "source", { mode: "new" });
   assert.deepEqual(merged.patch.modules[0].params, [1, 9]);
   assert.equal(merged.patch.modules[0].state[0], 1);
@@ -65,13 +67,7 @@ test("inserting a module on a cable preserves both endpoints and color", () => {
       },
     ],
   };
-  const next = spliceModuleIntoCable(
-    patch,
-    "original",
-    inserted,
-    "incoming",
-    "outgoing",
-  );
+  const next = spliceModuleIntoCable(patch, "original", inserted, "incoming", "outgoing");
 
   assert.ok(next);
   assert.deepEqual(next.modules, [source, target, inserted]);
@@ -138,13 +134,7 @@ test("Rack surface grows by nearly a viewport around modules in every direction"
 });
 
 test("Rack surface includes a viewport panned beyond the current modules", () => {
-  const bounds = rackSurfaceBounds(
-    [{ x: 0, y: 0, width: 90 }],
-    1000,
-    600,
-    { x: 4000, y: 2400 },
-    1,
-  );
+  const bounds = rackSurfaceBounds([{ x: 0, y: 0, width: 90 }], 1000, 600, { x: 4000, y: 2400 }, 1);
   assert.ok(bounds.x <= -4000);
   assert.ok(bounds.y <= -2400);
   assert.ok(bounds.right >= 90);
@@ -172,15 +162,15 @@ test("module replacement keeps valid cable ports and reports dropped ones", () =
   assert.ok(result);
   assert.equal(result.droppedCables, 2);
   assert.equal(result.patch.modules[1].id, "inserted");
-  assert.deepEqual(result.patch.cables.map((cable) => cable.id), ["in-ok", "out-ok"]);
+  assert.deepEqual(
+    result.patch.cables.map((cable) => cable.id),
+    ["in-ok", "out-ok"],
+  );
 });
 
 test("inserting on a stale cable leaves the patch untouched", () => {
   const patch = { modules: [source, target], cables: [] };
-  assert.equal(
-    spliceModuleIntoCable(patch, "missing", inserted, "a", "b"),
-    null,
-  );
+  assert.equal(spliceModuleIntoCable(patch, "missing", inserted, "a", "b"), null);
 });
 
 test("heal delete removes a serial module and reconnects its neighbors", () => {
@@ -259,7 +249,14 @@ test("duplicate copies selected modules and only their internal cables", () => {
       target,
     ],
     cables: [
-      { id: "internal", fromModule: "source", fromPort: 0, toModule: "inserted", toPort: 0, rack: { id: 21 } },
+      {
+        id: "internal",
+        fromModule: "source",
+        fromPort: 0,
+        toModule: "inserted",
+        toPort: 0,
+        rack: { id: 21 },
+      },
       { id: "external", fromModule: "inserted", fromPort: 0, toModule: "target", toPort: 0 },
     ],
   };
@@ -315,7 +312,10 @@ test("disconnect removes every cable touching one module", () => {
 
   assert.ok(result);
   assert.equal(result.removedCables, 2);
-  assert.deepEqual(result.patch.cables.map((cable) => cable.id), ["keep"]);
+  assert.deepEqual(
+    result.patch.cables.map((cable) => cable.id),
+    ["keep"],
+  );
 });
 
 test("connecting ports preserves input stacks and rejects an exact duplicate", () => {
@@ -323,7 +323,14 @@ test("connecting ports preserves input stacks and rejects an exact duplicate", (
     modules: [source, inserted, target],
     cables: [
       { id: "old", fromModule: "source", fromPort: 0, toModule: "target", toPort: 2, color: "red" },
-      { id: "keep", fromModule: "source", fromPort: 1, toModule: "target", toPort: 3, color: "blue" },
+      {
+        id: "keep",
+        fromModule: "source",
+        fromPort: 1,
+        toModule: "target",
+        toPort: 3,
+        color: "blue",
+      },
     ],
   };
   const next = connectPatchCable(
@@ -335,7 +342,10 @@ test("connecting ports preserves input stacks and rejects an exact duplicate", (
   );
 
   assert.ok(next);
-  assert.deepEqual(next.cables.map((cable) => cable.id), ["old", "keep", "new"]);
+  assert.deepEqual(
+    next.cables.map((cable) => cable.id),
+    ["old", "keep", "new"],
+  );
   assert.deepEqual(next.cables[2], {
     id: "new",
     fromModule: "inserted",
@@ -344,38 +354,72 @@ test("connecting ports preserves input stacks and rejects an exact duplicate", (
     toPort: 2,
     color: "green",
   });
-  assert.equal(connectPatchCable(
-    next,
-    { moduleId: "inserted", portId: 4 },
-    { moduleId: "target", portId: 2 },
-    "duplicate",
-    "purple",
-  ), null);
+  assert.equal(
+    connectPatchCable(
+      next,
+      { moduleId: "inserted", portId: 4 },
+      { moduleId: "target", portId: 2 },
+      "duplicate",
+      "purple",
+    ),
+    null,
+  );
 });
 
 test("reconnecting a cable endpoint preserves its color and every existing port stack", () => {
   const patch = {
     modules: [source, target, { ...target, id: "other" }],
     cables: [
-      { id: "move", fromModule: "source", fromPort: 0, toModule: "target", toPort: 2, color: "red" },
+      {
+        id: "move",
+        fromModule: "source",
+        fromPort: 0,
+        toModule: "target",
+        toPort: 2,
+        color: "red",
+      },
       { id: "old", fromModule: "source", fromPort: 1, toModule: "other", toPort: 4, color: "blue" },
     ],
   };
-  assert.deepEqual(reconnectPatchCableEndpoint(patch, "move", "input", { moduleId: "other", portId: 4 }).cables, [
-    { id: "move", fromModule: "source", fromPort: 0, toModule: "other", toPort: 4, color: "red" },
-    { id: "old", fromModule: "source", fromPort: 1, toModule: "other", toPort: 4, color: "blue" },
-  ]);
-  assert.deepEqual(reconnectPatchCableEndpoint(patch, "move", "output", { moduleId: "other", portId: 1 }).cables.find((cable) => cable.id === "move"), {
-    id: "move", fromModule: "other", fromPort: 1, toModule: "target", toPort: 2, color: "red",
-  });
+  assert.deepEqual(
+    reconnectPatchCableEndpoint(patch, "move", "input", { moduleId: "other", portId: 4 }).cables,
+    [
+      { id: "move", fromModule: "source", fromPort: 0, toModule: "other", toPort: 4, color: "red" },
+      { id: "old", fromModule: "source", fromPort: 1, toModule: "other", toPort: 4, color: "blue" },
+    ],
+  );
+  assert.deepEqual(
+    reconnectPatchCableEndpoint(patch, "move", "output", {
+      moduleId: "other",
+      portId: 1,
+    }).cables.find((cable) => cable.id === "move"),
+    {
+      id: "move",
+      fromModule: "other",
+      fromPort: 1,
+      toModule: "target",
+      toPort: 2,
+      color: "red",
+    },
+  );
   const duplicate = {
     ...patch,
     cables: [
       ...patch.cables,
-      { id: "same", fromModule: "source", fromPort: 0, toModule: "other", toPort: 4, color: "green" },
+      {
+        id: "same",
+        fromModule: "source",
+        fromPort: 0,
+        toModule: "other",
+        toPort: 4,
+        color: "green",
+      },
     ],
   };
-  assert.equal(reconnectPatchCableEndpoint(duplicate, "move", "input", { moduleId: "other", portId: 4 }), null);
+  assert.equal(
+    reconnectPatchCableEndpoint(duplicate, "move", "input", { moduleId: "other", portId: 4 }),
+    null,
+  );
 });
 
 test("Rack module presets restore matching controls and typed data only", () => {
@@ -406,7 +450,10 @@ test("Rack module presets restore matching controls and typed data only", () => 
         plugin: "Example",
         model: "Module",
         bypass: true,
-        params: [{ id: 0, value: 4 }, { id: 1, value: 3 }],
+        params: [
+          { id: 0, value: 4 },
+          { id: 1, value: 3 },
+        ],
         data: { mode: 4 },
       },
       definition,
@@ -418,12 +465,7 @@ test("Rack module presets restore matching controls and typed data only", () => 
   assert.equal(restored.modules[0].bypassed, true);
   assert.deepEqual(restored.modules[0].rack, { id: 7, data: { mode: 4 } });
   assert.equal(
-    applyRackModulePreset(
-      patch,
-      "source",
-      { plugin: "Other", model: "Module" },
-      definition,
-    ),
+    applyRackModulePreset(patch, "source", { plugin: "Other", model: "Module" }, definition),
     null,
   );
 });
@@ -449,12 +491,12 @@ test("viewport marquee finds modules after pan and zoom", () => {
     { id: "outside", x: 600, y: 100, width: 90 },
   ];
   assert.deepEqual(
-    modulesIntersectingViewportRect(
-      modules,
-      { x: 20, y: -10 },
-      0.5,
-      { left: 60, top: 35, right: 185, bottom: 100 },
-    ),
+    modulesIntersectingViewportRect(modules, { x: 20, y: -10 }, 0.5, {
+      left: 60,
+      top: 35,
+      right: 185,
+      bottom: 100,
+    }),
     ["inside", "edge"],
   );
 });
@@ -472,18 +514,25 @@ test("compact multi-column module ports stay aligned with their panel jacks", ()
   assert.ok(output15.y < rackModule.y + 380);
 });
 
-test("source-derived Rack jack coordinates drive cable endpoints",()=>{
-  const rackModule={id:"delay",x:100,y:200,width:135},centered=modulePortPosition(rackModule,"in",4,6,{x:19.5,y:334,centered:true},135),topLeft=modulePortPosition(rackModule,"out",0,2,{x:7,y:324},60);
-  assert.deepEqual(centered,{x:119.5,y:534});assert.deepEqual(topLeft,{x:100+19*135/60,y:536});
+test("source-derived Rack jack coordinates drive cable endpoints", () => {
+  const rackModule = { id: "delay", x: 100, y: 200, width: 135 },
+    centered = modulePortPosition(rackModule, "in", 4, 6, { x: 19.5, y: 334, centered: true }, 135),
+    topLeft = modulePortPosition(rackModule, "out", 0, 2, { x: 7, y: 324 }, 60);
+  assert.deepEqual(centered, { x: 119.5, y: 534 });
+  assert.deepEqual(topLeft, { x: 100 + (19 * 135) / 60, y: 536 });
 });
 
-test("jack hit targets and cable plugs resolve one authoritative center",()=>{
-  const rackModule={id:"sparse",x:45,y:380,width:180},ports=[
-    {id:3,name:"first",kind:"cv"},
-    {id:9,name:"source",kind:"cv",position:{x:42,y:310,centered:true}},
-  ];
-  assert.deepEqual(resolvedModulePortPosition(rackModule,"in",3,ports,180),modulePortPosition(rackModule,"in",0,2));
-  assert.deepEqual(resolvedModulePortPosition(rackModule,"in",9,ports,180),{x:87,y:690});
+test("jack hit targets and cable plugs resolve one authoritative center", () => {
+  const rackModule = { id: "sparse", x: 45, y: 380, width: 180 },
+    ports = [
+      { id: 3, name: "first", kind: "cv" },
+      { id: 9, name: "source", kind: "cv", position: { x: 42, y: 310, centered: true } },
+    ];
+  assert.deepEqual(
+    resolvedModulePortPosition(rackModule, "in", 3, ports, 180),
+    modulePortPosition(rackModule, "in", 0, 2),
+  );
+  assert.deepEqual(resolvedModulePortPosition(rackModule, "in", 9, ports, 180), { x: 87, y: 690 });
 });
 
 test("Rack movement snaps to 15 HP pixels and whole 380 pixel rows", () => {
@@ -497,12 +546,11 @@ test("dragging rejects a snapped placement that overlaps a stationary module", (
       { id: "occupied", x: 90, y: 0, width: 120 },
     ],
     origins = new Map([["moving", { x: 0, y: 0 }]]);
-  assert.equal(
-    moveRackModulesWithoutOverlap(modules, origins, { x: 100, y: 0 }),
-    modules,
-  );
-  assert.deepEqual(
-    moveRackModulesWithoutOverlap(modules, origins, { x: 20, y: 400 })[0],
-    { id: "moving", x: 15, y: 380, width: 90 },
-  );
+  assert.equal(moveRackModulesWithoutOverlap(modules, origins, { x: 100, y: 0 }), modules);
+  assert.deepEqual(moveRackModulesWithoutOverlap(modules, origins, { x: 20, y: 400 })[0], {
+    id: "moving",
+    x: 15,
+    y: 380,
+    width: 90,
+  });
 });

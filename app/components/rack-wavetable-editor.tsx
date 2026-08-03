@@ -42,13 +42,22 @@ export function RackWavetableEditor({
 
   const updateAtPointer = (event: PointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect(),
-      px = Math.max(0, Math.min(width, (event.clientX - rect.left) * width / Math.max(1, rect.width))),
-      py = Math.max(0, Math.min(totalHeight, (event.clientY - rect.top) * totalHeight / Math.max(1, rect.height))),
+      px = Math.max(
+        0,
+        Math.min(width, ((event.clientX - rect.left) * width) / Math.max(1, rect.width)),
+      ),
+      py = Math.max(
+        0,
+        Math.min(
+          totalHeight,
+          ((event.clientY - rect.top) * totalHeight) / Math.max(1, rect.height),
+        ),
+      ),
       rowHeight = height + gap,
       table = Math.min(tables - 1, Math.floor(py / rowHeight)),
       localY = py - table * rowHeight;
     if (localY > height) return;
-    const sample = Math.min(samples - 1, Math.floor(px / width * samples)),
+    const sample = Math.min(samples - 1, Math.floor((px / width) * samples)),
       value = Math.max(0, Math.min(bitDepth, Math.floor((1 - localY / height) * bitDepth))),
       previous = lastPoint.current;
     if (previous && previous.table === table && previous.sample !== sample) {
@@ -56,7 +65,10 @@ export function RackWavetableEditor({
         end = Math.max(previous.sample, sample);
       for (let index = start; index <= end; index++) {
         const amount = (index - previous.sample) / (sample - previous.sample),
-          interpolated = Math.max(0, Math.min(bitDepth, Math.round(previous.value + (value - previous.value) * amount)));
+          interpolated = Math.max(
+            0,
+            Math.min(bitDepth, Math.round(previous.value + (value - previous.value) * amount)),
+          );
         sendSample(table, index, interpolated);
       }
     } else sendSample(table, sample, value);
@@ -69,7 +81,14 @@ export function RackWavetableEditor({
       aria-label="Editable five-bank wavetable"
       viewBox={`0 0 ${width} ${totalHeight}`}
       preserveAspectRatio="none"
-      style={{ position: "absolute", left: x * scaleX, top: y, width: width * scaleX, height: totalHeight, touchAction: "none" }}
+      style={{
+        position: "absolute",
+        left: x * scaleX,
+        top: y,
+        width: width * scaleX,
+        height: totalHeight,
+        touchAction: "none",
+      }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.preventDefault();
@@ -84,21 +103,39 @@ export function RackWavetableEditor({
         updateAtPointer(event);
       }}
       onPointerUp={(event) => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        if (event.currentTarget.hasPointerCapture(event.pointerId))
+          event.currentTarget.releasePointerCapture(event.pointerId);
         lastPoint.current = null;
       }}
-      onPointerCancel={() => { lastPoint.current = null; }}
+      onPointerCancel={() => {
+        lastPoint.current = null;
+      }}
     >
       {Array.from({ length: tables }, (_, table) => {
         const top = table * (height + gap),
           points = Array.from({ length: samples }, (_, sample) => {
-            const value = valid ? Math.max(0, Math.min(bitDepth, values![table * samples + sample])) : 0;
-            return `${sample * width / samples},${height * (bitDepth - value) / bitDepth}`;
+            const value = valid
+              ? Math.max(0, Math.min(bitDepth, values![table * samples + sample]))
+              : 0;
+            return `${(sample * width) / samples},${(height * (bitDepth - value)) / bitDepth}`;
           }).join(" ");
         return (
           <g key={table} transform={`translate(0 ${top})`}>
-            <rect x="-1" y="-1" width={width + 2} height={height + 2} rx="3" fill="#000" stroke={borderColor} />
-            <polyline points={points} fill="none" stroke={colors[table] ?? "#fff"} strokeWidth="1" />
+            <rect
+              x="-1"
+              y="-1"
+              width={width + 2}
+              height={height + 2}
+              rx="3"
+              fill="#000"
+              stroke={borderColor}
+            />
+            <polyline
+              points={points}
+              fill="none"
+              stroke={colors[table] ?? "#fff"}
+              strokeWidth="1"
+            />
           </g>
         );
       })}

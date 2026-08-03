@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  createRackCablePreviewWriter,
-} from "../lib/rack-cable-preview.ts";
+import { createRackCablePreviewWriter } from "../lib/rack-cable-preview.ts";
 import { layoutRackCablePreview } from "../lib/rack-cable-layout.ts";
 
 test("cable preview geometry moves only the requested endpoint", () => {
@@ -25,19 +23,16 @@ test("cable preview writer coalesces pointer events and writes only the latest f
   const frames = new Map<number, () => void>();
   let nextFrame = 1;
   const writes: string[] = [];
-  const writer = createRackCablePreviewWriter(
-    (preview) => writes.push(preview.geometry.d),
-    {
-      request(callback) {
-        const frame = nextFrame++;
-        frames.set(frame, callback);
-        return frame;
-      },
-      cancel(frame) {
-        frames.delete(frame);
-      },
+  const writer = createRackCablePreviewWriter((preview) => writes.push(preview.geometry.d), {
+    request(callback) {
+      const frame = nextFrame++;
+      frames.set(frame, callback);
+      return frame;
     },
-  );
+    cancel(frame) {
+      frames.delete(frame);
+    },
+  });
   const first = layoutRackCablePreview(
     { movingSide: "input", anchor: { x: 0, y: 0 } },
     { x: 20, y: 30 },

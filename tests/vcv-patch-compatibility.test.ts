@@ -51,9 +51,6 @@ test("patch compatibility rejects before import and reports the total instance c
 
 test("patch compatibility accepts a patch whose modules are all open and available", () => {
   assert.doesNotThrow(() =>
-    assertVcvPatchModulesLoadable(
-      { ...patch, modules: patch.modules.slice(0, 1) },
-      resolve,
-    ),
+    assertVcvPatchModulesLoadable({ ...patch, modules: patch.modules.slice(0, 1) }, resolve),
   );
 });

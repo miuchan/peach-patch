@@ -17,7 +17,10 @@ test("browser audio boundaries expose only routable stereo device inputs", () =>
     runtime: { strategy: "rack-boundary", audio: { channels: 8 } },
   });
 
-  assert.deepEqual(ports.inputs.map((port) => port.id), [0, 1]);
+  assert.deepEqual(
+    ports.inputs.map((port) => port.id),
+    [0, 1],
+  );
   assert.deepEqual(ports.outputs, []);
 });
 
@@ -30,6 +33,12 @@ test("ordinary Rack modules preserve every visible input and output", () => {
     outputs: [{ id: 0, name: "Sine", kind: "audio" }],
   });
 
-  assert.deepEqual(ports.inputs.map((port) => port.id), [0]);
-  assert.deepEqual(ports.outputs.map((port) => port.id), [0]);
+  assert.deepEqual(
+    ports.inputs.map((port) => port.id),
+    [0],
+  );
+  assert.deepEqual(
+    ports.outputs.map((port) => port.id),
+    [0],
+  );
 });

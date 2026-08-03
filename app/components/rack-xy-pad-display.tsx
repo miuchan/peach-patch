@@ -42,8 +42,20 @@ export function RackXYPadDisplay({
 
   const updatePosition = (event: PointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect(),
-      px = Math.max(12, Math.min(displayWidth - 12, (event.clientX - rect.left) * displayWidth / Math.max(1, rect.width))),
-      py = Math.max(12, Math.min(displayHeight - 12, (event.clientY - rect.top) * displayHeight / Math.max(1, rect.height)));
+      px = Math.max(
+        12,
+        Math.min(
+          displayWidth - 12,
+          ((event.clientX - rect.left) * displayWidth) / Math.max(1, rect.width),
+        ),
+      ),
+      py = Math.max(
+        12,
+        Math.min(
+          displayHeight - 12,
+          ((event.clientY - rect.top) * displayHeight) / Math.max(1, rect.height),
+        ),
+      );
     onParam(xParam, px);
     onParam(yParam, py);
   };
@@ -54,7 +66,14 @@ export function RackXYPadDisplay({
       aria-label="XY Pad recordable trajectory display"
       viewBox={`0 0 ${displayWidth} ${displayHeight}`}
       preserveAspectRatio="none"
-      style={{ position: "absolute", left: x * scaleX, top: y, width: width * scaleX, height, touchAction: "none" }}
+      style={{
+        position: "absolute",
+        left: x * scaleX,
+        top: y,
+        width: width * scaleX,
+        height,
+        touchAction: "none",
+      }}
       onPointerDown={(event) => {
         if (event.button > 0) return;
         event.preventDefault();
@@ -69,7 +88,8 @@ export function RackXYPadDisplay({
         updatePosition(event);
       }}
       onPointerUp={(event) => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        if (event.currentTarget.hasPointerCapture(event.pointerId))
+          event.currentTarget.releasePointerCapture(event.pointerId);
         onMomentary(actionBase, false);
       }}
       onPointerCancel={() => onMomentary(actionBase, false)}
@@ -85,7 +105,14 @@ export function RackXYPadDisplay({
         <line x1="0" y1={ballY} x2={displayWidth} y2={ballY} />
         <line x1={ballX} y1="0" x2={ballX} y2={displayHeight} />
       </g>
-      <circle cx={ballX} cy={ballY} r="10" fill={gate ? "#1996fc" : "none"} stroke="#1996fc" strokeWidth="2" />
+      <circle
+        cx={ballX}
+        cy={ballY}
+        r="10"
+        fill={gate ? "#1996fc" : "none"}
+        stroke="#1996fc"
+        strokeWidth="2"
+      />
     </svg>
   );
 }

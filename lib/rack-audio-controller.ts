@@ -34,28 +34,36 @@ export type RackAudioControllerContext = {
     inputScopes: number[][];
     outputScopes: number[][];
   }) => void;
-  setVisualSignals: (updater: (previous: {
-    cables: Record<string, number>;
-    scopes: Record<string, number[][]>;
-    plugs: Record<string, { voltage: number; rms: number; channels: number; rgb: [number, number, number] }>;
-    lights: Record<string, number[]>;
-  }) => {
-    cables: Record<string, number>;
-    scopes: Record<string, number[][]>;
-    plugs: Record<string, { voltage: number; rms: number; channels: number; rgb: [number, number, number] }>;
-    lights: Record<string, number[]>;
-  }) => void;
+  setVisualSignals: (
+    updater: (previous: {
+      cables: Record<string, number>;
+      scopes: Record<string, number[][]>;
+      plugs: Record<
+        string,
+        { voltage: number; rms: number; channels: number; rgb: [number, number, number] }
+      >;
+      lights: Record<string, number[]>;
+    }) => {
+      cables: Record<string, number>;
+      scopes: Record<string, number[][]>;
+      plugs: Record<
+        string,
+        { voltage: number; rms: number; channels: number; rgb: [number, number, number] }
+      >;
+      lights: Record<string, number[]>;
+    },
+  ) => void;
   setRecordingIds: (updater: (current: Set<string>) => Set<string>) => void;
 };
 
-function handleRecordingComplete(
-  recording: RackRecording,
-  context: RackAudioControllerContext,
-) {
+function handleRecordingComplete(recording: RackRecording, context: RackAudioControllerContext) {
   const rackModule = context.audioPatchRef.current.modules.find(
       (module) => module.id === recording.moduleId,
     ),
-    stamp = new Date().toISOString().replaceAll(":", "-").replace(/\.\d{3}Z$/, "Z"),
+    stamp = new Date()
+      .toISOString()
+      .replaceAll(":", "-")
+      .replace(/\.\d{3}Z$/, "Z"),
     extension = recording.format === "midi" ? "mid" : "wav",
     name = `${rackModule?.model || "Recorder"}-${stamp}.${extension}`,
     url = URL.createObjectURL(recording.blob),
@@ -71,11 +79,7 @@ function handleRecordingComplete(
   );
 }
 
-function handleMidiLearn(
-  inputName: string,
-  bytes: number[],
-  context: RackAudioControllerContext,
-) {
+function handleMidiLearn(inputName: string, bytes: number[], context: RackAudioControllerContext) {
   const targetRef = context.midiLearnTargetRef.current;
   if (!targetRef || bytes.length < 3 || (bytes[0] & 0xf0) !== 0xb0) return;
   const current = context.audioPatchRef.current,
@@ -87,9 +91,10 @@ function handleMidiLearn(
     context.setStatus("MIDI learn target or Core MIDI-Map is no longer available");
     return;
   }
-  const data = midiMap.rack?.data && typeof midiMap.rack.data === "object"
-      ? midiMap.rack.data as Record<string, unknown>
-      : {},
+  const data =
+      midiMap.rack?.data && typeof midiMap.rack.data === "object"
+        ? (midiMap.rack.data as Record<string, unknown>)
+        : {},
     existingMaps = Array.isArray(data.maps) ? data.maps : [],
     targetRackId = Number(target.rack?.id),
     map = {
@@ -102,7 +107,9 @@ function handleMidiLearn(
       ...existingMaps.filter((entry) => {
         if (!entry || typeof entry !== "object") return true;
         const value = entry as Record<string, unknown>;
-        return !(value.patchworkModuleId === target.id && Number(value.paramId) === targetRef.paramId);
+        return !(
+          value.patchworkModuleId === target.id && Number(value.paramId) === targetRef.paramId
+        );
       }),
       map,
     ],
@@ -110,13 +117,16 @@ function handleMidiLearn(
   context.audioRef.current?.setStateJson(midiMap.id, nextData);
   context.commitHistory((patch) => ({
     ...patch,
-    modules: patch.modules.map((module) => module.id === midiMap.id
-      ? { ...module, rack: { ...(module.rack ?? {}), data: nextData } }
-      : module),
+    modules: patch.modules.map((module) =>
+      module.id === midiMap.id
+        ? { ...module, rack: { ...(module.rack ?? {}), data: nextData } }
+        : module,
+    ),
   }));
   const definition = getWebPlugin(target.key),
-    paramName = definition?.params.find((param) => param.id === targetRef.paramId)?.name
-      ?? `parameter ${targetRef.paramId + 1}`;
+    paramName =
+      definition?.params.find((param) => param.id === targetRef.paramId)?.name ??
+      `parameter ${targetRef.paramId + 1}`;
   context.setStatus(
     `MIDI learn · ${inputName || "default input"} CC ${map.cc} → ${target.plugin}/${target.model} ${paramName}`,
   );
@@ -143,22 +153,30 @@ export function createRackAudioEngine(context: RackAudioControllerContext) {
     },
     onPortPeaks: (moduleId, inputs, outputs, inputScopes, outputScopes) =>
       context.setPortPeaks({ moduleId, inputs, outputs, inputScopes, outputScopes }),
-    onVisualSignals: (cables, scopes, plugs, lights) => context.setVisualSignals((previous) => ({
-      cables,
-      scopes: { ...previous.scopes, ...scopes },
-      plugs,
-      lights,
-    })),
-    onStateSnapshot: (moduleId, data) => context.commitHistory((patch) => {
-      const module = patch.modules.find((candidate) => candidate.id === moduleId);
-      return applyAudioStateSnapshot(patch, moduleId, data, getWebPlugin(module?.key ?? "")?.stateKeys);
-    }),
-    onCaptureState: (moduleId, active) => context.setRecordingIds((current) => {
-      const next = new Set(current);
-      if (active) next.add(moduleId);
-      else next.delete(moduleId);
-      return next;
-    }),
+    onVisualSignals: (cables, scopes, plugs, lights) =>
+      context.setVisualSignals((previous) => ({
+        cables,
+        scopes: { ...previous.scopes, ...scopes },
+        plugs,
+        lights,
+      })),
+    onStateSnapshot: (moduleId, data) =>
+      context.commitHistory((patch) => {
+        const module = patch.modules.find((candidate) => candidate.id === moduleId);
+        return applyAudioStateSnapshot(
+          patch,
+          moduleId,
+          data,
+          getWebPlugin(module?.key ?? "")?.stateKeys,
+        );
+      }),
+    onCaptureState: (moduleId, active) =>
+      context.setRecordingIds((current) => {
+        const next = new Set(current);
+        if (active) next.add(moduleId);
+        else next.delete(moduleId);
+        return next;
+      }),
     onRecordingComplete: (recording) => handleRecordingComplete(recording, context),
   };
   return new RackAudioEngine(callbacks);

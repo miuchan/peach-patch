@@ -93,23 +93,23 @@ Artifacts run with the small deterministic WASI/environment surface in `lib/rack
 
 Optional exports are enabled only when the registry metadata declares the matching runtime capability and the artifact exposes the corresponding capacity or buffers.
 
-| Capability | Runtime behavior |
-| --- | --- |
-| Lights and visuals | Reads light and custom visual buffers for panels, scopes, meters, displays, and telemetry |
-| JSON state | Loads typed/nested Rack model data and snapshots runtime-owned state back into patch history |
-| Assets | Copies one or multiple browser-decoded asset slots into WASM before processing |
-| Capture | Drains bounded audio or MIDI chunks without blocking the render thread, then downloads WAV or MID on stop |
-| Web MIDI | Pushes bounded input messages and drains module output records or packets |
-| Bypass | Applies registry-declared input/output routes without running module DSP |
-| Expanders | Supports object snapshots, bidirectional message buffers, direct neighbors, and longer typed chains where declared |
-| Host control | Allows explicitly translated modules to request bounded rack viewport or cable presentation actions |
-| Trigger actions | Sends browser panel gestures that are not ordinary continuous Rack parameters |
+| Capability         | Runtime behavior                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Lights and visuals | Reads light and custom visual buffers for panels, scopes, meters, displays, and telemetry                          |
+| JSON state         | Loads typed/nested Rack model data and snapshots runtime-owned state back into patch history                       |
+| Assets             | Copies one or multiple browser-decoded asset slots into WASM before processing                                     |
+| Capture            | Drains bounded audio or MIDI chunks without blocking the render thread, then downloads WAV or MID on stop          |
+| Web MIDI           | Pushes bounded input messages and drains module output records or packets                                          |
+| Bypass             | Applies registry-declared input/output routes without running module DSP                                           |
+| Expanders          | Supports object snapshots, bidirectional message buffers, direct neighbors, and longer typed chains where declared |
+| Host control       | Allows explicitly translated modules to request bounded rack viewport or cable presentation actions                |
+| Trigger actions    | Sends browser panel gestures that are not ordinary continuous Rack parameters                                      |
 
 The exact export names and metadata shapes are defined by `lib/web-plugin-registry.ts`, `lib/rack-wasm-host.ts`, and `public/audio/rack-graph-processor.js`. New capabilities must be added to the registry package contract and browser host together; UI code must not infer them from a module name.
 
 ## One AudioWorklet graph
 
-`RackAudioEngine` creates one `AudioWorkletNode` for the complete patch. The main thread verifies and transfers the artifact bytes, state, assets, cables, and browser audio boundaries. The worklet then:
+`RackAudioEngine` creates one `AudioWorkletNode` for the complete patch. The main thread verifies and transfers the artifact bytes, state, assets, cables, and browser audio boundaries. The engine delegates message validation, capture assembly, and MIDI record decoding to `rack-audio-worklet-events.ts`, `rack-audio-capture.ts`, and `rack-audio-midi.ts`; malformed worklet payloads do not flow directly into application callbacks. The React lifecycle records the exact patch structure loaded by each asynchronous start and rebuilds if editing advanced while artifacts were loading. The worklet then:
 
 - instantiates one WASM runtime for each active module instance;
 - joins compatible physical expander neighbors declared by the registry;
@@ -150,7 +150,7 @@ Capture-capable modules expose bounded queues. The worklet emits transferable ch
 
 Registry geometry is normalized onto Rack's 15 px HP grid and 380 px row height. When source-derived positions are valid, the same coordinates drive visible controls, jack hit targets, and cable endpoints. Invalid or absent positions fall back to bounded accessible browser layouts; a missing screenshot falls back to a generated functional panel.
 
-The selected-module inspector exposes every compatible non-button parameter, typed state, source link, MIDI-learn target, and live input/output scopes. Custom module visuals are explicit registry contracts rendered by focused React components; they do not change the DSP ABI or become patch state unless their interaction writes a declared parameter/state/data field.
+The selected-module inspector exposes every compatible non-button parameter, typed state, source link, MIDI-learn target, and live input/output scopes. `ModulePanel` composes ready-state controls through `module-panel-controls.tsx`, delegates registry-declared displays to `module-panel-visuals.tsx`, and keeps its port bank, keyboard/MIDI/meter derivations, parameter widget catalog, and bounded remote-audio loading in focused component or adapter modules. Custom module visuals are explicit registry contracts; they do not change the DSP ABI or become patch state unless their interaction writes a declared parameter/state/data field.
 
 ## Known limits
 
@@ -170,10 +170,7 @@ Do not add C++, build caches, local WASM outputs, or a second catalog to this re
 ## Runtime verification
 
 ```bash
-npm run typecheck
-npm run lint
-npm run build
-npm test
+npm run check
 ```
 
-The coverage-gated suite includes registry boundaries, patch parsing and legacy migration, atomic compatibility checks, cable stacking, polyphonic graph behavior, state and asset validation, PatchStorage constraints, serialization, worklet messaging, capture, and rendered application boundaries.
+The command checks formatting and lint rules, then runs type checking, a production build, and the coverage-gated suite. The suite includes registry boundaries, patch parsing and legacy migration, atomic compatibility checks, cable stacking, polyphonic graph behavior, state and asset validation, PatchStorage constraints, serialization, worklet messaging, capture, and rendered application boundaries.

@@ -15,9 +15,7 @@ function decodeHtmlAttribute(value: string) {
 }
 
 function attributeFromTag(tag: string, name: string) {
-  const match = tag.match(
-    new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"),
-  );
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
   const value = match?.[1] ?? match?.[2] ?? match?.[3];
   return value === undefined ? undefined : decodeHtmlAttribute(value);
 }

@@ -1,5 +1,4 @@
-// @ts-nocheck
-// @ts-nocheck
+// @ts-nocheck -- Helper fixtures intentionally omit unrelated runtime metadata.
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -33,9 +32,7 @@ const definition = {
   plugin: "Example",
   model: "Test",
   width: 30,
-  params: [
-    { id: 0, name: "Initial", min: 0, max: 10, default: 2, initial: 4 },
-  ],
+  params: [{ id: 0, name: "Initial", min: 0, max: 10, default: 2, initial: 4 }],
   stateKeys: [{ key: "enabled", type: "boolean", default: 1 }],
   polyphonic: true,
 };
@@ -64,12 +61,9 @@ test("audio patch sync keeps host metadata and ignores invalid parameter targets
   const unchanged = applyAudioParam(patch, "voice", 4, 1);
   assert.deepEqual(unchanged, patch);
   const changed = applyAudioParam(patch, "voice", 0, 0.8);
-  const snapshot = applyAudioStateSnapshot(
-    changed,
-    "voice",
-    { enabled: true },
-    [{ key: "enabled", type: "boolean", default: 0 }],
-  );
+  const snapshot = applyAudioStateSnapshot(changed, "voice", { enabled: true }, [
+    { key: "enabled", type: "boolean", default: 0 },
+  ]);
   assert.equal(snapshot.modules[0].params[0], 0.8);
   assert.equal(snapshot.modules[0].rack.data.patchworkWebPolyphony, 4);
   assert.deepEqual(snapshot.modules[0].state, [1]);
@@ -99,11 +93,20 @@ test("viewport host controls preserve locked coordinates while disconnected", ()
     upConnected: false,
     downConnected: false,
   };
-  const first = applyRackHostViewportControl(control, {
-    pan: { x: 0, y: 0 }, zoom: 1, lockX: null, lockY: null,
-  }, { modules: [{ x: 0, y: 0, width: 90 }], width: 600, height: 400 });
+  const first = applyRackHostViewportControl(
+    control,
+    {
+      pan: { x: 0, y: 0 },
+      zoom: 1,
+      lockX: null,
+      lockY: null,
+    },
+    { modules: [{ x: 0, y: 0, width: 90 }], width: 600, height: 400 },
+  );
   const second = applyRackHostViewportControl(control, first, {
-    modules: [{ x: 0, y: 0, width: 90 }], width: 600, height: 400,
+    modules: [{ x: 0, y: 0, width: 90 }],
+    width: 600,
+    height: 400,
   });
   assert.equal(first.lockX, -first.pan.x);
   assert.equal(second.pan.x, first.pan.x);
@@ -163,7 +166,13 @@ test("duplicate module IDs are repaired without changing unique modules", () => 
 });
 
 test("browser-owned sample metadata and polyphony are validated at the boundary", () => {
-  const asset = { storageKey: "sample-1", name: "kick.wav", sampleRate: 48000, channels: 2, frames: 128 };
+  const asset = {
+    storageKey: "sample-1",
+    name: "kick.wav",
+    sampleRate: 48000,
+    channels: 2,
+    frames: 128,
+  };
   assert.deepEqual(sampleAssetFromData({ patchworkWebAsset: asset }), asset);
   assert.equal(sampleAssetFromData({ patchworkWebAsset: { ...asset, frames: "128" } }), undefined);
   assert.equal(polyphonyFromData({ patchworkWebPolyphony: 8 }), 8);
@@ -177,11 +186,28 @@ test("cable layout owns plug ordering, geometry, and signal fan-out", () => {
       { id: "target", key: "target", x: 300, y: 0, width: 90 },
     ],
     cables: [
-      { id: "cable", fromModule: "source", fromPort: 0, toModule: "target", toPort: 0, color: "#fff" },
+      {
+        id: "cable",
+        fromModule: "source",
+        fromPort: 0,
+        toModule: "target",
+        toPort: 0,
+        color: "#fff",
+      },
     ],
   };
-  const definition = { key: "source", width: 90, inputs: [], outputs: [{ id: 0, name: "out", kind: "audio" }] };
-  const targetDefinition = { key: "target", width: 90, inputs: [{ id: 0, name: "in", kind: "audio" }], outputs: [] };
+  const definition = {
+    key: "source",
+    width: 90,
+    inputs: [],
+    outputs: [{ id: 0, name: "out", kind: "audio" }],
+  };
+  const targetDefinition = {
+    key: "target",
+    width: 90,
+    inputs: [{ id: 0, name: "in", kind: "audio" }],
+    outputs: [],
+  };
   const [layout] = layoutPatchCables(patch, [definition, targetDefinition], 0.5);
   assert.match(layout.d, /^M-?\d/);
   assert.equal(layout.topOutputPlug, true);
@@ -198,7 +224,14 @@ test("cable drag preview moves only the grabbed endpoint", () => {
       { id: "target", key: "target", x: 300, y: 0, width: 90 },
     ],
     cables: [
-      { id: "cable", fromModule: "source", fromPort: 0, toModule: "target", toPort: 0, color: "#fff" },
+      {
+        id: "cable",
+        fromModule: "source",
+        fromPort: 0,
+        toModule: "target",
+        toPort: 0,
+        color: "#fff",
+      },
     ],
   };
   const definitions = [
@@ -258,17 +291,21 @@ test("new cable draft stays anchored to its jack and follows the pointer", () =>
 test("browser asset loader validates and normalizes byte-backed module assets", async () => {
   const rom = new Uint8Array(16);
   rom.set([0x4e, 0x45, 0x53, 0x1a]);
-  const loaded = await loadBrowserAsset(
-    new File([rom], "demo.nes"),
-    { type: "binary", maxSamples: 32, maxSeconds: 0, channels: 1 },
-  );
+  const loaded = await loadBrowserAsset(new File([rom], "demo.nes"), {
+    type: "binary",
+    maxSamples: 32,
+    maxSeconds: 0,
+    channels: 1,
+  });
   assert.equal(loaded.ref.frames, 16);
   assert.equal(loaded.samples[0], 0x4e);
   await assert.rejects(
-    loadBrowserAsset(
-      new File([new Uint8Array(16)], "bad.nes"),
-      { type: "binary", maxSamples: 32, maxSeconds: 0, channels: 1 },
-    ),
+    loadBrowserAsset(new File([new Uint8Array(16)], "bad.nes"), {
+      type: "binary",
+      maxSamples: 32,
+      maxSeconds: 0,
+      channels: 1,
+    }),
     /iNES/,
   );
 });
@@ -276,7 +313,16 @@ test("browser asset loader validates and normalizes byte-backed module assets", 
 test("VCV import keeps source coordinates, state, and unresolved module boundaries", () => {
   const raw = {
     version: "2.6",
-    modules: [{ id: 7, plugin: "Demo", model: "Osc", pos: [2, 3], params: [{ id: 0, value: 0.5 }], data: { mode: "sine" } }],
+    modules: [
+      {
+        id: 7,
+        plugin: "Demo",
+        model: "Osc",
+        pos: [2, 3],
+        params: [{ id: 0, value: 0.5 }],
+        data: { mode: "sine" },
+      },
+    ],
     cables: [],
   };
   const imported = importVcvPatch(raw, () => undefined, ["#abc"]);

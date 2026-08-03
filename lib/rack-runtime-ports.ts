@@ -11,11 +11,7 @@ type RuntimePortDefinition = Pick<WebPluginModule, "inputs" | "outputs" | "runti
 export function rackRuntimePorts(definition: RuntimePortDefinition) {
   const audioBoundary = Boolean(definition.runtime?.audio);
   return {
-    inputs: definition.inputs.filter((port) =>
-      !port.hidden && (!audioBoundary || port.id < 2)
-    ),
-    outputs: audioBoundary
-      ? []
-      : definition.outputs.filter((port) => !port.hidden),
+    inputs: definition.inputs.filter((port) => !port.hidden && (!audioBoundary || port.id < 2)),
+    outputs: audioBoundary ? [] : definition.outputs.filter((port) => !port.hidden),
   };
 }

@@ -31,9 +31,7 @@ export function appendAutomationEvent(
   events.push(event);
 }
 
-export function automationClipFromPatch(
-  patch: PatchDocument,
-): PatchAutomationClip | null {
+export function automationClipFromPatch(patch: PatchDocument): PatchAutomationClip | null {
   const raw = patch.rack?.patchworkWebAutomation;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const source = raw as Record<string, unknown>;
@@ -55,10 +53,7 @@ export function automationClipFromPatch(
       : [];
   });
   return {
-    durationMs: Math.max(
-      1,
-      Number(source.durationMs) || events.at(-1)?.timeMs || 1,
-    ),
+    durationMs: Math.max(1, Number(source.durationMs) || events.at(-1)?.timeMs || 1),
     events,
   };
 }

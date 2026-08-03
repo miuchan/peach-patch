@@ -45,7 +45,14 @@ export function RackMadzineScopeDisplay({
       aria-label={`${tracks}-track MADZINE oscilloscope`}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
-      style={{ position: "absolute", left: x * scaleX, top: y, width: width * scaleX, height, pointerEvents: "none" }}
+      style={{
+        position: "absolute",
+        left: x * scaleX,
+        top: y,
+        width: width * scaleX,
+        height,
+        pointerEvents: "none",
+      }}
     >
       <defs>
         {Array.from({ length: tracks }, (_, track) => (
@@ -56,7 +63,15 @@ export function RackMadzineScopeDisplay({
       </defs>
       <rect width={width} height={height} fill="#141414" />
       {Array.from({ length: Math.max(0, tracks - 1) }, (_, index) => (
-        <line key={index} x1="0" x2={width} y1={(index + 1) * trackHeight} y2={(index + 1) * trackHeight} stroke="rgba(255,255,255,.118)" strokeWidth=".5" />
+        <line
+          key={index}
+          x1="0"
+          x2={width}
+          y1={(index + 1) * trackHeight}
+          y2={(index + 1) * trackHeight}
+          stroke="rgba(255,255,255,.118)"
+          strokeWidth=".5"
+        />
       ))}
       {paths.map((path, track) => (
         <path
@@ -70,7 +85,15 @@ export function RackMadzineScopeDisplay({
           clipPath={`url(#${clipPrefix}-${track})`}
         />
       ))}
-      <rect x=".5" y=".5" width={Math.max(0, width - 1)} height={Math.max(0, height - 1)} fill="none" stroke="#646464" strokeWidth="1" />
+      <rect
+        x=".5"
+        y=".5"
+        width={Math.max(0, width - 1)}
+        height={Math.max(0, height - 1)}
+        fill="none"
+        stroke="#646464"
+        strokeWidth="1"
+      />
     </svg>
   );
 }

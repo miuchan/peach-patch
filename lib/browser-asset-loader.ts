@@ -16,7 +16,12 @@ export type LoadedBrowserAsset = {
 
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
-function assetRef(file: File, sampleRate: number, channels: number, frames: number): SampleAssetRef {
+function assetRef(
+  file: File,
+  sampleRate: number,
+  channels: number,
+  frames: number,
+): SampleAssetRef {
   return {
     storageKey: `sample-${crypto.randomUUID()}`,
     name: file.name,
@@ -53,17 +58,36 @@ async function loadImage(file: File, contract: BrowserAssetContract): Promise<Lo
 }
 
 function validateBinary(bytes: Uint8Array, contract: BrowserAssetContract) {
-  if (contract.type === "binary" && (bytes.length < 16 || bytes[0] !== 0x4e || bytes[1] !== 0x45 || bytes[2] !== 0x53 || bytes[3] !== 0x1a))
+  if (
+    contract.type === "binary" &&
+    (bytes.length < 16 ||
+      bytes[0] !== 0x4e ||
+      bytes[1] !== 0x45 ||
+      bytes[2] !== 0x53 ||
+      bytes[3] !== 0x1a)
+  )
     throw new Error("The selected file is not an iNES .nes ROM");
-  if (contract.type === "midi" && (bytes.length < 14 || bytes[0] !== 0x4d || bytes[1] !== 0x54 || bytes[2] !== 0x68 || bytes[3] !== 0x64))
+  if (
+    contract.type === "midi" &&
+    (bytes.length < 14 ||
+      bytes[0] !== 0x4d ||
+      bytes[1] !== 0x54 ||
+      bytes[2] !== 0x68 ||
+      bytes[3] !== 0x64)
+  )
     throw new Error("The selected file is not a Standard MIDI File");
   if (contract.type === "script") {
     if (!bytes.length) throw new Error("The selected Lua script is empty");
-    try { new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-    catch { throw new Error("The selected Lua script is not valid UTF-8 text"); }
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      throw new Error("The selected Lua script is not valid UTF-8 text");
+    }
   }
   if (bytes.length > contract.maxSamples)
-    throw new Error(`${contract.type === "midi" ? "MIDI file" : contract.type === "script" ? "Lua script" : "ROM"} is larger than the ${contract.maxSamples.toLocaleString()} byte module limit`);
+    throw new Error(
+      `${contract.type === "midi" ? "MIDI file" : contract.type === "script" ? "Lua script" : "ROM"} is larger than the ${contract.maxSamples.toLocaleString()} byte module limit`,
+    );
 }
 
 async function loadBinary(file: File, contract: BrowserAssetContract): Promise<LoadedBrowserAsset> {
@@ -71,7 +95,11 @@ async function loadBinary(file: File, contract: BrowserAssetContract): Promise<L
   validateBinary(bytes, contract);
   const samples = new Float32Array(bytes.length);
   for (let index = 0; index < bytes.length; index++) samples[index] = bytes[index];
-  return { ref: assetRef(file, 1, 1, bytes.length), samples, detail: `${bytes.length.toLocaleString()} bytes` };
+  return {
+    ref: assetRef(file, 1, 1, bytes.length),
+    samples,
+    detail: `${bytes.length.toLocaleString()} bytes`,
+  };
 }
 
 async function loadAudio(file: File, contract: BrowserAssetContract): Promise<LoadedBrowserAsset> {
@@ -98,9 +126,14 @@ async function loadAudio(file: File, contract: BrowserAssetContract): Promise<Lo
   }
 }
 
-export async function loadBrowserAsset(file: File, contract: BrowserAssetContract): Promise<LoadedBrowserAsset> {
-  if (file.size > MAX_FILE_BYTES) throw new Error("Sample is larger than the 100 MB browser decode limit");
+export async function loadBrowserAsset(
+  file: File,
+  contract: BrowserAssetContract,
+): Promise<LoadedBrowserAsset> {
+  if (file.size > MAX_FILE_BYTES)
+    throw new Error("Sample is larger than the 100 MB browser decode limit");
   if (contract.type === "image") return loadImage(file, contract);
-  if (contract.type === "binary" || contract.type === "midi" || contract.type === "script") return loadBinary(file, contract);
+  if (contract.type === "binary" || contract.type === "midi" || contract.type === "script")
+    return loadBinary(file, contract);
   return loadAudio(file, contract);
 }

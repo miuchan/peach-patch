@@ -1,6 +1,12 @@
 export type ModuleStatus = "ready" | "resolving" | "source-required" | "error";
 
-export type SampleAssetRef = { storageKey:string; name:string; sampleRate:number; channels:number; frames:number };
+export type SampleAssetRef = {
+  storageKey: string;
+  name: string;
+  sampleRate: number;
+  channels: number;
+  frames: number;
+};
 
 export type ModuleInstance = {
   id: string;
@@ -13,12 +19,18 @@ export type ModuleInstance = {
   width: number;
   params: number[];
   state?: number[];
-  stateKeys?: Array<{key:string;type:"integer"|"real"|"boolean"|"string-enum";values?:string[];index?:number;path?:Array<number|string>}>;
+  stateKeys?: Array<{
+    key: string;
+    type: "integer" | "real" | "boolean" | "string-enum";
+    values?: string[];
+    index?: number;
+    path?: Array<number | string>;
+  }>;
   asset?: SampleAssetRef;
   assets?: Array<SampleAssetRef | undefined>;
   polyphony?: number;
   bypassed?: boolean;
-  rack?: Record<string,unknown>;
+  rack?: Record<string, unknown>;
   status: ModuleStatus;
   description?: string;
   screenshotUrl?: string;
@@ -34,12 +46,12 @@ export type PatchCable = {
   toModule: string;
   toPort: number;
   color: string;
-  rack?: Record<string,unknown>;
+  rack?: Record<string, unknown>;
 };
 
 export type PatchDocument = {
   modules: ModuleInstance[];
   cables: PatchCable[];
-  rack?: Record<string,unknown>;
-  rackOrigin?: [number,number];
+  rack?: Record<string, unknown>;
+  rackOrigin?: [number, number];
 };

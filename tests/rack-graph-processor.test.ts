@@ -38,10 +38,7 @@ type TestProcessor = {
   drainCaptures: () => void;
   prepareInputs: (module: TestTarget, frames: number) => void;
   prepareInputFrame: (module: TestTarget, frame: number) => void;
-  process: (
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-  ) => boolean;
+  process: (inputs: Float32Array[][], outputs: Float32Array[][]) => boolean;
   port: {
     onmessage: ((event: { data: Record<string, unknown> }) => void) | null;
     postMessage: (message: unknown, transfer?: unknown[]) => void;
@@ -72,7 +69,7 @@ test("Rack graph stacks inputs and broadcasts mono signals across polyphonic cha
     workletGlobal.AudioWorkletProcessor = class {
       port = {
         onmessage: null,
-        postMessage: (_message: unknown, _transfer?: unknown[]) => {},
+        postMessage: () => {},
       };
     };
     workletGlobal.registerProcessor = (_name, constructor) => {
@@ -130,16 +127,20 @@ test("Rack graph stacks inputs and broadcasts mono signals across polyphonic cha
     assert.deepEqual(connected, [1]);
     assert.deepEqual(channelCounts, [3]);
     assert.deepEqual(
-      [target.inputs[0], target.inputs[1], target.inputs[128], target.inputs[129], target.inputs[256], target.inputs[257]],
+      [
+        target.inputs[0],
+        target.inputs[1],
+        target.inputs[128],
+        target.inputs[129],
+        target.inputs[256],
+        target.inputs[257],
+      ],
       [11, 12, 21, 22, 31, 32],
     );
 
     target.inputs.fill(99);
     processor.prepareInputFrame(target, 1);
-    assert.deepEqual(
-      [target.inputs[1], target.inputs[129], target.inputs[257]],
-      [12, 22, 32],
-    );
+    assert.deepEqual([target.inputs[1], target.inputs[129], target.inputs[257]], [12, 22, 32]);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) Reflect.deleteProperty(globalThis, key);
@@ -165,7 +166,7 @@ test("Rack graph pauses only visual telemetry during direct manipulation", async
     workletGlobal.AudioWorkletProcessor = class {
       port = {
         onmessage: null,
-        postMessage: (_message: unknown, _transfer?: unknown[]) => {},
+        postMessage: () => {},
       };
     } as unknown as new () => TestProcessor["port"];
     workletGlobal.registerProcessor = (_name, constructor) => {

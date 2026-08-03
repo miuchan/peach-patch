@@ -28,18 +28,12 @@ export function registerRackParamPress(
   };
 }
 
-export function rackParamResetValue(
-  param: ParamSpec,
-  values: readonly number[],
-): number {
+export function rackParamResetValue(param: ParamSpec, values: readonly number[]): number {
   if (!param.resetFrom) return param.default;
   const source = values[param.resetFrom.paramId];
   if (!Number.isFinite(source)) return param.default;
   const value = source * param.resetFrom.scale + param.resetFrom.offset;
   if (param.unbounded) return value;
-  return Math.min(
-    Math.max(param.min, param.max),
-    Math.max(Math.min(param.min, param.max), value),
-  );
+  return Math.min(Math.max(param.min, param.max), Math.max(Math.min(param.min, param.max), value));
 }
 import type { ParamSpec } from "./web-plugin-registry";

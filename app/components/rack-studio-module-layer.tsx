@@ -50,8 +50,14 @@ export type RackStudioModuleLayerProps = {
   onPortDragStart: (port: RackStudioPortClick) => void;
   onPortDrop: (from: RackStudioPortClick, to: RackStudioPortClick) => void;
   onPortDragEnd: () => void;
-  onPortPointerDown: (port: RackStudioPortClick, event: React.PointerEvent<HTMLButtonElement>) => void;
-  onPortPointerUp: (port: RackStudioPortClick, event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPortPointerDown: (
+    port: RackStudioPortClick,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => void;
+  onPortPointerUp: (
+    port: RackStudioPortClick,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => void;
   onClock: (module: ModuleInstance) => void;
   onSample: (module: ModuleInstance, file: File, slot?: number) => void;
   onCapture: (module: ModuleInstance) => void;
@@ -115,93 +121,101 @@ function RackStudioModuleLayerView({
     return connected;
   }, [cables]);
 
-  return <>
-    {modules.map((module) => {
-      const definition = getDefinition(module.key);
-      const inputSignalLevels: Record<number, number> = {};
-      for (const port of definition?.inputs ?? []) {
-        const level = jackSignalLevels.get(`${module.id}:in:${port.id}`);
-        if (level !== undefined) inputSignalLevels[port.id] = level;
-      }
-      const outputSignalLevels: Record<number, number> = {};
-      for (const port of definition?.outputs ?? []) {
-        const level = jackSignalLevels.get(`${module.id}:out:${port.id}`);
-        if (level !== undefined) outputSignalLevels[port.id] = level;
-      }
-      return <ModulePanel
-        key={module.id}
-        module={module}
-        definition={definition}
-        selected={selectedIds.has(module.id)}
-        pending={pending}
-        inputSignalLevels={inputSignalLevels}
-        connectedInputIds={connectedInputIdsByModule.get(module.id) ?? EMPTY_CONNECTED_INPUT_IDS}
-        outputSignalLevels={outputSignalLevels}
-        scopeSamples={visualSignals.scopes[module.id]}
-        lightValues={visualSignals.lights[module.id]}
-        audioRunning={audioRunning}
-        onSelect={(event) => onSelect(module, event)}
-        onContextMenu={(event) => onContextMenu(module, event)}
-        onDragStart={(event) => onDragStart(module, event)}
-        onModuleHover={(hovered) => {
-          if (hovered) hoveredModuleRef.current = module.id;
-          else if (hoveredModuleRef.current === module.id) hoveredModuleRef.current = null;
-          onModuleHover(module, hovered);
-        }}
-        onFocus={() => onFocus(module)}
-        onParam={(id, value) => onParam(module, id, value)}
-        onParamReset={(id, value) => onParamReset(module, id, value)}
-        onMomentary={(id, active) => onMomentary(module, id, active)}
-        onParamHover={(id) => {
-          if (id === null && hoveredParamRef.current?.moduleId === module.id) hoveredParamRef.current = null;
-          else if (id !== null) hoveredParamRef.current = { moduleId: module.id, paramId: id };
-          onParamHover(module, id);
-        }}
-        onPortHover={(direction, id) => onPortHover(module, direction, id)}
-        manualHelpTarget={manualHelpTarget}
-        onState={(updates) => onState(module, updates)}
-        onData={(data) => onData(module, data)}
-        onPolyphony={(channels) => onPolyphony(module, channels)}
-        midiDevices={midiDevices}
-        onMidiDevice={(deviceName) => onMidiDevice(module, deviceName)}
-        onBypass={() => onBypass(module)}
-        onPort={onPort}
-        onPortDragStart={onPortDragStart}
-        onPortDrop={onPortDrop}
-        onPortDragEnd={onPortDragEnd}
-        onPortPointerDown={onPortPointerDown}
-        onPortPointerUp={onPortPointerUp}
-        onClock={() => onClock(module)}
-        onSample={(file, slot) => onSample(module, file, slot)}
-        recording={recordingIds.has(module.id)}
-        onCapture={() => onCapture(module)}
-        onRemove={() => onRemove(module)}
-        onReplaceDrop={(key) => onReplaceDrop(module, key)}
-      />;
-    })}
-  </>;
+  return (
+    <>
+      {modules.map((module) => {
+        const definition = getDefinition(module.key);
+        const inputSignalLevels: Record<number, number> = {};
+        for (const port of definition?.inputs ?? []) {
+          const level = jackSignalLevels.get(`${module.id}:in:${port.id}`);
+          if (level !== undefined) inputSignalLevels[port.id] = level;
+        }
+        const outputSignalLevels: Record<number, number> = {};
+        for (const port of definition?.outputs ?? []) {
+          const level = jackSignalLevels.get(`${module.id}:out:${port.id}`);
+          if (level !== undefined) outputSignalLevels[port.id] = level;
+        }
+        return (
+          <ModulePanel
+            key={module.id}
+            module={module}
+            definition={definition}
+            selected={selectedIds.has(module.id)}
+            pending={pending}
+            inputSignalLevels={inputSignalLevels}
+            connectedInputIds={
+              connectedInputIdsByModule.get(module.id) ?? EMPTY_CONNECTED_INPUT_IDS
+            }
+            outputSignalLevels={outputSignalLevels}
+            scopeSamples={visualSignals.scopes[module.id]}
+            lightValues={visualSignals.lights[module.id]}
+            audioRunning={audioRunning}
+            onSelect={(event) => onSelect(module, event)}
+            onContextMenu={(event) => onContextMenu(module, event)}
+            onDragStart={(event) => onDragStart(module, event)}
+            onModuleHover={(hovered) => {
+              if (hovered) hoveredModuleRef.current = module.id;
+              else if (hoveredModuleRef.current === module.id) hoveredModuleRef.current = null;
+              onModuleHover(module, hovered);
+            }}
+            onFocus={() => onFocus(module)}
+            onParam={(id, value) => onParam(module, id, value)}
+            onParamReset={(id, value) => onParamReset(module, id, value)}
+            onMomentary={(id, active) => onMomentary(module, id, active)}
+            onParamHover={(id) => {
+              if (id === null && hoveredParamRef.current?.moduleId === module.id)
+                hoveredParamRef.current = null;
+              else if (id !== null) hoveredParamRef.current = { moduleId: module.id, paramId: id };
+              onParamHover(module, id);
+            }}
+            onPortHover={(direction, id) => onPortHover(module, direction, id)}
+            manualHelpTarget={manualHelpTarget}
+            onState={(updates) => onState(module, updates)}
+            onData={(data) => onData(module, data)}
+            onPolyphony={(channels) => onPolyphony(module, channels)}
+            midiDevices={midiDevices}
+            onMidiDevice={(deviceName) => onMidiDevice(module, deviceName)}
+            onBypass={() => onBypass(module)}
+            onPort={onPort}
+            onPortDragStart={onPortDragStart}
+            onPortDrop={onPortDrop}
+            onPortDragEnd={onPortDragEnd}
+            onPortPointerDown={onPortPointerDown}
+            onPortPointerUp={onPortPointerUp}
+            onClock={() => onClock(module)}
+            onSample={(file, slot) => onSample(module, file, slot)}
+            recording={recordingIds.has(module.id)}
+            onCapture={() => onCapture(module)}
+            onRemove={() => onRemove(module)}
+            onReplaceDrop={(key) => onReplaceDrop(module, key)}
+          />
+        );
+      })}
+    </>
+  );
 }
 
 function moduleLayerPropsEqual(
   previous: RackStudioModuleLayerProps,
   next: RackStudioModuleLayerProps,
 ) {
-  return previous.modules === next.modules
-    && previous.cables === next.cables
-    && previous.getDefinition === next.getDefinition
-    && previous.selectedIds === next.selectedIds
-    && previous.pending === next.pending
-    && (next.visualUpdatesPaused || (
-      previous.jackSignalLevels === next.jackSignalLevels
-      && previous.visualSignals === next.visualSignals
-    ))
-    && previous.audioRunning === next.audioRunning
-    && previous.recordingIds === next.recordingIds
-    && previous.midiDevices === next.midiDevices
-    && previous.manualHelpTarget === next.manualHelpTarget
-    && previous.modulesLocked === next.modulesLocked
-    && previous.hoveredModuleRef === next.hoveredModuleRef
-    && previous.hoveredParamRef === next.hoveredParamRef;
+  return (
+    previous.modules === next.modules &&
+    previous.cables === next.cables &&
+    previous.getDefinition === next.getDefinition &&
+    previous.selectedIds === next.selectedIds &&
+    previous.pending === next.pending &&
+    (next.visualUpdatesPaused ||
+      (previous.jackSignalLevels === next.jackSignalLevels &&
+        previous.visualSignals === next.visualSignals)) &&
+    previous.audioRunning === next.audioRunning &&
+    previous.recordingIds === next.recordingIds &&
+    previous.midiDevices === next.midiDevices &&
+    previous.manualHelpTarget === next.manualHelpTarget &&
+    previous.modulesLocked === next.modulesLocked &&
+    previous.hoveredModuleRef === next.hoveredModuleRef &&
+    previous.hoveredParamRef === next.hoveredParamRef
+  );
 }
 
 /**
@@ -210,7 +224,4 @@ function moduleLayerPropsEqual(
  * dependencies above changes; modulesLocked covers the only external mode
  * that changes their behavior without changing the patch itself.
  */
-export const RackStudioModuleLayer = memo(
-  RackStudioModuleLayerView,
-  moduleLayerPropsEqual,
-);
+export const RackStudioModuleLayer = memo(RackStudioModuleLayerView, moduleLayerPropsEqual);

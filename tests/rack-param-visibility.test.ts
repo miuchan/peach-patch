@@ -1,11 +1,10 @@
-// @ts-nocheck
-// @ts-nocheck
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { rackParamIsVisible } from "../lib/rack-param-visibility.ts";
+import type { ParamSpec, StateSpec } from "../lib/web-plugin-registry.ts";
 
-const morph = {
+const morph: ParamSpec = {
   id: 11,
   name: "Morph",
   min: -1,
@@ -17,7 +16,7 @@ const morph = {
     connected: false,
   },
 };
-const attenuverter = {
+const attenuverter: ParamSpec = {
   id: 12,
   name: "Morph CV Triple Ampliverter",
   min: -3,
@@ -45,15 +44,9 @@ test("state and input visibility conditions compose", () => {
     ...attenuverter,
     visibleWhenState: { key: "Mode", equals: 2 },
   };
-  const stateKeys = [{ key: "Mode", type: "integer", default: 1 }];
+  const stateKeys: StateSpec[] = [{ key: "Mode", type: "integer", default: 1 }];
 
-  assert.equal(
-    rackParamIsVisible(conditional, stateKeys, [2], new Set([5])),
-    true,
-  );
-  assert.equal(
-    rackParamIsVisible(conditional, stateKeys, [1], new Set([5])),
-    false,
-  );
+  assert.equal(rackParamIsVisible(conditional, stateKeys, [2], new Set([5])), true);
+  assert.equal(rackParamIsVisible(conditional, stateKeys, [1], new Set([5])), false);
   assert.equal(rackParamIsVisible(conditional, stateKeys, [2], new Set()), false);
 });

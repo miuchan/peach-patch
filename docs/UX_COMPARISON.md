@@ -48,14 +48,14 @@ Fit is an overview command, not an editing guarantee. A dense patch may make con
 
 Every routable input and output supports a cable stack.
 
-| Action | Result |
-| --- | --- |
-| Drag an empty jack to a compatible jack | Create a new cable |
-| Click two compatible jacks | Create the same connection through the accessible click path |
-| Drag a visible plug | Move that cable endpoint while the other end stays anchored |
-| Release a moved plug on empty rack | Disconnect that cable |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>-drag an occupied jack or plug | Start an additional cable and keep the existing stack |
-| Right-click a cable | Recolor, insert a compatible module, or delete it |
+| Action                                                       | Result                                                       |
+| ------------------------------------------------------------ | ------------------------------------------------------------ |
+| Drag an empty jack to a compatible jack                      | Create a new cable                                           |
+| Click two compatible jacks                                   | Create the same connection through the accessible click path |
+| Drag a visible plug                                          | Move that cable endpoint while the other end stays anchored  |
+| Release a moved plug on empty rack                           | Disconnect that cable                                        |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>-drag an occupied jack or plug | Start an additional cable and keep the existing stack        |
+| Right-click a cable                                          | Recolor, insert a compatible module, or delete it            |
 
 Exact duplicate edges are refused. Output stacks fan a signal out; input stacks sum voltages per channel. The live drag preview follows the pointer and uses the same resolved jack centers as the final cable.
 
@@ -75,19 +75,19 @@ Right-clicking a module exposes the same structural actions plus bypass and regi
 
 Keyboard commands are ignored while focus is in an input, textarea, select, or editable element.
 
-| Command | Action |
-| --- | --- |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Z</kbd> | Undo |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd>, or <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Y</kbd> | Redo |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>V</kbd> | Copy / paste selected modules and their internal cables |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>D</kbd> | Duplicate selection |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>A</kbd> | Select all modules |
-| <kbd>Delete</kbd> / <kbd>Backspace</kbd> | Delete selected modules or cables |
-| <kbd>Shift</kbd> + <kbd>Delete</kbd> / <kbd>Backspace</kbd> | Heal-delete one unambiguous serial module |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> | Toggle Perform mode |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> | Start or stop parameter automation recording |
-| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> | Start or stop automation playback |
-| <kbd>Escape</kbd> | Close an open module or cable context menu |
+| Command                                                                                                            | Action                                                  |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Z</kbd>                                                                      | Undo                                                    |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd>, or <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Y</kbd> | Redo                                                    |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>V</kbd>                                                       | Copy / paste selected modules and their internal cables |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>D</kbd>                                                                      | Duplicate selection                                     |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>A</kbd>                                                                      | Select all modules                                      |
+| <kbd>Delete</kbd> / <kbd>Backspace</kbd>                                                                           | Delete selected modules or cables                       |
+| <kbd>Shift</kbd> + <kbd>Delete</kbd> / <kbd>Backspace</kbd>                                                        | Heal-delete one unambiguous serial module               |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd>                                                   | Toggle Perform mode                                     |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>                                                   | Start or stop parameter automation recording            |
+| <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd>                                               | Start or stop automation playback                       |
+| <kbd>Escape</kbd>                                                                                                  | Close an open module or cable context menu              |
 
 Perform and automation are expert shortcuts rather than persistent toolbar controls. Perform mode blocks structural/history commands and collapses the Library while parameters, Web MIDI, and audio remain active.
 

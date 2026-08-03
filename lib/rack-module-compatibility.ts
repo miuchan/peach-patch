@@ -9,8 +9,7 @@ type RackLegacyUi = {
   hiddenStateIds: number[];
 };
 
-type RackLegacyUiModule = Pick<ModuleInstance, "rack"> &
-  Partial<Pick<ModuleInstance, "key">>;
+type RackLegacyUiModule = Pick<ModuleInstance, "rack"> & Partial<Pick<ModuleInstance, "key">>;
 
 export type LegacyModuleLayout = {
   module: ModuleInstance;
@@ -25,14 +24,17 @@ function integerIds(value: unknown): number[] {
     : [];
 }
 
-function deprecatedLegacyWidth(module: RackLegacyUiModule, value: Record<string, unknown>): number | undefined {
+function deprecatedLegacyWidth(
+  module: RackLegacyUiModule,
+  value: Record<string, unknown>,
+): number | undefined {
   if (isFiniteNumber(value.legacyWidth)) return undefined;
   const rack = module.rack;
-  const key = module.key ?? (
-    typeof rack?.plugin === "string" && typeof rack.model === "string"
+  const key =
+    module.key ??
+    (typeof rack?.plugin === "string" && typeof rack.model === "string"
       ? `${rack.plugin}/${rack.model}`
-      : undefined
-  );
+      : undefined);
   if (key === "Fundamental/VCO" && value.width === 150) return 150;
   if (key === "Fundamental/VCF" && value.width === 120) return 120;
   return undefined;
@@ -45,12 +47,14 @@ export function rackLegacyUi(module: RackLegacyUiModule): RackLegacyUi {
   }
   const migratedWidth = deprecatedLegacyWidth(module, value);
   return {
-    width: migratedWidth === undefined && isFiniteNumber(value.width) && value.width > 0
-      ? value.width
-      : undefined,
-    legacyWidth: isFiniteNumber(value.legacyWidth) && value.legacyWidth > 0
-      ? value.legacyWidth
-      : migratedWidth,
+    width:
+      migratedWidth === undefined && isFiniteNumber(value.width) && value.width > 0
+        ? value.width
+        : undefined,
+    legacyWidth:
+      isFiniteNumber(value.legacyWidth) && value.legacyWidth > 0
+        ? value.legacyWidth
+        : migratedWidth,
     hidePanelArtwork: value.hidePanelArtwork === true,
     hiddenParamIds: integerIds(value.hiddenParamIds),
     hiddenStateIds: integerIds(value.hiddenStateIds),

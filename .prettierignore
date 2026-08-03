@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.cache/
+.rack-web-cache/
+.tmp/
+.wrangler/
+artifacts/
+assets/
+app/assets/fonts/
+public/rack-components/
+tests/fixtures/
+package-lock.json
+pnpm-lock.yaml

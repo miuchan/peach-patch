@@ -77,7 +77,9 @@ export type RackCanvasGestureOptions = RackCanvasGestureRefs & {
   zoom: number;
   setPan: Dispatch<SetStateAction<{ x: number; y: number }>>;
   setZoom: Dispatch<SetStateAction<number>>;
-  setMarquee: Dispatch<SetStateAction<{ left: number; top: number; width: number; height: number } | null>>;
+  setMarquee: Dispatch<
+    SetStateAction<{ left: number; top: number; width: number; height: number } | null>
+  >;
   setSelectedIds: Dispatch<SetStateAction<Set<string>>>;
   setSelectedCableIds: Dispatch<SetStateAction<Set<string>>>;
   setStatus: Dispatch<SetStateAction<string>>;
@@ -112,7 +114,9 @@ export function useRackCanvasGestures({
 }: RackCanvasGestureOptions) {
   const viewportCommitTimerRef = useRef<number | null>(null);
   const viewportInteractionActiveRef = useRef(false);
-  const viewportWriterRef = useRef<ReturnType<typeof createRackViewportTransformWriter> | null>(null);
+  const viewportWriterRef = useRef<ReturnType<typeof createRackViewportTransformWriter> | null>(
+    null,
+  );
   useEffect(() => {
     const writer = createRackViewportTransformWriter((transform) => {
       const world = worldRef.current;
@@ -145,31 +149,37 @@ export function useRackCanvasGestures({
     viewportInteractionActiveRef.current = false;
     onDirectInteractionChange?.(false);
   }, [onDirectInteractionChange]);
-  const previewViewport = useCallback((viewport: RackViewport) => {
-    beginViewportInteraction();
-    const snapshot = {
-      pan: { x: viewport.pan.x, y: viewport.pan.y },
-      zoom: viewport.zoom,
-    };
-    viewportRef.current = snapshot;
-    viewportWriterRef.current?.preview(snapshot);
-  }, [beginViewportInteraction, viewportRef]);
+  const previewViewport = useCallback(
+    (viewport: RackViewport) => {
+      beginViewportInteraction();
+      const snapshot = {
+        pan: { x: viewport.pan.x, y: viewport.pan.y },
+        zoom: viewport.zoom,
+      };
+      viewportRef.current = snapshot;
+      viewportWriterRef.current?.preview(snapshot);
+    },
+    [beginViewportInteraction, viewportRef],
+  );
   const commitViewport = useCallback(() => {
     clearViewportCommitTimer();
     viewportWriterRef.current?.flush();
     const viewport = viewportRef.current;
     startTransition(() => {
-      setPan((current) => current.x === viewport.pan.x && current.y === viewport.pan.y
-        ? current
-        : viewport.pan);
-      setZoom((current) => current === viewport.zoom ? current : viewport.zoom);
+      setPan((current) =>
+        current.x === viewport.pan.x && current.y === viewport.pan.y ? current : viewport.pan,
+      );
+      setZoom((current) => (current === viewport.zoom ? current : viewport.zoom));
     });
     endViewportInteraction();
   }, [clearViewportCommitTimer, endViewportInteraction, setPan, setZoom, viewportRef]);
-  const commitViewportSoon = useCallback((delay = 80) => {
-    clearViewportCommitTimer();
-    viewportCommitTimerRef.current = window.setTimeout(commitViewport, delay);
-  }, [clearViewportCommitTimer, commitViewport]);
+  const commitViewportSoon = useCallback(
+    (delay = 80) => {
+      clearViewportCommitTimer();
+      viewportCommitTimerRef.current = window.setTimeout(commitViewport, delay);
+    },
+    [clearViewportCommitTimer, commitViewport],
+  );
   const readViewport = useCallback(() => viewportRef.current, [viewportRef]);
 
   useEffect(() => {
@@ -183,37 +193,26 @@ export function useRackCanvasGestures({
     const localPoint = (event: { clientX: number; clientY: number }) => {
       const rect = rack.getBoundingClientRect();
       return {
-        x: Number.isFinite(event.clientX)
-          ? event.clientX - rect.left
-          : rack.clientWidth / 2,
-        y: Number.isFinite(event.clientY)
-          ? event.clientY - rect.top
-          : rack.clientHeight / 2,
+        x: Number.isFinite(event.clientX) ? event.clientX - rect.left : rack.clientWidth / 2,
+        y: Number.isFinite(event.clientY) ? event.clientY - rect.top : rack.clientHeight / 2,
       };
     };
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
       const viewport = viewportRef.current,
-        deltaScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE
-          ? 16
-          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-            ? rack.clientHeight
-            : 1,
+        deltaScale =
+          event.deltaMode === WheelEvent.DOM_DELTA_LINE
+            ? 16
+            : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+              ? rack.clientHeight
+              : 1,
         deltaX = event.deltaX * deltaScale,
         deltaY = event.deltaY * deltaScale;
       if (event.metaKey || event.ctrlKey) {
         const anchor = localPoint(event),
-          nextZoom = Math.min(
-            1.5,
-            Math.max(0.08, viewport.zoom - deltaY * 0.001),
-          );
+          nextZoom = Math.min(1.5, Math.max(0.08, viewport.zoom - deltaY * 0.001));
         previewViewport({
-          pan: anchoredViewportPan(
-            viewport.pan,
-            viewport.zoom,
-            nextZoom,
-            anchor,
-          ),
+          pan: anchoredViewportPan(viewport.pan, viewport.zoom, nextZoom, anchor),
           zoom: nextZoom,
         });
       } else {
@@ -244,10 +243,7 @@ export function useRackCanvasGestures({
       event.preventDefault();
       if (!gesture) return;
       const anchor = localPoint(event),
-        nextZoom = Math.min(
-          1.5,
-          Math.max(0.08, gesture.zoom * Math.max(0.01, event.scale || 1)),
-        );
+        nextZoom = Math.min(1.5, Math.max(0.08, gesture.zoom * Math.max(0.01, event.scale || 1)));
       previewViewport({
         pan: {
           x: anchor.x - gesture.worldX * nextZoom,
@@ -280,188 +276,263 @@ export function useRackCanvasGestures({
 
   useLayoutEffect(() => {
     const current = viewportRef.current;
-    if (
-      current.pan.x === pan.x
-      && current.pan.y === pan.y
-      && current.zoom === zoom
-    ) return;
+    if (current.pan.x === pan.x && current.pan.y === pan.y && current.zoom === zoom) return;
     clearViewportCommitTimer();
     viewportWriterRef.current?.cancel();
     viewportRef.current = { pan, zoom };
   }, [clearViewportCommitTimer, pan, viewportRef, zoom]);
 
-  useEffect(() => () => {
-    clearViewportCommitTimer();
-  }, [clearViewportCommitTimer]);
+  useEffect(
+    () => () => {
+      clearViewportCommitTimer();
+    },
+    [clearViewportCommitTimer],
+  );
 
-  const startBackgroundGesture = useCallback((event: PointerEvent<HTMLElement>) => {
-    const rack = rackRef.current;
-    if (!rack) return;
-    const viewport = viewportRef.current;
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Optional browser API. */ }
-    if (event.pointerType === "touch") {
-      beginViewportInteraction();
-      touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      const points = [...touchPointsRef.current.values()];
-      if (points.length === 1) {
-        panGestureRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, panX: viewport.pan.x, panY: viewport.pan.y };
-        pinchRef.current = null;
-      } else if (points.length >= 2) {
-        const [first, second] = points;
-        const rect = rack.getBoundingClientRect();
-        const midX = (first.x + second.x) / 2 - rect.left;
-        const midY = (first.y + second.y) / 2 - rect.top;
-        pinchRef.current = {
-          distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
-          zoom: viewport.zoom,
-          worldX: (midX - viewport.pan.x) / viewport.zoom,
-          worldY: (midY - viewport.pan.y) / viewport.zoom,
-        };
-        panGestureRef.current = null;
-      }
-      event.preventDefault();
-      return;
-    }
-    if (event.button === 0 || event.button === 1) {
-      beginViewportInteraction();
-      panGestureRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, panX: viewport.pan.x, panY: viewport.pan.y };
-      event.preventDefault();
-    }
-  }, [beginViewportInteraction, panGestureRef, pinchRef, rackRef, touchPointsRef, viewportRef]);
-
-  const pointerMove = useCallback((event: PointerEvent<HTMLElement>) => {
-    const selection = marqueeRef.current;
-    if (selection?.pointerId === event.pointerId) {
+  const startBackgroundGesture = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
       const rack = rackRef.current;
       if (!rack) return;
-      const rect = rack.getBoundingClientRect();
-      selection.currentX = event.clientX - rect.left;
-      selection.currentY = event.clientY - rect.top;
-      setMarquee({
-        left: Math.min(selection.startX, selection.currentX),
-        top: Math.min(selection.startY, selection.currentY),
-        width: Math.abs(selection.currentX - selection.startX),
-        height: Math.abs(selection.currentY - selection.startY),
-      });
-      event.preventDefault();
-      return;
-    }
-    const drag = dragRef.current;
-    if (drag) {
       const viewport = viewportRef.current;
-      mutatePatch((current) => ({
-        ...current,
-        modules: moveRackModulesWithoutOverlap(current.modules, drag.origins, {
-          x: (event.clientX - drag.clientX) / viewport.zoom,
-          y: (event.clientY - drag.clientY) / viewport.zoom,
-        }),
-      }));
-      return;
-    }
-    if (event.pointerType === "touch" && touchPointsRef.current.has(event.pointerId)) {
-      touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      const points = [...touchPointsRef.current.values()];
-      const pinch = pinchRef.current;
-      const rack = rackRef.current;
-      if (points.length >= 2 && pinch && rack) {
-        const [first, second] = points;
-        const rect = rack.getBoundingClientRect();
-        const midX = (first.x + second.x) / 2 - rect.left;
-        const midY = (first.y + second.y) / 2 - rect.top;
-        const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
-        const nextZoom = Math.min(1.5, Math.max(0.08, pinch.zoom * (distance / pinch.distance)));
-        previewViewport({
-          pan: { x: midX - pinch.worldX * nextZoom, y: midY - pinch.worldY * nextZoom },
-          zoom: nextZoom,
-        });
-      } else {
-        const gesture = panGestureRef.current;
-        if (gesture?.pointerId === event.pointerId)
-          previewViewport({
-            pan: { x: gesture.panX + event.clientX - gesture.clientX, y: gesture.panY + event.clientY - gesture.clientY },
-            zoom: viewportRef.current.zoom,
-          });
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        /* Optional browser API. */
       }
-      event.preventDefault();
-      return;
-    }
-    const gesture = panGestureRef.current;
-    if (gesture?.pointerId === event.pointerId) {
-      previewViewport({
-        pan: { x: gesture.panX + event.clientX - gesture.clientX, y: gesture.panY + event.clientY - gesture.clientY },
-        zoom: viewportRef.current.zoom,
-      });
-      event.preventDefault();
-    }
-  }, [dragRef, marqueeRef, mutatePatch, panGestureRef, pinchRef, previewViewport, rackRef, setMarquee, touchPointsRef, viewportRef]);
-
-  const pointerUp = useCallback((event?: PointerEvent<HTMLElement>) => {
-    const selection = marqueeRef.current;
-    const endingSelection = Boolean(
-      selection && (!event || selection.pointerId === event.pointerId),
-    );
-    const endingDirectManipulation = endingSelection || Boolean(dragRef.current);
-    if (selection && (!event || selection.pointerId === event.pointerId)) {
-      const left = Math.min(selection.startX, selection.currentX);
-      const top = Math.min(selection.startY, selection.currentY);
-      const right = Math.max(selection.startX, selection.currentX);
-      const bottom = Math.max(selection.startY, selection.currentY);
-      const viewport = viewportRef.current;
-      const hits = modulesIntersectingViewportRect(modules, viewport.pan, viewport.zoom, { left, top, right, bottom });
-      const next = new Set(selection.base);
-      for (const id of hits) next.add(id);
-      setSelectedIds(next);
-      setSelectedCableIds(new Set());
-      setStatus(`${hits.length} module${hits.length === 1 ? "" : "s"} added by marquee · ${next.size} selected`);
-      marqueeRef.current = null;
-      setMarquee(null);
-    }
-    if (dragRef.current) {
-      checkpointPatch(dragRef.current.before);
-      dragRef.current = null;
-      bumpLayoutRevision();
-    }
-    if (endingDirectManipulation) onDirectInteractionChange?.(false);
-    const endingPan = event
-      ? panGestureRef.current?.pointerId === event.pointerId
-      : Boolean(panGestureRef.current);
-    const endingPinch = Boolean(pinchRef.current);
-    if (!event) {
-      panGestureRef.current = null;
-      pinchRef.current = null;
-      touchPointsRef.current.clear();
-      if (endingPan || endingPinch) commitViewport();
-      return;
-    }
-    touchPointsRef.current.delete(event.pointerId);
-    if (panGestureRef.current?.pointerId === event.pointerId) panGestureRef.current = null;
-    const remaining = [...touchPointsRef.current.entries()];
-    pinchRef.current = null;
-    if (remaining.length >= 2) {
-      const [, first] = remaining[0];
-      const [, second] = remaining[1];
-      const rack = rackRef.current;
-      if (rack) {
-        const rect = rack.getBoundingClientRect();
-        const midX = (first.x + second.x) / 2 - rect.left;
-        const midY = (first.y + second.y) / 2 - rect.top;
-        const viewport = viewportRef.current;
-        pinchRef.current = {
-          distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
-          zoom: viewport.zoom,
-          worldX: (midX - viewport.pan.x) / viewport.zoom,
-          worldY: (midY - viewport.pan.y) / viewport.zoom,
+      if (event.pointerType === "touch") {
+        beginViewportInteraction();
+        touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const points = [...touchPointsRef.current.values()];
+        if (points.length === 1) {
+          panGestureRef.current = {
+            pointerId: event.pointerId,
+            clientX: event.clientX,
+            clientY: event.clientY,
+            panX: viewport.pan.x,
+            panY: viewport.pan.y,
+          };
+          pinchRef.current = null;
+        } else if (points.length >= 2) {
+          const [first, second] = points;
+          const rect = rack.getBoundingClientRect();
+          const midX = (first.x + second.x) / 2 - rect.left;
+          const midY = (first.y + second.y) / 2 - rect.top;
+          pinchRef.current = {
+            distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+            zoom: viewport.zoom,
+            worldX: (midX - viewport.pan.x) / viewport.zoom,
+            worldY: (midY - viewport.pan.y) / viewport.zoom,
+          };
+          panGestureRef.current = null;
+        }
+        event.preventDefault();
+        return;
+      }
+      if (event.button === 0 || event.button === 1) {
+        beginViewportInteraction();
+        panGestureRef.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          panX: viewport.pan.x,
+          panY: viewport.pan.y,
         };
+        event.preventDefault();
       }
-    } else if (remaining.length === 1) {
-      const [pointerId, point] = remaining[0];
-      const viewport = viewportRef.current;
-      panGestureRef.current = { pointerId, clientX: point.x, clientY: point.y, panX: viewport.pan.x, panY: viewport.pan.y };
-    } else if (endingPan || endingPinch) {
-      commitViewport();
-    }
-    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* Already released. */ }
-  }, [bumpLayoutRevision, checkpointPatch, commitViewport, dragRef, marqueeRef, modules, onDirectInteractionChange, panGestureRef, pinchRef, rackRef, setMarquee, setSelectedCableIds, setSelectedIds, setStatus, touchPointsRef, viewportRef]);
+    },
+    [beginViewportInteraction, panGestureRef, pinchRef, rackRef, touchPointsRef, viewportRef],
+  );
+
+  const pointerMove = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      const selection = marqueeRef.current;
+      if (selection?.pointerId === event.pointerId) {
+        const rack = rackRef.current;
+        if (!rack) return;
+        const rect = rack.getBoundingClientRect();
+        selection.currentX = event.clientX - rect.left;
+        selection.currentY = event.clientY - rect.top;
+        setMarquee({
+          left: Math.min(selection.startX, selection.currentX),
+          top: Math.min(selection.startY, selection.currentY),
+          width: Math.abs(selection.currentX - selection.startX),
+          height: Math.abs(selection.currentY - selection.startY),
+        });
+        event.preventDefault();
+        return;
+      }
+      const drag = dragRef.current;
+      if (drag) {
+        const viewport = viewportRef.current;
+        mutatePatch((current) => ({
+          ...current,
+          modules: moveRackModulesWithoutOverlap(current.modules, drag.origins, {
+            x: (event.clientX - drag.clientX) / viewport.zoom,
+            y: (event.clientY - drag.clientY) / viewport.zoom,
+          }),
+        }));
+        return;
+      }
+      if (event.pointerType === "touch" && touchPointsRef.current.has(event.pointerId)) {
+        touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const points = [...touchPointsRef.current.values()];
+        const pinch = pinchRef.current;
+        const rack = rackRef.current;
+        if (points.length >= 2 && pinch && rack) {
+          const [first, second] = points;
+          const rect = rack.getBoundingClientRect();
+          const midX = (first.x + second.x) / 2 - rect.left;
+          const midY = (first.y + second.y) / 2 - rect.top;
+          const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+          const nextZoom = Math.min(1.5, Math.max(0.08, pinch.zoom * (distance / pinch.distance)));
+          previewViewport({
+            pan: { x: midX - pinch.worldX * nextZoom, y: midY - pinch.worldY * nextZoom },
+            zoom: nextZoom,
+          });
+        } else {
+          const gesture = panGestureRef.current;
+          if (gesture?.pointerId === event.pointerId)
+            previewViewport({
+              pan: {
+                x: gesture.panX + event.clientX - gesture.clientX,
+                y: gesture.panY + event.clientY - gesture.clientY,
+              },
+              zoom: viewportRef.current.zoom,
+            });
+        }
+        event.preventDefault();
+        return;
+      }
+      const gesture = panGestureRef.current;
+      if (gesture?.pointerId === event.pointerId) {
+        previewViewport({
+          pan: {
+            x: gesture.panX + event.clientX - gesture.clientX,
+            y: gesture.panY + event.clientY - gesture.clientY,
+          },
+          zoom: viewportRef.current.zoom,
+        });
+        event.preventDefault();
+      }
+    },
+    [
+      dragRef,
+      marqueeRef,
+      mutatePatch,
+      panGestureRef,
+      pinchRef,
+      previewViewport,
+      rackRef,
+      setMarquee,
+      touchPointsRef,
+      viewportRef,
+    ],
+  );
+
+  const pointerUp = useCallback(
+    (event?: PointerEvent<HTMLElement>) => {
+      const selection = marqueeRef.current;
+      const endingSelection = Boolean(
+        selection && (!event || selection.pointerId === event.pointerId),
+      );
+      const endingDirectManipulation = endingSelection || Boolean(dragRef.current);
+      if (selection && (!event || selection.pointerId === event.pointerId)) {
+        const left = Math.min(selection.startX, selection.currentX);
+        const top = Math.min(selection.startY, selection.currentY);
+        const right = Math.max(selection.startX, selection.currentX);
+        const bottom = Math.max(selection.startY, selection.currentY);
+        const viewport = viewportRef.current;
+        const hits = modulesIntersectingViewportRect(modules, viewport.pan, viewport.zoom, {
+          left,
+          top,
+          right,
+          bottom,
+        });
+        const next = new Set(selection.base);
+        for (const id of hits) next.add(id);
+        setSelectedIds(next);
+        setSelectedCableIds(new Set());
+        setStatus(
+          `${hits.length} module${hits.length === 1 ? "" : "s"} added by marquee · ${next.size} selected`,
+        );
+        marqueeRef.current = null;
+        setMarquee(null);
+      }
+      if (dragRef.current) {
+        checkpointPatch(dragRef.current.before);
+        dragRef.current = null;
+        bumpLayoutRevision();
+      }
+      if (endingDirectManipulation) onDirectInteractionChange?.(false);
+      const endingPan = event
+        ? panGestureRef.current?.pointerId === event.pointerId
+        : Boolean(panGestureRef.current);
+      const endingPinch = Boolean(pinchRef.current);
+      if (!event) {
+        panGestureRef.current = null;
+        pinchRef.current = null;
+        touchPointsRef.current.clear();
+        if (endingPan || endingPinch) commitViewport();
+        return;
+      }
+      touchPointsRef.current.delete(event.pointerId);
+      if (panGestureRef.current?.pointerId === event.pointerId) panGestureRef.current = null;
+      const remaining = [...touchPointsRef.current.entries()];
+      pinchRef.current = null;
+      if (remaining.length >= 2) {
+        const [, first] = remaining[0];
+        const [, second] = remaining[1];
+        const rack = rackRef.current;
+        if (rack) {
+          const rect = rack.getBoundingClientRect();
+          const midX = (first.x + second.x) / 2 - rect.left;
+          const midY = (first.y + second.y) / 2 - rect.top;
+          const viewport = viewportRef.current;
+          pinchRef.current = {
+            distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+            zoom: viewport.zoom,
+            worldX: (midX - viewport.pan.x) / viewport.zoom,
+            worldY: (midY - viewport.pan.y) / viewport.zoom,
+          };
+        }
+      } else if (remaining.length === 1) {
+        const [pointerId, point] = remaining[0];
+        const viewport = viewportRef.current;
+        panGestureRef.current = {
+          pointerId,
+          clientX: point.x,
+          clientY: point.y,
+          panX: viewport.pan.x,
+          panY: viewport.pan.y,
+        };
+      } else if (endingPan || endingPinch) {
+        commitViewport();
+      }
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        /* Already released. */
+      }
+    },
+    [
+      bumpLayoutRevision,
+      checkpointPatch,
+      commitViewport,
+      dragRef,
+      marqueeRef,
+      modules,
+      onDirectInteractionChange,
+      panGestureRef,
+      pinchRef,
+      rackRef,
+      setMarquee,
+      setSelectedCableIds,
+      setSelectedIds,
+      setStatus,
+      touchPointsRef,
+      viewportRef,
+    ],
+  );
 
   return {
     startBackgroundGesture,

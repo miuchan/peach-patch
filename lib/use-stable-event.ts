@@ -12,8 +12,5 @@ export function useStableEvent<Arguments extends unknown[], Result>(
   useLayoutEffect(() => {
     handlerRef.current = handler;
   }, [handler]);
-  return useCallback(
-    (...args: Arguments) => handlerRef.current(...args),
-    [],
-  );
+  return useCallback((...args: Arguments) => handlerRef.current(...args), []);
 }

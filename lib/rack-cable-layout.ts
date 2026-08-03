@@ -22,11 +22,18 @@ export type RackCableLayout = PatchDocument["cables"][number] & {
 
 export type RackCableGeometry = Pick<
   RackCableLayout,
-  | "x1" | "y1" | "x2" | "y2"
-  | "outputAngle" | "inputAngle"
-  | "curveStartX" | "curveStartY"
-  | "curveControlX" | "curveControlY"
-  | "curveEndX" | "curveEndY"
+  | "x1"
+  | "y1"
+  | "x2"
+  | "y2"
+  | "outputAngle"
+  | "inputAngle"
+  | "curveStartX"
+  | "curveStartY"
+  | "curveControlX"
+  | "curveControlY"
+  | "curveEndX"
+  | "curveEndY"
   | "d"
 >;
 
@@ -93,8 +100,15 @@ function portPosition(
   portId: number,
   definition: ModuleDefinition | undefined,
 ) {
-  const ports: PortSpec[] = direction === "in" ? definition?.inputs ?? [] : definition?.outputs ?? [];
-  return resolvedModulePortPosition(module, direction, portId, ports, definition?.width ?? module.width);
+  const ports: PortSpec[] =
+    direction === "in" ? (definition?.inputs ?? []) : (definition?.outputs ?? []);
+  return resolvedModulePortPosition(
+    module,
+    direction,
+    portId,
+    ports,
+    definition?.width ?? module.width,
+  );
 }
 
 export function rackCableGeometry(
@@ -157,12 +171,14 @@ export function layoutPatchCables(
     const toDefinition = definitionsByKey.get(to.key);
     const output = portPosition(from, "out", cable.fromPort, fromDefinition);
     const input = portPosition(to, "in", cable.toPort, toDefinition);
-    const previewOutput = dragPreview?.cableId === cable.id && dragPreview.side === "output"
-      ? { x: dragPreview.x, y: dragPreview.y }
-      : output;
-    const previewInput = dragPreview?.cableId === cable.id && dragPreview.side === "input"
-      ? { x: dragPreview.x, y: dragPreview.y }
-      : input;
+    const previewOutput =
+      dragPreview?.cableId === cable.id && dragPreview.side === "output"
+        ? { x: dragPreview.x, y: dragPreview.y }
+        : output;
+    const previewInput =
+      dragPreview?.cableId === cable.id && dragPreview.side === "input"
+        ? { x: dragPreview.x, y: dragPreview.y }
+        : input;
     layouts.push({
       ...cable,
       ...rackCableGeometry(previewOutput, previewInput, tension),
@@ -184,9 +200,10 @@ export function layoutRackCableDraft(
   const definition = definitions.find((candidate) => candidate.key === module.key);
   const anchor = portPosition(module, draft.direction, draft.portId, definition);
   const pointer = { x: draft.x, y: draft.y };
-  const geometry = draft.direction === "out"
-    ? rackCableGeometry(anchor, pointer, tension)
-    : rackCableGeometry(pointer, anchor, tension);
+  const geometry =
+    draft.direction === "out"
+      ? rackCableGeometry(anchor, pointer, tension)
+      : rackCableGeometry(pointer, anchor, tension);
   return {
     id: "cable-draft",
     color: draft.color,

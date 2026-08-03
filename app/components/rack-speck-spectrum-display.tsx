@@ -46,8 +46,8 @@ export const RackSpeckSpectrumDisplay = memo(function RackSpeckSpectrumDisplay({
     context.lineWidth = 1;
     for (let row = 0; row < plotHeight; row += 20) {
       context.beginPath();
-      context.moveTo(0, top + row + .5);
-      context.lineTo(width, top + row + .5);
+      context.moveTo(0, top + row + 0.5);
+      context.lineTo(width, top + row + 0.5);
       context.stroke();
     }
     if (!linLog) {
@@ -57,8 +57,8 @@ export const RackSpeckSpectrumDisplay = memo(function RackSpeckSpectrumDisplay({
       for (let frequency = first; frequency < first + range; frequency += 1000) {
         const px = ((frequency - start) / range) * width;
         context.beginPath();
-        context.moveTo(px + .5, top);
-        context.lineTo(px + .5, top + plotHeight);
+        context.moveTo(px + 0.5, top);
+        context.lineTo(px + 0.5, top + plotHeight);
         context.stroke();
       }
     }
@@ -75,27 +75,33 @@ export const RackSpeckSpectrumDisplay = memo(function RackSpeckSpectrumDisplay({
       context.beginPath();
       let started = false;
       if (linLog) {
-        const lowest = Math.max(1, Math.ceil(10 * bins / nyquist)),
+        const lowest = Math.max(1, Math.ceil((10 * bins) / nyquist)),
           logMaximum = Math.log10(nyquist),
-          lowX = Math.log10(lowest * nyquist / bins) * width / logMaximum,
-          highX = Math.log10((bins - 1) * nyquist / bins) * width / logMaximum,
+          lowX = (Math.log10((lowest * nyquist) / bins) * width) / logMaximum,
+          highX = (Math.log10(((bins - 1) * nyquist) / bins) * width) / logMaximum,
           residual = highX - highX / zoom,
-          negativeOffset = -.8 * frequencyOffset * residual;
+          negativeOffset = -0.8 * frequencyOffset * residual;
         for (let index = lowest; index < bins; index++) {
-          const logarithmic = Math.log10(index * nyquist / bins) * width / logMaximum,
+          const logarithmic = (Math.log10((index * nyquist) / bins) * width) / logMaximum,
             px = zoom * (logarithmic - lowX + negativeOffset),
-            py = top + plotHeight * (1 - (lane[index] * gain + offset)) / 2;
+            py = top + (plotHeight * (1 - (lane[index] * gain + offset))) / 2;
           if (started) context.lineTo(px, py);
-          else { context.moveTo(px, py); started = true; }
+          else {
+            context.moveTo(px, py);
+            started = true;
+          }
         }
       } else {
         const visible = Math.max(2, Math.floor(bins / zoom)),
           start = Math.floor(frequencyOffset * (bins - visible));
         for (let index = 0; index < visible; index++) {
-          const px = index * width / (visible - 1),
-            py = top + plotHeight * (1 - ((lane[index + start] ?? 0) * gain + offset)) / 2;
+          const px = (index * width) / (visible - 1),
+            py = top + (plotHeight * (1 - ((lane[index + start] ?? 0) * gain + offset))) / 2;
           if (started) context.lineTo(px, py);
-          else { context.moveTo(px, py); started = true; }
+          else {
+            context.moveTo(px, py);
+            started = true;
+          }
         }
       }
       context.strokeStyle = colors[channel];
@@ -110,14 +116,26 @@ export const RackSpeckSpectrumDisplay = memo(function RackSpeckSpectrumDisplay({
     context.fillStyle = "rgba(255,255,255,.58)";
     context.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
     const stats = lanes.map((lane) => {
-      let index = 0, peak = 0;
+      let index = 0,
+        peak = 0;
       lane?.forEach((value, candidate) => {
-        if (value > peak) { peak = value; index = candidate; }
+        if (value > peak) {
+          peak = value;
+          index = candidate;
+        }
       });
-      return { frequency: SAMPLE_RATE / 4 * index / bins, peak };
+      return { frequency: ((SAMPLE_RATE / 4) * index) / bins, peak };
     });
-    context.fillText(`IN1:  Peak f: ${stats[0].frequency.toFixed(1).padStart(7)} - amp: ${stats[0].peak.toFixed(1).padStart(6)}`, 5, 10);
-    context.fillText(`IN2:  Peak f: ${stats[1].frequency.toFixed(1).padStart(7)} - amp: ${stats[1].peak.toFixed(1).padStart(6)}`, 5, height - 4);
+    context.fillText(
+      `IN1:  Peak f: ${stats[0].frequency.toFixed(1).padStart(7)} - amp: ${stats[0].peak.toFixed(1).padStart(6)}`,
+      5,
+      10,
+    );
+    context.fillText(
+      `IN2:  Peak f: ${stats[1].frequency.toFixed(1).padStart(7)} - amp: ${stats[1].peak.toFixed(1).padStart(6)}`,
+      5,
+      height - 4,
+    );
   }, [bins, height, linLog, params, values, width]);
 
   return (

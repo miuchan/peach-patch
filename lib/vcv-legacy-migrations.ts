@@ -39,9 +39,7 @@ function indexedParams(values: readonly number[], ids?: readonly number[]): Migr
 
 function rack03BraidsParams(module: LegacyModule): MigratedParam[] {
   const [shape, fine, coarse, fm, timbre, modulation, color] = module.params;
-  return indexedParams(
-    [fine, coarse, fm, timbre, modulation, color, shape / 46],
-  );
+  return indexedParams([fine, coarse, fm, timbre, modulation, color, shape / 46]);
 }
 
 function rack03VcoParams(module: LegacyModule): MigratedParam[] {

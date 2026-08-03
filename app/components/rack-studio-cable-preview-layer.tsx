@@ -1,10 +1,4 @@
-import {
-  forwardRef,
-  memo,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-} from "react";
+import { forwardRef, memo, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import type { RackCableGeometry } from "../../lib/rack-cable-layout";
 import type { RackViewport } from "../../lib/rack-viewport-transform";
 
@@ -13,11 +7,7 @@ export type RackCablePreviewLayout = RackCableGeometry & {
 };
 
 export type RackCablePreviewLayerHandle = {
-  draw: (
-    geometry: RackCableGeometry,
-    viewport: RackViewport,
-    color: string,
-  ) => void;
+  draw: (geometry: RackCableGeometry, viewport: RackViewport, color: string) => void;
 };
 
 type RackStudioCablePreviewLayerProps = {
@@ -84,7 +74,7 @@ function drawPlug(
   } else {
     context.fillStyle = color;
     context.beginPath();
-    context.arc(0, 0, Math.max(3, PLUG_SIZE * zoom * .3), 0, Math.PI * 2);
+    context.arc(0, 0, Math.max(3, PLUG_SIZE * zoom * 0.3), 0, Math.PI * 2);
     context.fill();
   }
   context.restore();
@@ -94,7 +84,7 @@ function drawPlug(
   } else {
     context.fillStyle = "#111";
     context.beginPath();
-    context.arc(x, y, Math.max(1.5, PORT_SIZE * zoom * .25), 0, Math.PI * 2);
+    context.arc(x, y, Math.max(1.5, PORT_SIZE * zoom * 0.25), 0, Math.PI * 2);
     context.fill();
   }
 }
@@ -126,22 +116,8 @@ function drawPreview(
   context.lineWidth = Math.max(1.25, 6 * zoom);
   context.lineCap = "round";
   context.stroke();
-  drawPlug(
-    context,
-    x(geometry.x1),
-    y(geometry.y1),
-    geometry.outputAngle,
-    zoom,
-    color,
-  );
-  drawPlug(
-    context,
-    x(geometry.x2),
-    y(geometry.y2),
-    geometry.inputAngle,
-    zoom,
-    color,
-  );
+  drawPlug(context, x(geometry.x1), y(geometry.y1), geometry.outputAngle, zoom, color);
+  drawPlug(context, x(geometry.x2), y(geometry.y2), geometry.inputAngle, zoom, color);
 }
 
 const RackStudioCablePreviewLayerView = forwardRef<
@@ -151,12 +127,16 @@ const RackStudioCablePreviewLayerView = forwardRef<
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizeRef = useRef<CanvasSize>({ width: 0, height: 0, pixelRatio: 0 });
 
-  useImperativeHandle(ref, () => ({
-    draw(geometry, viewport, color) {
-      const canvas = canvasRef.current;
-      if (canvas) drawPreview(canvas, sizeRef.current, geometry, viewport, color);
-    },
-  }), []);
+  useImperativeHandle(
+    ref,
+    () => ({
+      draw(geometry, viewport, color) {
+        const canvas = canvasRef.current;
+        if (canvas) drawPreview(canvas, sizeRef.current, geometry, viewport, color);
+      },
+    }),
+    [],
+  );
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -170,9 +150,7 @@ const RackStudioCablePreviewLayerView = forwardRef<
     return () => observer.disconnect();
   }, [layout, pan, zoom]);
 
-  return layout
-    ? <canvas ref={canvasRef} className="pw-cable-preview" aria-hidden="true" />
-    : null;
+  return layout ? <canvas ref={canvasRef} className="pw-cable-preview" aria-hidden="true" /> : null;
 });
 
 export const RackStudioCablePreviewLayer = memo(RackStudioCablePreviewLayerView);

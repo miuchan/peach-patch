@@ -24,15 +24,17 @@ export function applyRackHostViewportControl(
     ? Math.max(0.08, Math.min(2.4, control.zoom!))
     : previousZoom;
   const next = {
-    x: state.pan.x / previousZoom * nextZoom,
-    y: state.pan.y / previousZoom * nextZoom,
+    x: (state.pan.x / previousZoom) * nextZoom,
+    y: (state.pan.y / previousZoom) * nextZoom,
   };
   const modules = metrics.modules;
   const padding = Math.max(0, control.padding) * 15;
   const minX = (modules.length ? Math.min(...modules.map((module) => module.x)) : 0) - padding;
   const minY = (modules.length ? Math.min(...modules.map((module) => module.y)) : 0) - padding;
-  const maxX = (modules.length ? Math.max(...modules.map((module) => module.x + module.width)) : 0) + padding;
-  const maxY = (modules.length ? Math.max(...modules.map((module) => module.y + 380)) : 0) + padding;
+  const maxX =
+    (modules.length ? Math.max(...modules.map((module) => module.x + module.width)) : 0) + padding;
+  const maxY =
+    (modules.length ? Math.max(...modules.map((module) => module.y + 380)) : 0) + padding;
   const visibleWidth = Math.max(1, metrics.width) / nextZoom;
   const visibleHeight = Math.max(1, metrics.height) / nextZoom;
   const maxScrollX = Math.max(minX, maxX - visibleWidth);
@@ -44,8 +46,10 @@ export function applyRackHostViewportControl(
   if (Number.isFinite(control.x)) next.x = -(minX + (maxScrollX - minX) * control.x!) * nextZoom;
   if (Number.isFinite(control.y)) next.y = -(minY + (maxScrollY - minY) * control.y!) * nextZoom;
 
-  const holdX = control.lockX && !control.leftConnected && !control.rightConnected && !control.xConnected;
-  const holdY = control.lockY && !control.upConnected && !control.downConnected && !control.yConnected;
+  const holdX =
+    control.lockX && !control.leftConnected && !control.rightConnected && !control.xConnected;
+  const holdY =
+    control.lockY && !control.upConnected && !control.downConnected && !control.yConnected;
   let lockX = state.lockX;
   let lockY = state.lockY;
   if (control.lockX) {

@@ -13,8 +13,9 @@ function visiblePositionedWidgets(
     ...params.filter((item) => !item.hidden && !item.contextOnly),
     ...inputs.filter((item) => !item.hidden),
     ...outputs.filter((item) => !item.hidden),
-  ].filter((item): item is PositionedWidget & { position: NonNullable<PositionedWidget["position"]> } =>
-    Boolean(item.position),
+  ].filter(
+    (item): item is PositionedWidget & { position: NonNullable<PositionedWidget["position"]> } =>
+      Boolean(item.position),
   );
 }
 
@@ -30,9 +31,17 @@ export function rackUiGeometryIsTrustworthy(
 ) {
   const widgets = visiblePositionedWidgets(params, inputs, outputs);
   if (!widgets.length) return false;
-  if (widgets.some(({ position }) =>
-    !Number.isFinite(position.x) || !Number.isFinite(position.y) ||
-    position.x < 0 || position.y < 0 || position.y > 380)) return false;
+  if (
+    widgets.some(
+      ({ position }) =>
+        !Number.isFinite(position.x) ||
+        !Number.isFinite(position.y) ||
+        position.x < 0 ||
+        position.y < 0 ||
+        position.y > 380,
+    )
+  )
+    return false;
   for (let index = 0; index < widgets.length; index += 1) {
     const current = widgets[index].position;
     for (let candidate = index + 1; candidate < widgets.length; candidate += 1) {

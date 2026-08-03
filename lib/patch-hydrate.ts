@@ -8,17 +8,12 @@ import {
 } from "./rack-module-compatibility.ts";
 
 type ModuleMetadata = Partial<
-  Pick<
-    ModuleInstance,
-    "description" | "screenshotUrl" | "sourceUrl" | "license" | "version"
-  >
+  Pick<ModuleInstance, "description" | "screenshotUrl" | "sourceUrl" | "license" | "version">
 >;
 
 function rackData(module: ModuleInstance) {
   const value = module.rack?.data;
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 }
 
 export function hydrateModuleWithDefinition(
@@ -28,9 +23,7 @@ export function hydrateModuleWithDefinition(
 ): ModuleInstance {
   const compatibilityUi = rackLegacyUi(module),
     params = definition.params.map((param) => param.default),
-    savedParams = Array.isArray(module.rack?.params)
-      ? module.rack.params
-      : [];
+    savedParams = Array.isArray(module.rack?.params) ? module.rack.params : [];
   for (const value of savedParams) {
     if (!value || typeof value !== "object") continue;
     const param = value as Record<string, unknown>;
@@ -51,7 +44,7 @@ export function hydrateModuleWithDefinition(
     description: metadata.description ?? definition.description,
     screenshotUrl: compatibilityUi.hidePanelArtwork
       ? undefined
-      : metadata.screenshotUrl ?? definition.screenshotUrl,
+      : (metadata.screenshotUrl ?? definition.screenshotUrl),
     sourceUrl: metadata.sourceUrl ?? definition.sourceUrl,
     license: metadata.license ?? definition.license,
     width: compatibilityUi.width ?? definition.width,
@@ -98,10 +91,12 @@ export function hydrateModulesWithDefinitions(
   });
   if (deprecatedWidths.size === 0) return changed ? hydrated : modules;
   changed = true;
-  return compactLegacyModuleRows(hydrated.map((module, index) => ({
-    module,
-    sourceX: modules[index].x,
-    sourceY: modules[index].y,
-    legacyWidth: deprecatedWidths.get(module.id),
-  })));
+  return compactLegacyModuleRows(
+    hydrated.map((module, index) => ({
+      module,
+      sourceX: modules[index].x,
+      sourceY: modules[index].y,
+      legacyWidth: deprecatedWidths.get(module.id),
+    })),
+  );
 }

@@ -16,18 +16,35 @@ function moduleParams(module: VcvModule): Map<number, number> {
   return new Map(module.params?.map((param) => [param.id, param.value]));
 }
 
-function legacyModule(plugin: string, model: string, params: number[], data?: Record<string, unknown>) {
+function legacyModule(
+  plugin: string,
+  model: string,
+  params: number[],
+  data?: Record<string, unknown>,
+) {
   return { plugin, model, pos: [0, 0], params, ...(data ? { data } : {}) };
 }
 
 function webDefinition(key: string, width: number): WebPluginModule {
   const [plugin, model] = key.split("/");
   return {
-    key, plugin, model, name: model, brand: plugin,
-    version: "2.6.4", license: "GPL-3.0-or-later", sourceUrl: "https://example.com/source",
-    libraryUrl: "https://example.com/library", screenshotUrl: `https://example.com/${model}.webp`,
-    wasmUrl: `https://example.com/${model}.wasm`, width, description: "", params: [],
-    inputs: [], outputs: [], lights: 0,
+    key,
+    plugin,
+    model,
+    name: model,
+    brand: plugin,
+    version: "2.6.4",
+    license: "GPL-3.0-or-later",
+    sourceUrl: "https://example.com/source",
+    libraryUrl: "https://example.com/library",
+    screenshotUrl: `https://example.com/${model}.webp`,
+    wasmUrl: `https://example.com/${model}.wasm`,
+    width,
+    description: "",
+    params: [],
+    inputs: [],
+    outputs: [],
+    lights: 0,
   };
 }
 
@@ -42,11 +59,17 @@ test("Rack 0.3 migration table covers the compatibility-sensitive modules", () =
     "Fundamental/VCF",
     "Fundamental/VCO",
   ]);
-  assert.equal(LEGACY_VCV_MIGRATIONS.some((item) => item.matches("0.4.0")), false);
+  assert.equal(
+    LEGACY_VCV_MIGRATIONS.some((item) => item.matches("0.4.0")),
+    false,
+  );
 });
 
 test("legacy panel width overrides keep control visuals on source geometry", async () => {
-  const panel = await readFile(new URL("../app/components/module-panel.tsx", import.meta.url), "utf8");
+  const panel = await readFile(
+    new URL("../app/components/module-panel.tsx", import.meta.url),
+    "utf8",
+  );
   assert.equal(panel.match(/sourceWidth=\{definition\.width\}/g)?.length, 2);
   assert.doesNotMatch(panel, /sourceWidth=\{module\.width\}/);
 });
@@ -56,15 +79,18 @@ test("Rack 0.3 Braids widget order becomes Rack 2 parameter IDs", () => {
     legacyModule("AudibleInstruments", "Braids", [23, 0.1, -0.25, 0.2, 0.3, -0.4, 0.8]),
   ]);
   const params = moduleParams(patch.modules[0]);
-  assert.deepEqual([...params.entries()], [
-    [0, 0.1],
-    [1, -0.25],
-    [2, 0.2],
-    [3, 0.3],
-    [4, -0.4],
-    [5, 0.8],
-    [6, 0.5],
-  ]);
+  assert.deepEqual(
+    [...params.entries()],
+    [
+      [0, 0.1],
+      [1, -0.25],
+      [2, 0.2],
+      [3, 0.3],
+      [4, -0.4],
+      [5, 0.8],
+      [6, 0.5],
+    ],
+  );
 });
 
 test("Rack 0.3 VCO and SEQ3 widget orders become Rack 2 parameter IDs", () => {
@@ -76,15 +102,18 @@ test("Rack 0.3 VCO and SEQ3 widget orders become Rack 2 parameter IDs", () => {
     legacyModule("Fundamental", "VCO", [0, 1, -26, 0.1, 0.42, -0.3, 0.65]),
     legacyModule("Fundamental", "SEQ3", seqParams, { gates: [1, 0, 1, 0, 1, 0, 1, 0] }),
   ]);
-  assert.deepEqual([...moduleParams(patch.modules[0]).entries()], [
-    [0, 0],
-    [1, 1],
-    [2, -26],
-    [3, 0.1],
-    [5, 0.42],
-    [4, -0.3],
-    [6, 0.65],
-  ]);
+  assert.deepEqual(
+    [...moduleParams(patch.modules[0]).entries()],
+    [
+      [0, 0],
+      [1, 1],
+      [2, -26],
+      [3, 0.1],
+      [5, 0.42],
+      [4, -0.3],
+      [6, 0.65],
+    ],
+  );
   assert.equal(rackLegacyUi({ rack: patch.modules[0] }).width, undefined);
   assert.equal(rackLegacyUi({ rack: patch.modules[0] }).legacyWidth, 150);
   const seq = moduleParams(patch.modules[1]);
@@ -140,9 +169,7 @@ test("Rack 0.3 Branches ports follow the legacy panel order", () => {
 });
 
 test("Rack 0.3 Branches imports at its original width with the real panel artwork", () => {
-  const patch = parseLegacy([
-    legacyModule("AudibleInstruments", "Branches", [0.2, 0.8]),
-  ]);
+  const patch = parseLegacy([legacyModule("AudibleInstruments", "Branches", [0.2, 0.8])]);
   const definition: WebPluginModule = {
     key: "AudibleInstruments/Branches",
     plugin: "AudibleInstruments",
@@ -157,7 +184,13 @@ test("Rack 0.3 Branches imports at its original width with the real panel artwor
     wasmUrl: "https://example.com/module.wasm",
     width: 90,
     description: "",
-    params: [0, 1, 2, 3].map((id) => ({ id, name: `Param ${id}`, min: 0, max: 1, default: id < 2 ? 0.5 : 0 })),
+    params: [0, 1, 2, 3].map((id) => ({
+      id,
+      name: `Param ${id}`,
+      min: 0,
+      max: 1,
+      default: id < 2 ? 0.5 : 0,
+    })),
     inputs: [0, 1, 2, 3].map((id) => ({ id, name: `Input ${id}`, kind: "gate" })),
     outputs: [0, 1, 2, 3].map((id) => ({ id, name: `Output ${id}`, kind: "gate" })),
     lights: 4,
@@ -169,9 +202,7 @@ test("Rack 0.3 Branches imports at its original width with the real panel artwor
 });
 
 test("Rack 0.3 migration records provenance and emits a current patch version", () => {
-  const patch = parseLegacy([
-    legacyModule("Fundamental", "VCF", [0.3, 0.5, 0.7, -0.2, 0.4]),
-  ]);
+  const patch = parseLegacy([legacyModule("Fundamental", "VCF", [0.3, 0.5, 0.7, -0.2, 0.4])]);
   assert.equal(patch.version, "2.6.6");
   assert.equal(patch.patchworkWebSourceVersion, "0.3.1");
   assert.deepEqual(patch.patchworkWebMigrations, ["rack-0.3.x-widget-order-to-v2"]);
@@ -198,11 +229,14 @@ test("Rack 0.3 VCO and VCF use current panel widths and compact their row", () =
     ["Core/AudioInterface", webDefinition("Core/AudioInterface", 120)],
   ]);
   const imported = importVcvPatch(patch, (key) => definitions.get(key), ["#abc"]);
-  assert.deepEqual(imported.modules.map(({ x, width }) => ({ x, width })), [
-    { x: 0, width: 135 },
-    { x: 135, width: 105 },
-    { x: 240, width: 120 },
-  ]);
+  assert.deepEqual(
+    imported.modules.map(({ x, width }) => ({ x, width })),
+    [
+      { x: 0, width: 135 },
+      { x: 135, width: 105 },
+      { x: 240, width: 120 },
+    ],
+  );
 });
 
 test("saved legacy width overrides upgrade once without leaving panel gaps", () => {
@@ -213,30 +247,54 @@ test("saved legacy width overrides upgrade once without leaving panel gaps", () 
   ];
   const modules = [
     {
-      id: "vco", key: "Fundamental/VCO", plugin: "Fundamental", model: "VCO",
-      x: 0, y: 0, width: 150, params: [], status: "ready" as const,
+      id: "vco",
+      key: "Fundamental/VCO",
+      plugin: "Fundamental",
+      model: "VCO",
+      x: 0,
+      y: 0,
+      width: 150,
+      params: [],
+      status: "ready" as const,
       rack: { plugin: "Fundamental", model: "VCO", patchworkWebLegacyUi: { width: 150 } },
     },
     {
-      id: "vcf", key: "Fundamental/VCF", plugin: "Fundamental", model: "VCF",
-      x: 150, y: 0, width: 120, params: [], status: "ready" as const,
+      id: "vcf",
+      key: "Fundamental/VCF",
+      plugin: "Fundamental",
+      model: "VCF",
+      x: 150,
+      y: 0,
+      width: 120,
+      params: [],
+      status: "ready" as const,
       rack: { plugin: "Fundamental", model: "VCF", patchworkWebLegacyUi: { width: 120 } },
     },
     {
-      id: "audio", key: "Core/AudioInterface", plugin: "Core", model: "AudioInterface",
-      x: 270, y: 0, width: 120, params: [], status: "ready" as const,
+      id: "audio",
+      key: "Core/AudioInterface",
+      plugin: "Core",
+      model: "AudioInterface",
+      x: 270,
+      y: 0,
+      width: 120,
+      params: [],
+      status: "ready" as const,
     },
   ];
   const hydrated = hydrateModulesWithDefinitions(modules, definitions);
-  assert.deepEqual(hydrated.map(({ x, width }) => ({ x, width })), [
-    { x: 0, width: 135 },
-    { x: 135, width: 105 },
-    { x: 240, width: 120 },
-  ]);
-  assert.deepEqual(hydrated.slice(0, 2).map((module) => module.rack?.patchworkWebLegacyUi), [
-    { legacyWidth: 150 },
-    { legacyWidth: 120 },
-  ]);
+  assert.deepEqual(
+    hydrated.map(({ x, width }) => ({ x, width })),
+    [
+      { x: 0, width: 135 },
+      { x: 135, width: 105 },
+      { x: 240, width: 120 },
+    ],
+  );
+  assert.deepEqual(
+    hydrated.slice(0, 2).map((module) => module.rack?.patchworkWebLegacyUi),
+    [{ legacyWidth: 150 }, { legacyWidth: 120 }],
+  );
   assert.equal(hydrateModulesWithDefinitions(hydrated, definitions), hydrated);
 });
 

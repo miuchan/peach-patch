@@ -45,14 +45,23 @@ export function RackFullScopeDisplay({
         return `${index ? "L" : "M"}${px.toFixed(2)},${py.toFixed(2)}`;
       }).join(" ");
     return {
-      xy: line((index) => values[index] / 2 + 0.5, (index) => values[points + index] / 2 + 0.5),
-      x: line((index) => index / (points - 1), (index) => values[index] / 2 + 0.5),
-      y: line((index) => index / (points - 1), (index) => values[points + index] / 2 + 0.5),
+      xy: line(
+        (index) => values[index] / 2 + 0.5,
+        (index) => values[points + index] / 2 + 0.5,
+      ),
+      x: line(
+        (index) => index / (points - 1),
+        (index) => values[index] / 2 + 0.5,
+      ),
+      y: line(
+        (index) => index / (points - 1),
+        (index) => values[points + index] / 2 + 0.5,
+      ),
     };
   }, [height, points, valid, values, width]);
 
   const stroke = colorConnected ? hueColor(hue) : "rgba(25,150,252,.75)",
-    transform = `rotate(${rotation * 180 / Math.PI} ${width / 2} ${height / 2})`;
+    transform = `rotate(${(rotation * 180) / Math.PI} ${width / 2} ${height / 2})`;
   return (
     <svg
       className="pw-rack-full-scope"
@@ -62,7 +71,14 @@ export function RackFullScopeDisplay({
       style={{ position: "absolute", left: x * scaleX, top: y, width: width * scaleX, height }}
     >
       <rect width={width} height={height} fill="#000" />
-      <g transform={transform} fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" style={{ mixBlendMode: "screen" }}>
+      <g
+        transform={transform}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+        style={{ mixBlendMode: "screen" }}
+      >
         {lissajous && (xConnected || yConnected) ? <path d={paths.xy} stroke={stroke} /> : null}
         {!lissajous && yConnected ? <path d={paths.y} stroke={stroke} /> : null}
         {!lissajous && xConnected ? <path d={paths.x} stroke="rgba(40,176,243,.75)" /> : null}

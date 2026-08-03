@@ -1,12 +1,8 @@
 import type { PatchDocument } from "./patch-types.ts";
 import { dataFromState } from "./patch-state.ts";
 
-function preservedId(
-  id: string,
-  rack: Record<string, unknown> | undefined,
-): number | undefined {
-  if (typeof rack?.id === "number" && Number.isSafeInteger(rack.id))
-    return rack.id;
+function preservedId(id: string, rack: Record<string, unknown> | undefined): number | undefined {
+  if (typeof rack?.id === "number" && Number.isSafeInteger(rack.id)) return rack.id;
   const match = id.match(/^vcv-(?:cable-)?(\d+)$/);
   return match ? Number(match[1]) : undefined;
 }
@@ -50,9 +46,7 @@ export function patchToVcvObject(patch: PatchDocument) {
             }
           : hydratedData,
       rackCompatibleData =
-        item.key === "Core/MIDI-Map" &&
-        data &&
-        Array.isArray(data.maps)
+        item.key === "Core/MIDI-Map" && data && Array.isArray(data.maps)
           ? {
               ...data,
               maps: data.maps.map((map) => {
@@ -136,8 +130,7 @@ export function patchToVcvObject(patch: PatchDocument) {
     rack.patchworkWebAutomation = {
       ...sourceAutomation,
       events: (sourceAutomation.events as unknown[]).map((event) => {
-        if (!event || typeof event !== "object" || Array.isArray(event))
-          return event;
+        if (!event || typeof event !== "object" || Array.isArray(event)) return event;
         const sourceEvent = event as Record<string, unknown>,
           targetId = ids.get(String(sourceEvent.moduleId || ""));
         return targetId === undefined

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -16,21 +15,18 @@ test("Rack viewport transforms stay on a GPU-friendly 3D translation", () => {
 test("high-frequency viewport previews coalesce into one write per frame", () => {
   const writes: string[] = [];
   const cancelled: number[] = [];
-  let scheduled: (() => void) | null = null;
+  const scheduled: Array<() => void> = [];
   let requests = 0;
-  const writer = createRackViewportTransformWriter(
-    (transform) => writes.push(transform),
-    {
-      request(callback) {
-        requests += 1;
-        scheduled = callback;
-        return requests;
-      },
-      cancel(frame) {
-        cancelled.push(frame);
-      },
+  const writer = createRackViewportTransformWriter((transform) => writes.push(transform), {
+    request(callback) {
+      requests += 1;
+      scheduled.push(callback);
+      return requests;
     },
-  );
+    cancel(frame) {
+      cancelled.push(frame);
+    },
+  });
 
   writer.preview({ pan: { x: 10, y: 20 }, zoom: 1 });
   writer.preview({ pan: { x: 30, y: 40 }, zoom: 0.9 });
@@ -38,7 +34,7 @@ test("high-frequency viewport previews coalesce into one write per frame", () =>
 
   assert.equal(requests, 1);
   assert.deepEqual(writes, []);
-  scheduled?.();
+  scheduled.shift()?.();
   assert.deepEqual(writes, ["translate3d(50px,60px,0) scale(0.8)"]);
 
   writer.preview({ pan: { x: 70, y: 80 }, zoom: 0.7 });
