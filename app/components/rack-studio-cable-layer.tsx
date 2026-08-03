@@ -20,6 +20,7 @@ export type RackStudioCableLayerProps = {
   selectedIds: ReadonlySet<string>;
   signalLevels: Readonly<Record<string, number>>;
   plugSignals: Readonly<Record<string, RackPlugSignal>>;
+  visualUpdatesPaused: boolean;
   onSelect: (id: string, event: CableSelectionEvent) => void;
   onContextMenu: (id: string, event: MouseEvent<SVGPathElement>) => void;
   onPlugPointerDown: (path: RackCableLayout, side: "input" | "output", event: PointerEvent<Element>) => void;
@@ -113,4 +114,25 @@ function RackStudioCableLayerView({
   </>;
 }
 
-export const RackStudioCableLayer = memo(RackStudioCableLayerView);
+function cableLayerPropsEqual(
+  previous: RackStudioCableLayerProps,
+  next: RackStudioCableLayerProps,
+) {
+  return previous.paths === next.paths
+    && previous.surface === next.surface
+    && previous.visible === next.visible
+    && previous.opacity === next.opacity
+    && previous.selectedIds === next.selectedIds
+    && (next.visualUpdatesPaused || (
+      previous.signalLevels === next.signalLevels
+      && previous.plugSignals === next.plugSignals
+    ))
+    && previous.onSelect === next.onSelect
+    && previous.onContextMenu === next.onContextMenu
+    && previous.onPlugPointerDown === next.onPlugPointerDown;
+}
+
+export const RackStudioCableLayer = memo(
+  RackStudioCableLayerView,
+  cableLayerPropsEqual,
+);

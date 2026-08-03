@@ -90,6 +90,7 @@ export class RackAudioEngine {
   private midiAccess: MIDIAccess | null = null;
   private midiInputRoutes = new Map<string, string[]>();
   private midiOutputRoutes = new Map<string, string>();
+  private visualUpdatesEnabled = true;
 
   constructor(private readonly callbacks: RackAudioCallbacks = {}) {}
 
@@ -338,6 +339,11 @@ export class RackAudioEngine {
       );
       node.port.onmessage = (event) => {
         const data = event.data as Record<string, unknown> | undefined;
+        if (
+          !this.visualUpdatesEnabled &&
+          (data?.type === "port-peaks" || data?.type === "visual-signals")
+        )
+          return;
         if (data?.type === "ready") {
           window.clearTimeout(timer);
           resolve({ feedbackEdges: Number(data.feedbackEdges) || 0 });
@@ -625,6 +631,12 @@ export class RackAudioEngine {
     });
   }
 
+  setVisualUpdatesEnabled(enabled: boolean) {
+    if (this.visualUpdatesEnabled === enabled) return;
+    this.visualUpdatesEnabled = enabled;
+    this.node?.port.postMessage({ type: "visual-updates", enabled });
+  }
+
   setCaptureEnabled(moduleId: string, enabled: boolean) {
     this.node?.port.postMessage({
       type: "capture-enable",
@@ -666,6 +678,7 @@ export class RackAudioEngine {
       node.port.close();
     }
     this.node = null;
+    this.visualUpdatesEnabled = true;
     const context = this.context;
     this.context = null;
     if (context && context.state !== "closed") await context.close();

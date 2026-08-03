@@ -63,6 +63,9 @@ test("large racks keep viewport gestures off the React render path", async () =>
   );
   assert.match(gestures, /createRackViewportTransformWriter/);
   assert.match(gestures, /startTransition\(\(\) =>/);
+  assert.match(gestures, /addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
+  assert.match(gestures, /addEventListener\("gesturechange", handleGestureChange/);
+  assert.doesNotMatch(studio, /onWheel=/);
   assert.doesNotMatch(pointerMove, /setPan\(|setZoom\(/);
   assert.match(viewport, /translate3d\(/);
   assert.match(moduleLayer, /memo\(\s*RackStudioModuleLayerView/);

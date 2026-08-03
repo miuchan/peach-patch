@@ -23,6 +23,7 @@ export type RackStudioModuleLayerProps = {
   pending: RackStudioPortClick | null;
   jackSignalLevels: ReadonlyMap<string, number>;
   visualSignals: SignalState;
+  visualUpdatesPaused: boolean;
   audioRunning: boolean;
   recordingIds: ReadonlySet<string>;
   midiDevices: { inputs: string[]; outputs: string[] };
@@ -190,8 +191,10 @@ function moduleLayerPropsEqual(
     && previous.getDefinition === next.getDefinition
     && previous.selectedIds === next.selectedIds
     && previous.pending === next.pending
-    && previous.jackSignalLevels === next.jackSignalLevels
-    && previous.visualSignals === next.visualSignals
+    && (next.visualUpdatesPaused || (
+      previous.jackSignalLevels === next.jackSignalLevels
+      && previous.visualSignals === next.visualSignals
+    ))
     && previous.audioRunning === next.audioRunning
     && previous.recordingIds === next.recordingIds
     && previous.midiDevices === next.midiDevices

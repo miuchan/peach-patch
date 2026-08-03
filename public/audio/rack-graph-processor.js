@@ -109,6 +109,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.monitorModuleId = "";
     this.monitorTick = 0;
     this.visualTick = 0;
+    this.visualUpdatesEnabled = true;
     this.plugLights = new Map();
     this.ready = false;
     this.port.onmessage = ({ data }) => {
@@ -199,6 +200,10 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       } else if (data.type === "monitor-module") {
         this.monitorModuleId = String(data.moduleId || "");
         this.monitorTick = 0;
+      } else if (data.type === "visual-updates") {
+        this.visualUpdatesEnabled = data.enabled !== false;
+        this.monitorTick = 0;
+        this.visualTick = 0;
       } else if (data.type === "capture-enable") {
         const rackModule = this.modules.get(data.moduleId);
         rackModule?.runtime.rack_web_set_capture_enabled?.(
@@ -1328,7 +1333,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
   }
 
   emitVisualSignals(frames) {
-    if (++this.visualTick < 8) return;
+    if (++this.visualTick < 16) return;
     this.visualTick = 0;
     const peakForOutput = (rackModule, port) => {
       if (!rackModule || port < 0 || port >= rackModule.outputCount) return 0;
@@ -1726,14 +1731,16 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     }
     this.drainCaptures();
     this.drainMidiOutputs();
+    if (this.visualUpdatesEnabled) {
       this.emitMonitoredPortPeaks(frames);
       this.emitVisualSignals(frames);
-      for (const rackModule of this.modules.values())
-        for (const id of rackModule.momentaryReleases) {
-          rackModule.params[id] = 0;
-          rackModule.momentaryReleases.delete(id);
-        }
-      return true;
+    }
+    for (const rackModule of this.modules.values())
+      for (const id of rackModule.momentaryReleases) {
+        rackModule.params[id] = 0;
+        rackModule.momentaryReleases.delete(id);
+      }
+    return true;
   }
 }
 

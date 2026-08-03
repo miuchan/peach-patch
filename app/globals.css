@@ -206,3 +206,6 @@
 .pw-world.viewport-overview .pw-cable-plug{display:none}
 .pw-rack.cable-active .pw-cables .pw-cable-line{animation:none!important;filter:none!important}
 .pw-rack.cable-active .pw-plug-light{transition:none}
+.pw-rack.direct-interaction .pw-cables .pw-cable-line{animation:none!important;filter:none!important}
+.pw-rack.direct-interaction .pw-ports button.powered i{animation:none!important;filter:none!important}
+.pw-rack.direct-interaction .pw-plug-light{transition:none}

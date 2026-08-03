@@ -31,8 +31,21 @@ type TestTarget = {
 type TestProcessor = {
   modules: Map<string, TestSource>;
   incoming: Map<string, TestCable[]>;
+  ready: boolean;
+  visualUpdatesEnabled: boolean;
+  emitMonitoredPortPeaks: (frames: number) => void;
+  emitVisualSignals: (frames: number) => void;
+  drainCaptures: () => void;
   prepareInputs: (module: TestTarget, frames: number) => void;
   prepareInputFrame: (module: TestTarget, frame: number) => void;
+  process: (
+    inputs: Float32Array[][],
+    outputs: Float32Array[][],
+  ) => boolean;
+  port: {
+    onmessage: ((event: { data: Record<string, unknown> }) => void) | null;
+    postMessage: (message: unknown, transfer?: unknown[]) => void;
+  };
 };
 
 type TestProcessorConstructor = new () => TestProcessor;
@@ -127,6 +140,70 @@ test("Rack graph stacks inputs and broadcasts mono signals across polyphonic cha
       [target.inputs[1], target.inputs[129], target.inputs[257]],
       [12, 22, 32],
     );
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) Reflect.deleteProperty(globalThis, key);
+      else Reflect.set(globalThis, key, value);
+    }
+  }
+});
+
+test("Rack graph pauses only visual telemetry during direct manipulation", async () => {
+  let Processor: TestProcessorConstructor | undefined;
+  const workletGlobal = globalThis as typeof globalThis & {
+    AudioWorkletProcessor: new () => TestProcessor["port"];
+    registerProcessor: (name: string, constructor: TestProcessorConstructor) => void;
+    sampleRate: number;
+  };
+  const previous = {
+    AudioWorkletProcessor: Reflect.get(globalThis, "AudioWorkletProcessor"),
+    registerProcessor: Reflect.get(globalThis, "registerProcessor"),
+    sampleRate: Reflect.get(globalThis, "sampleRate"),
+  };
+
+  try {
+    workletGlobal.AudioWorkletProcessor = class {
+      port = {
+        onmessage: null,
+        postMessage: (_message: unknown, _transfer?: unknown[]) => {},
+      };
+    } as unknown as new () => TestProcessor["port"];
+    workletGlobal.registerProcessor = (_name, constructor) => {
+      Processor = constructor;
+    };
+    workletGlobal.sampleRate = 48_000;
+    await import(
+      `${new URL("../public/audio/rack-graph-processor.js", import.meta.url).href}?visual-pause`
+    );
+
+    assert.ok(Processor);
+    const processor = new Processor();
+    let monitorCalls = 0,
+      visualCalls = 0,
+      captureDrainCalls = 0;
+    processor.ready = true;
+    processor.emitMonitoredPortPeaks = () => monitorCalls++;
+    processor.emitVisualSignals = () => visualCalls++;
+    processor.drainCaptures = () => captureDrainCalls++;
+    const outputs = [[new Float32Array(128), new Float32Array(128)]];
+
+    processor.process([], outputs);
+    assert.deepEqual([monitorCalls, visualCalls], [1, 1]);
+    assert.equal(captureDrainCalls, 1);
+
+    processor.port.onmessage?.({
+      data: { type: "visual-updates", enabled: false },
+    });
+    assert.equal(processor.visualUpdatesEnabled, false);
+    processor.process([], outputs);
+    assert.deepEqual([monitorCalls, visualCalls], [1, 1]);
+    assert.equal(captureDrainCalls, 2);
+
+    processor.port.onmessage?.({
+      data: { type: "visual-updates", enabled: true },
+    });
+    processor.process([], outputs);
+    assert.deepEqual([monitorCalls, visualCalls], [2, 2]);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) Reflect.deleteProperty(globalThis, key);

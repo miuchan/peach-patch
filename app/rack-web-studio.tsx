@@ -272,6 +272,7 @@ export function RackWebStudio() {
     [cableOpacity, setCableOpacity] = useState(1),
     [cableTension, setCableTension] = useState(.5),
     [modulesLocked, setModulesLocked] = useState(false),
+    [directInteractionActive, setDirectInteractionActive] = useState(false),
     [libraryOpen, setLibraryOpen] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null),
     presetFileRef = useRef<HTMLInputElement>(null),
@@ -287,9 +288,8 @@ export function RackWebStudio() {
     suppressPortClickRef = useRef(false),
     rackRef = useRef<HTMLDivElement>(null),
     worldRef = useRef<HTMLDivElement>(null),
-    viewportInteractingRef = useRef(false),
+    directInteractingRef = useRef(false),
     cableInteractingRef = useRef(false),
-    deferredVisualSignalsRef = useRef(false),
     visualSignalsRef = useRef(visualSignals),
     wasmRef = useRef(new Map<string, wasmHost.WasmExports>());
   const cablePreviewLayerRef = useRef<RackCablePreviewLayerHandle | null>(null),
@@ -420,30 +420,28 @@ export function RackWebStudio() {
 
   const updateVisualSignals = useCallback(
     (updater: (previous: RackVisualSignals) => RackVisualSignals) => {
+      if (directInteractingRef.current || cableInteractingRef.current) return;
       const next = updater(visualSignalsRef.current);
       visualSignalsRef.current = next;
-      if (viewportInteractingRef.current || cableInteractingRef.current) {
-        deferredVisualSignalsRef.current = true;
-        return;
-      }
-      setVisualSignals(next);
+      startTransition(() => setVisualSignals(next));
     },
     [],
   );
 
-  const handleViewportInteractionChange = useCallback((active: boolean) => {
-    viewportInteractingRef.current = active;
-    if (active || cableInteractingRef.current || !deferredVisualSignalsRef.current) return;
-    deferredVisualSignalsRef.current = false;
-    startTransition(() => setVisualSignals(visualSignalsRef.current));
+  const handleDirectInteractionChange = useCallback((active: boolean) => {
+    directInteractingRef.current = active;
+    setDirectInteractionActive(active);
+    audioRef.current?.setVisualUpdatesEnabled(
+      !active && !cableInteractingRef.current,
+    );
   }, []);
 
   useEffect(() => {
     const active = Boolean(cableDrag || cableDraft);
     cableInteractingRef.current = active;
-    if (active || viewportInteractingRef.current || !deferredVisualSignalsRef.current) return;
-    deferredVisualSignalsRef.current = false;
-    startTransition(() => setVisualSignals(visualSignalsRef.current));
+    audioRef.current?.setVisualUpdatesEnabled(
+      !active && !directInteractingRef.current,
+    );
   }, [cableDraft, cableDrag]);
 
   const createAudioEngine = useCallback(
@@ -1382,6 +1380,7 @@ export function RackWebStudio() {
       origins,
       before: patch,
     };
+    handleDirectInteractionChange(true);
   };
 
   const copySelection = useCallback(() => {
@@ -1600,9 +1599,7 @@ export function RackWebStudio() {
     startBackgroundGesture,
     pointerMove,
     pointerUp,
-    previewViewport,
     readViewport,
-    commitViewportSoon,
   } = useRackCanvasGestures({
     rackRef,
     worldRef,
@@ -1624,7 +1621,7 @@ export function RackWebStudio() {
     mutatePatch: history.mutate,
     checkpointPatch: history.checkpoint,
     bumpLayoutRevision: () => setLayoutRevision((revision) => revision + 1),
-    onViewportInteractionChange: handleViewportInteractionChange,
+    onDirectInteractionChange: handleDirectInteractionChange,
   });
   const addFromUrlEvent = useStableEvent(() => void addFromUrl());
   const addRegistryModuleEvent = useStableEvent(addRegistryModule);
@@ -1645,15 +1642,25 @@ export function RackWebStudio() {
     );
   };
 
-  const adjustZoom = (delta: number) => {
+  const adjustZoom = useCallback((delta: number, absoluteZoom?: number) => {
     const rack = rackRef.current;
     if (!rack) return;
     const viewport = viewportControlRef.current,
-      nextZoom = Math.min(1.5, Math.max(0.08, viewport.zoom + delta)),
-      anchor = { x: rack.clientWidth / 2, y: rack.clientHeight / 2 };
-    setPan(anchoredViewportPan(viewport.pan, viewport.zoom, nextZoom, anchor));
+      nextZoom = Math.min(
+        1.5,
+        Math.max(0.08, absoluteZoom ?? viewport.zoom + delta),
+      ),
+      anchor = { x: rack.clientWidth / 2, y: rack.clientHeight / 2 },
+      nextPan = anchoredViewportPan(
+        viewport.pan,
+        viewport.zoom,
+        nextZoom,
+        anchor,
+      );
+    viewportControlRef.current = { pan: nextPan, zoom: nextZoom };
+    setPan(nextPan);
     setZoom(nextZoom);
-  };
+  }, []);
 
   const togglePerformanceMode = useCallback(() => {
     const next = !modulesLocked;
@@ -1874,6 +1881,9 @@ export function RackWebStudio() {
         engine = createAudioEngine();
         const stats = await engine.start(patch);
         audioRef.current = engine;
+        engine.setVisualUpdatesEnabled(
+          !directInteractingRef.current && !cableInteractingRef.current,
+        );
         engine.setMonitoredModule(
           selectedIds.size === 1
             ? (selectedIds.values().next().value ?? null)
@@ -1912,6 +1922,9 @@ export function RackWebStudio() {
       const engine = createAudioEngine(),
         stats = await engine.start(patch);
       audioRef.current = engine;
+      engine.setVisualUpdatesEnabled(
+        !directInteractingRef.current && !cableInteractingRef.current,
+      );
       engine.setMonitoredModule(
         selectedIds.size === 1
           ? (selectedIds.values().next().value ?? null)
@@ -2267,6 +2280,21 @@ export function RackWebStudio() {
     };
     const key = (event: KeyboardEvent) => {
       const target = event.target;
+      const command = event.metaKey || event.ctrlKey,
+        zoomIn = event.key === "+"
+          || event.key === "="
+          || event.code === "NumpadAdd",
+        zoomOut = event.key === "-"
+          || event.key === "_"
+          || event.code === "NumpadSubtract",
+        zoomReset = event.key === "0"
+          || event.code === "Digit0"
+          || event.code === "Numpad0";
+      if (command && (zoomIn || zoomOut || zoomReset)) {
+        event.preventDefault();
+        adjustZoom(zoomIn ? 0.1 : zoomOut ? -0.1 : 0, zoomReset ? 1 : undefined);
+        return;
+      }
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
@@ -2282,8 +2310,7 @@ export function RackWebStudio() {
         event.preventDefault();
         return;
       }
-      const command = event.metaKey || event.ctrlKey,
-        letter = event.key.toLowerCase();
+      const letter = event.key.toLowerCase();
       if (event.key === "Escape" && (moduleMenu || cableMenu)) {
         event.preventDefault();
         setModuleMenu(null);
@@ -2383,6 +2410,7 @@ export function RackWebStudio() {
       window.removeEventListener("keyup", keyUp);
     };
   }, [
+    adjustZoom,
     copySelection,
     deleteSelection,
     duplicateSelection,
@@ -2442,6 +2470,9 @@ export function RackWebStudio() {
           return;
         }
         audioRef.current = engine;
+        engine.setVisualUpdatesEnabled(
+          !directInteractingRef.current && !cableInteractingRef.current,
+        );
         engine.setMonitoredModule(
           selectedIds.size === 1
             ? (selectedIds.values().next().value ?? null)
@@ -2741,7 +2772,7 @@ export function RackWebStudio() {
       />
       <section
         ref={rackRef}
-        className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
+        className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${directInteractionActive ? "direct-interaction" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
         aria-label="Peach Patch modular rack"
         onPointerMove={(event) => {
           const cableInteraction = cableDrag ?? cableDraft;
@@ -2818,6 +2849,7 @@ export function RackWebStudio() {
                 currentY: startY,
                 base: new Set(selectedIds),
               };
+              handleDirectInteractionChange(true);
               setMarquee({ left: startX, top: startY, width: 0, height: 0 });
               setSelectedCableIds(new Set());
               setPending(null);
@@ -2867,37 +2899,6 @@ export function RackWebStudio() {
             worldY: (localY - viewport.pan.y) / viewport.zoom,
             query: "",
           });
-        }}
-        onWheel={(event) => {
-          const viewport = readViewport();
-          if (event.metaKey || event.ctrlKey) {
-            event.preventDefault();
-            const rack = rackRef.current;
-            if (!rack) return;
-            const rect = rack.getBoundingClientRect(),
-              anchor = {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top,
-              },
-              nextZoom = Math.min(
-                1.5,
-                Math.max(0.08, viewport.zoom - event.deltaY * 0.001),
-              );
-            previewViewport({
-              pan: anchoredViewportPan(viewport.pan, viewport.zoom, nextZoom, anchor),
-              zoom: nextZoom,
-            });
-          } else {
-            event.preventDefault();
-            previewViewport({
-              pan: {
-                x: viewport.pan.x - event.deltaX,
-                y: viewport.pan.y - event.deltaY,
-              },
-              zoom: viewport.zoom,
-            });
-          }
-          commitViewportSoon();
         }}
       >
         {selectedModule && selectedDefinition && (
@@ -2976,6 +2977,7 @@ export function RackWebStudio() {
             selectedIds={selectedCableIds}
             signalLevels={visualSignals.cables}
             plugSignals={visualSignals.plugs}
+            visualUpdatesPaused={directInteractionActive || Boolean(cableDrag || cableDraft)}
             onPlugPointerDown={startCableDrag}
             onSelect={selectCable}
             onContextMenu={openCableContextMenu}
@@ -2988,6 +2990,7 @@ export function RackWebStudio() {
             pending={pending}
             jackSignalLevels={jackSignalLevels}
             visualSignals={visualSignals}
+            visualUpdatesPaused={directInteractionActive || Boolean(cableDrag || cableDraft)}
             audioRunning={audioRunning}
             recordingIds={recordingIds}
             midiDevices={midiDevices}

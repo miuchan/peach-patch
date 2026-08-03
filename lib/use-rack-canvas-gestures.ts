@@ -11,7 +11,11 @@ import {
   type SetStateAction,
 } from "react";
 import type { ModuleInstance, PatchDocument } from "./patch-types";
-import { modulesIntersectingViewportRect, moveRackModulesWithoutOverlap } from "./patch-operations";
+import {
+  anchoredViewportPan,
+  modulesIntersectingViewportRect,
+  moveRackModulesWithoutOverlap,
+} from "./patch-operations";
 import {
   createRackViewportTransformWriter,
   RACK_VIEWPORT_OVERVIEW_ZOOM,
@@ -50,6 +54,12 @@ export type RackPinchState = {
   worldY: number;
 };
 
+type BrowserGestureEvent = Event & {
+  clientX: number;
+  clientY: number;
+  scale: number;
+};
+
 export type RackCanvasGestureRefs = {
   rackRef: RefObject<HTMLElement | null>;
   worldRef: RefObject<HTMLElement | null>;
@@ -74,7 +84,7 @@ export type RackCanvasGestureOptions = RackCanvasGestureRefs & {
   mutatePatch: (updater: (current: PatchDocument) => PatchDocument) => void;
   checkpointPatch: (patch: PatchDocument) => void;
   bumpLayoutRevision: () => void;
-  onViewportInteractionChange?: (active: boolean) => void;
+  onDirectInteractionChange?: (active: boolean) => void;
 };
 
 export function useRackCanvasGestures({
@@ -98,7 +108,7 @@ export function useRackCanvasGestures({
   mutatePatch,
   checkpointPatch,
   bumpLayoutRevision,
-  onViewportInteractionChange,
+  onDirectInteractionChange,
 }: RackCanvasGestureOptions) {
   const viewportCommitTimerRef = useRef<number | null>(null);
   const viewportInteractionActiveRef = useRef(false);
@@ -128,13 +138,13 @@ export function useRackCanvasGestures({
   const beginViewportInteraction = useCallback(() => {
     if (viewportInteractionActiveRef.current) return;
     viewportInteractionActiveRef.current = true;
-    onViewportInteractionChange?.(true);
-  }, [onViewportInteractionChange]);
+    onDirectInteractionChange?.(true);
+  }, [onDirectInteractionChange]);
   const endViewportInteraction = useCallback(() => {
     if (!viewportInteractionActiveRef.current) return;
     viewportInteractionActiveRef.current = false;
-    onViewportInteractionChange?.(false);
-  }, [onViewportInteractionChange]);
+    onDirectInteractionChange?.(false);
+  }, [onDirectInteractionChange]);
   const previewViewport = useCallback((viewport: RackViewport) => {
     beginViewportInteraction();
     const snapshot = {
@@ -161,6 +171,112 @@ export function useRackCanvasGestures({
     viewportCommitTimerRef.current = window.setTimeout(commitViewport, delay);
   }, [clearViewportCommitTimer, commitViewport]);
   const readViewport = useCallback(() => viewportRef.current, [viewportRef]);
+
+  useEffect(() => {
+    const rack = rackRef.current;
+    if (!rack) return;
+    let gesture: {
+      zoom: number;
+      worldX: number;
+      worldY: number;
+    } | null = null;
+    const localPoint = (event: { clientX: number; clientY: number }) => {
+      const rect = rack.getBoundingClientRect();
+      return {
+        x: Number.isFinite(event.clientX)
+          ? event.clientX - rect.left
+          : rack.clientWidth / 2,
+        y: Number.isFinite(event.clientY)
+          ? event.clientY - rect.top
+          : rack.clientHeight / 2,
+      };
+    };
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const viewport = viewportRef.current,
+        deltaScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? rack.clientHeight
+            : 1,
+        deltaX = event.deltaX * deltaScale,
+        deltaY = event.deltaY * deltaScale;
+      if (event.metaKey || event.ctrlKey) {
+        const anchor = localPoint(event),
+          nextZoom = Math.min(
+            1.5,
+            Math.max(0.08, viewport.zoom - deltaY * 0.001),
+          );
+        previewViewport({
+          pan: anchoredViewportPan(
+            viewport.pan,
+            viewport.zoom,
+            nextZoom,
+            anchor,
+          ),
+          zoom: nextZoom,
+        });
+      } else {
+        previewViewport({
+          pan: {
+            x: viewport.pan.x - deltaX,
+            y: viewport.pan.y - deltaY,
+          },
+          zoom: viewport.zoom,
+        });
+      }
+      commitViewportSoon();
+    };
+    const handleGestureStart = (source: Event) => {
+      const event = source as BrowserGestureEvent,
+        viewport = viewportRef.current,
+        anchor = localPoint(event);
+      event.preventDefault();
+      gesture = {
+        zoom: viewport.zoom,
+        worldX: (anchor.x - viewport.pan.x) / viewport.zoom,
+        worldY: (anchor.y - viewport.pan.y) / viewport.zoom,
+      };
+      beginViewportInteraction();
+    };
+    const handleGestureChange = (source: Event) => {
+      const event = source as BrowserGestureEvent;
+      event.preventDefault();
+      if (!gesture) return;
+      const anchor = localPoint(event),
+        nextZoom = Math.min(
+          1.5,
+          Math.max(0.08, gesture.zoom * Math.max(0.01, event.scale || 1)),
+        );
+      previewViewport({
+        pan: {
+          x: anchor.x - gesture.worldX * nextZoom,
+          y: anchor.y - gesture.worldY * nextZoom,
+        },
+        zoom: nextZoom,
+      });
+    };
+    const handleGestureEnd = (event: Event) => {
+      event.preventDefault();
+      gesture = null;
+      commitViewportSoon();
+    };
+
+    rack.addEventListener("wheel", handleWheel, { passive: false });
+    rack.addEventListener("gesturestart", handleGestureStart, {
+      passive: false,
+    });
+    rack.addEventListener("gesturechange", handleGestureChange, {
+      passive: false,
+    });
+    rack.addEventListener("gestureend", handleGestureEnd, { passive: false });
+    return () => {
+      rack.removeEventListener("wheel", handleWheel);
+      rack.removeEventListener("gesturestart", handleGestureStart);
+      rack.removeEventListener("gesturechange", handleGestureChange);
+      rack.removeEventListener("gestureend", handleGestureEnd);
+    };
+  }, [beginViewportInteraction, commitViewportSoon, previewViewport, rackRef, viewportRef]);
 
   useLayoutEffect(() => {
     const current = viewportRef.current;
@@ -281,6 +397,10 @@ export function useRackCanvasGestures({
 
   const pointerUp = useCallback((event?: PointerEvent<HTMLElement>) => {
     const selection = marqueeRef.current;
+    const endingSelection = Boolean(
+      selection && (!event || selection.pointerId === event.pointerId),
+    );
+    const endingDirectManipulation = endingSelection || Boolean(dragRef.current);
     if (selection && (!event || selection.pointerId === event.pointerId)) {
       const left = Math.min(selection.startX, selection.currentX);
       const top = Math.min(selection.startY, selection.currentY);
@@ -301,6 +421,7 @@ export function useRackCanvasGestures({
       dragRef.current = null;
       bumpLayoutRevision();
     }
+    if (endingDirectManipulation) onDirectInteractionChange?.(false);
     const endingPan = event
       ? panGestureRef.current?.pointerId === event.pointerId
       : Boolean(panGestureRef.current);
@@ -340,7 +461,7 @@ export function useRackCanvasGestures({
       commitViewport();
     }
     try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* Already released. */ }
-  }, [bumpLayoutRevision, checkpointPatch, commitViewport, dragRef, marqueeRef, modules, panGestureRef, pinchRef, rackRef, setMarquee, setSelectedCableIds, setSelectedIds, setStatus, touchPointsRef, viewportRef]);
+  }, [bumpLayoutRevision, checkpointPatch, commitViewport, dragRef, marqueeRef, modules, onDirectInteractionChange, panGestureRef, pinchRef, rackRef, setMarquee, setSelectedCableIds, setSelectedIds, setStatus, touchPointsRef, viewportRef]);
 
   return {
     startBackgroundGesture,
