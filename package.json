@@ -10,7 +10,9 @@
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite build",
     "typecheck": "tsc --noEmit --pretty false",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite preview",
-    "test": "npm run typecheck && npm run build && node --experimental-strip-types --test tests/*.test.ts",
+    "test": "npm run typecheck && npm run build && npm run test:coverage",
+    "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:coverage": "node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include='lib/**/*.ts' --test-coverage-include='server/**/*.ts' --test-coverage-exclude='tests/**' --test-coverage-lines=95 --test-coverage-functions=95 --test-coverage-branches=80 tests/*.test.ts",
     "lint": "eslint app lib worker vite.config.ts"
   },
   "dependencies": {

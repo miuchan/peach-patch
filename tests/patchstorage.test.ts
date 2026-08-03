@@ -75,3 +75,104 @@ test("PatchStorage API proxies the resolved patch with a safe filename", async (
     globalThis.fetch = originalFetch;
   }
 });
+
+test("PatchStorage API reports missing URLs and upstream page failures", async () => {
+  const missing = await GET(new Request("https://peach.test/api/patchstorage"));
+  assert.equal(missing.status, 400);
+  assert.deepEqual(await missing.json(), { error: "Missing PatchStorage patch URL" });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("unavailable", { status: 503 });
+  try {
+    const response = await GET(new Request(
+      "https://peach.test/api/patchstorage?url=https%3A%2F%2Fpatchstorage.com%2Fmeditation-patch%2F",
+    ));
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "PatchStorage page returned 503" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("PatchStorage API validates redirects and download responses", async () => {
+  const originalFetch = globalThis.fetch;
+  let request = 0;
+  globalThis.fetch = async () => {
+    request += 1;
+    if (request === 1) {
+      const response = new Response(
+        `<a class="ps-patch-download" href="https://patchstorage.com/wp-content/uploads/2026/08/patch.vcv">Download</a>`,
+      );
+      Object.defineProperty(response, "url", { value: "https://patchstorage.com/meditation-patch/" });
+      return response;
+    }
+    return new Response("unavailable", { status: 404 });
+  };
+  try {
+    const response = await GET(new Request(
+      "https://peach.test/api/patchstorage?url=https%3A%2F%2Fpatchstorage.com%2Fmeditation-patch%2F",
+    ));
+    assert.deepEqual(await response.json(), { error: "PatchStorage download returned 404" });
+
+    globalThis.fetch = async () => {
+      const redirected = new Response("page");
+      Object.defineProperty(redirected, "url", { value: "https://example.com/stolen-patch/" });
+      return redirected;
+    };
+    const redirect = await GET(new Request(
+      "https://peach.test/api/patchstorage?url=https%3A%2F%2Fpatchstorage.com%2Fmeditation-patch%2F",
+    ));
+    assert.match((await redirect.json()).error, /Expected a PatchStorage patch link/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("PatchStorage API enforces declared and decoded patch size limits", async () => {
+  const originalFetch = globalThis.fetch;
+  const page = () => new Response(
+    `<a class="ps-patch-download" href="https://patchstorage.com/wp-content/uploads/2026/08/patch.vcv">Download</a>`,
+  );
+  const requestUrl = "https://peach.test/api/patchstorage?url=https%3A%2F%2Fpatchstorage.com%2Fmeditation-patch%2F";
+
+  try {
+    let request = 0;
+    globalThis.fetch = async () => {
+      request += 1;
+      return request === 1
+        ? page()
+        : new Response("too large", { headers: { "content-length": String(25 * 1024 * 1024 + 1) } });
+    };
+    const declared = await GET(new Request(requestUrl));
+    assert.deepEqual(await declared.json(), { error: "The PatchStorage patch is larger than the 25 MB import limit" });
+
+    request = 0;
+    globalThis.fetch = async () => {
+      request += 1;
+      if (request === 1) return page();
+      return {
+        ok: true,
+        url: "",
+        headers: new Headers(),
+        arrayBuffer: async () => ({ byteLength: 25 * 1024 * 1024 + 1 }),
+      };
+    };
+    const decoded = await GET(new Request(requestUrl));
+    assert.deepEqual(await decoded.json(), { error: "The PatchStorage patch is larger than the 25 MB import limit" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("PatchStorage API keeps a stable fallback for non-Error failures", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw "offline"; };
+  try {
+    const response = await GET(new Request(
+      "https://peach.test/api/patchstorage?url=https%3A%2F%2Fpatchstorage.com%2Fmeditation-patch%2F",
+    ));
+    assert.deepEqual(await response.json(), { error: "Could not load the PatchStorage patch" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

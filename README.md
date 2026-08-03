@@ -73,7 +73,9 @@ npm run lint
 npm test
 ```
 
-`npm test` runs the type check, production build, and the Node test suite. Keep browser-facing behavior covered at the domain, registry-client, AudioWorklet, or rendered-HTML boundary that owns it.
+`npm test` runs the type check, production build, and coverage-gated Node test suite. The gate requires at least 95% line coverage, 95% function coverage, and 80% branch coverage across the core `lib/` and `server/` TypeScript executed by the suite. Run `npm run test:unit` for a fast test pass or `npm run test:coverage` to inspect the coverage report directly.
+
+Browser-facing behavior stays covered at the boundary that owns it. The AudioWorklet graph uses its dedicated VM behavior tests, while build and rendered-output tests protect browser integration; those adapters are not folded into the core TypeScript percentage.
 
 ### Project layout
 
