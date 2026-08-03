@@ -3,38 +3,51 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPLv3%2B-blue.svg)](LICENSE)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
 
-Peach Patch is a browser-native modular synthesizer and Rack patch runtime. Open `.vcv` patches, place and connect modules, play them through Web Audio, and save the result back to a Rack-compatible patch file—without installing a native audio application.
+Peach Patch is a browser-native modular synthesizer and Rack-compatible patch runtime. Open Rack 2 `.vcv` patches, build a patch from a verified module catalog, run the graph through Web Audio, and save it back to a Rack-compatible file—without installing a native audio application.
 
 Module metadata and immutable WebAssembly artifacts are loaded from the [Peach Patch Registry](https://github.com/miuchan/peach-patch-registry). This repository contains the browser application and runtime; source discovery, WebAssembly builds, artifact publication, and registry governance live in the companion registry repository.
 
 > Peach Patch is an independent project. It is not made by, affiliated with, or endorsed by VCV. VCV Rack is a trademark of VCV.
 
-## What you can do
+## Highlights
 
-- Import and export Rack-compatible `.vcv` patches, including compressed Rack 2 patches and public PatchStorage links.
-- Build and edit patches on an infinite canvas with pan, zoom, multi-select, copy/paste, undo/redo, cable replacement, module replacement, and signal-flow helpers.
-- Load modules from the registry with verified metadata, manifest, byte length, and SHA-256 checks.
-- Run compatible module DSP as WebAssembly inside a patch-wide AudioWorklet graph.
-- Use browser-local audio files, Web MIDI, MIDI-CV utilities, automation, presets, autosave, and live signal telemetry where supported by the module and browser.
-- Keep patch files and selected audio assets in the browser; the runtime does not need to upload a patch to play it locally.
+- **Rack patch workflow.** Open JSON or compressed Rack 2 `.vcv` files, import a public PatchStorage link, save in place where the browser supports it, or download a Rack-compatible JSON patch.
+- **Signal-flow editor.** Work on an infinite canvas with pan, zoom, fit-to-patch, multi-select, copy/paste, undo/redo, quick add, compatible module replacement, cable insertion, and heal-delete.
+- **Rack-style patching.** Drag from empty jacks to create cables, drag an existing plug to reconnect or disconnect it, and use <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>-drag to add another cable to an occupied input or output. Input stacks sum voltages; output stacks fan signals out.
+- **Verified browser DSP.** Load the catalog from the Peach Patch Registry, validate its schema and package metadata, and verify every downloaded WASM artifact by byte length and SHA-256 before instantiation.
+- **One live graph.** Run compatible module DSP, polyphonic cables, feedback edges, bypass routes, and supported expanders inside a patch-wide AudioWorklet graph.
+- **Performance tools.** Use Web MIDI, Core MIDI/CV modules, next-CC MIDI learn, `.vcvm` presets, parameter automation, live port scopes, and module-provided WAV or MIDI capture.
+- **Browser-local assets.** Decode supported audio, image, MIDI, ROM, and script assets locally, then keep their samples in IndexedDB and patch autosave state in `localStorage`.
+
+## Compatibility boundary
+
+Peach Patch is registry-only at runtime. Native `.vcvplugin` packages contain platform-specific dynamic libraries and cannot execute directly as browser WebAssembly. A module needs a compatible Web ABI artifact published in the [Peach Patch Registry](https://github.com/miuchan/peach-patch-registry); source discovery, builds, publication, and artifact governance belong in that companion repository.
+
+Patch import is intentionally atomic. Before replacing the current patch, Peach Patch checks that every module is available in the verified browser catalog and is not marked with a commercial or proprietary license. If any instance is blocked, the current patch stays open and the unavailable module list is shown. Import compatibility therefore depends on the current registry, and browser rendering or host integrations can still differ from native Rack even when the DSP model is available.
 
 ## How it works
 
 ```text
-                        immutable metadata + WASM
-Browser UI  ───────────► Peach Patch Registry
-    │                              │
-    │ local .vcv patch             ▼
-    └────────────────────► verified WASM modules
-                                   │
-                                   ▼
-                         AudioWorklet signal graph
-                                   │
-                                   ▼
-                            Web Audio output
+.vcv file / PatchStorage link        VCV Library / PatchStorage
+              │                              │
+              ▼                              ▼
+        React patch studio ◄────── Cloudflare Worker APIs
+              │
+              ├── normalized patch + undo history + autosave
+              │
+              └── Peach Patch Registry index
+                              │
+                              ▼
+                   size/SHA-256 verified WASM
+                              │
+                              ▼
+                  patch-wide AudioWorklet graph
+                              │
+                              ▼
+                    Web Audio and Web MIDI
 ```
 
-The application is registry-only at runtime. Native `.vcvplugin` packages and their platform-specific dynamic libraries cannot execute directly in browser WebAssembly. A plugin must therefore have a compatible Web ABI build published in the registry; closed-source or otherwise unsupported plugins require a web build from their author.
+Editable patch history is the source of truth. The AudioWorklet is a live projection that is incrementally synchronized or rebuilt after structural edits; transient selection, viewport, menus, and gestures are never serialized into the patch.
 
 ## Quick start
 
@@ -54,6 +67,16 @@ npm run dev
 
 Open the local URL printed by Vite, then choose a patch or create one from the Library. Audio starts only after the browser's user-gesture policy allows it.
 
+### Create or open a patch
+
+1. Wait for the Library to finish loading the registry index.
+2. Choose **New**, **Open** for a local `.vcv`, or **Link** for a public PatchStorage page.
+3. Add modules from Library search or paste an exact `https://library.vcvrack.com/Plugin/Model` URL.
+4. Drag between jacks to patch the graph, then press the play button to start browser audio.
+5. Choose **Save** to write through a supported browser file handle or download a JSON `.vcv` fallback.
+
+PatchStorage imports use the same-origin `/api/patchstorage` Worker route, accept public HTTPS PatchStorage pages only, and enforce a 25 MB patch limit.
+
 ### Production build and preview
 
 ```bash
@@ -61,11 +84,11 @@ npm run build
 npm run start
 ```
 
-The registry endpoint can be changed by the runtime integration when deploying a compatible mirror or fork. The default registry is the `main` branch index at [miuchan/peach-patch-registry](https://github.com/miuchan/peach-patch-registry).
+The application currently loads the `main` branch index from [miuchan/peach-patch-registry](https://github.com/miuchan/peach-patch-registry). A mirror or fork can pass a different HTTPS index URL through the registry client integration.
 
 ## Development
 
-Useful checks before opening a pull request:
+The application uses React 19, TypeScript, Vite, the Cloudflare Vite plugin, a small Worker API layer, AudioWorklet, and standalone WebAssembly module artifacts. Useful checks before opening a pull request:
 
 ```bash
 npm run typecheck
@@ -85,7 +108,9 @@ Browser-facing behavior stays covered at the boundary that owns it. The AudioWor
 | `lib/` | Patch domain, registry client, runtime types, and browser adapters |
 | `public/audio/` | AudioWorklet processors used by the browser runtime |
 | `assets/rack/` | Small Rack-derived UI assets required locally by the application |
-| `server/` | Worker/API handlers for metadata and runtime support |
+| `server/` | Validated API handlers for Library metadata, PatchStorage, and Rack UI assets |
+| `worker/` | Cloudflare Worker router and SPA asset fallback |
+| `build/` | Vite integration used by the hosting environment |
 | `tests/` | Type, registry, patch, runtime, and rendered-output tests |
 | `docs/` | Architecture, WebAssembly runtime, and UX documentation |
 
@@ -93,18 +118,18 @@ Build inputs and published WebAssembly artifacts are intentionally maintained in
 
 ## Registry integrity
 
-The runtime treats the registry index as the source of truth for available modules. For each artifact it:
+The runtime treats the registry index as the source of truth for available modules. It:
 
-1. validates the registry schema and package metadata;
-2. resolves artifact and manifest URLs against the registry index;
-3. downloads the immutable WebAssembly artifact;
-4. verifies its declared byte length and SHA-256 digest before instantiation.
+1. requires an HTTPS registry index and validates its schema and package metadata;
+2. rejects malformed or duplicate package keys and normalizes trusted module geometry at the boundary;
+3. resolves artifact URLs against the index and requires HTTPS for WASM downloads;
+4. verifies each artifact's declared byte length and SHA-256 digest before instantiation.
 
 This keeps application code, module metadata, and generated binaries independently reviewable while preventing a truncated or unexpected artifact from silently entering the audio graph.
 
 ## Privacy and browser limits
 
-Patch editing and browser-selected audio processing are local to the browser. The application does need network access to load registry metadata and module artifacts, and some Library metadata or panel images may come from their public HTTPS URLs. Browser permissions still apply to Web MIDI, file access, and audio playback.
+Patch editing and browser-selected asset processing are local to the browser. Autosave uses `localStorage`, while decoded module assets use IndexedDB. The application still needs network access for the registry index, WASM artifacts, and some public Library metadata or panel images. Opening a PatchStorage link asks the deployment's Worker to fetch that public page and its `.vcv` download. Browser permissions still apply to Web MIDI, file access, and audio playback.
 
 Support depends on both the browser and the published module ABI. Native filesystem access, native threads, arbitrary OS paths, and platform-specific plugin binaries are not portable to this runtime.
 
