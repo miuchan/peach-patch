@@ -3350,15 +3350,14 @@ input {
   background: linear-gradient(90deg, #222, #aaa, #222);
 }
 
-/* Viewport gestures only change this compositor layer. Off-screen module
-   interiors stay out of layout and paint work until they approach view. */
+/* Viewport gestures only change this compositor layer. Keep module contents
+   paintable here: Chromium can intermittently cull content-visibility:auto
+   descendants while their scaled ancestor is moving. The explicit overview
+   mode below provides deterministic low-zoom simplification instead. */
 .pw-world {
   will-change: transform;
   backface-visibility: hidden;
   contain: layout style;
-}
-.pw-module {
-  content-visibility: auto;
 }
 .pw-world.viewport-overview .pw-module {
   border: 1px solid #171819;

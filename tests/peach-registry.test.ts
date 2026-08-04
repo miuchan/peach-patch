@@ -80,7 +80,7 @@ test("registry index resolves immutable artifact URLs", () => {
   );
 });
 
-test("registry geometry repairs panels whose declared width clips their controls", () => {
+test("registry preserves canonical panel width when source coordinates are clipped", () => {
   const [module] = modulesFromRegistryIndex(
     {
       schemaVersion: 1,
@@ -104,7 +104,7 @@ test("registry geometry repairs panels whose declared width clips their controls
     },
     "https://raw.example/registry/index.json",
   );
-  assert.equal(module.width, 75);
+  assert.equal(module.width, 5);
 });
 
 test("registry control dimensions preserve the source panel width", () => {
@@ -143,7 +143,7 @@ test("registry control dimensions preserve the source panel width", () => {
   assert.equal(module.width, 90);
 });
 
-test("registry geometry brings clipped positions back into the fixed Rack panel", () => {
+test("registry preserves source coordinates for the panel geometry trust gate", () => {
   const [module] = modulesFromRegistryIndex(
     {
       schemaVersion: 1,
@@ -166,9 +166,9 @@ test("registry geometry brings clipped positions back into the fixed Rack panel"
     },
     "https://raw.example/registry/index.json",
   );
-  assert.equal(module.params[0].position?.x, 15);
-  assert.equal(module.params[0].position?.y, 36);
-  assert.equal(module.inputs[0].position?.y, 344);
+  assert.equal(module.params[0].position?.x, -5);
+  assert.equal(module.params[0].position?.y, -10);
+  assert.equal(module.inputs[0].position?.y, 500);
 });
 
 test("registry index requests revalidate the mutable main index", async () => {
@@ -209,6 +209,17 @@ test("registry index rejects duplicate module keys", () => {
         "https://raw.example/registry/index.json",
       ),
     /Duplicate registry key/,
+  );
+});
+
+test("registry index rejects non-positive panel widths", () => {
+  assert.throws(
+    () =>
+      modulesFromRegistryIndex(
+        { schemaVersion: 1, packages: [{ ...moduleRecord, width: 0 }] },
+        "https://raw.example/registry/index.json",
+      ),
+    /invalid package/,
   );
 });
 

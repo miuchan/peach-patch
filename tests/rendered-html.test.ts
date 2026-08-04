@@ -82,6 +82,11 @@ test("large racks keep viewport gestures off the React render path", async () =>
     styles,
     /\.pw-world\.viewport-overview\s+\.pw-module\s*>\s*\*\s*\{\s*display:\s*none\s*!important/,
   );
+  assert.doesNotMatch(
+    styles,
+    /\.pw-module\s*\{[^}]*content-visibility:\s*auto/,
+    "transformed rack modules must not use Chromium's unstable automatic content culling",
+  );
 });
 
 test("Registry completion invalidates restored module panels without a click", async () => {
@@ -164,7 +169,7 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(ports, /pw-ports \$\{bankClass\} aligned-layout/);
   assert.match(
     panel,
-    /hasTrustworthySourceGeometry=rackUiGeometryIsTrustworthy\(params,inputs,outputs\)/,
+    /hasTrustworthySourceGeometry=rackUiGeometryIsTrustworthy\(definition\?\.width\?\?module\.width,params,inputs,outputs\)/,
   );
   assert.match(panel, /allowSourceGeometry=!panelArtworkFailed&&hasTrustworthySourceGeometry/);
   assert.match(

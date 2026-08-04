@@ -217,7 +217,12 @@ export function ModulePanel({
     "--panel-image": hasPanelArtwork ? `url(${module.screenshotUrl})` : "none",
   } as CSSProperties;
   const sourcePorts = [...inputs, ...outputs],
-    hasTrustworthySourceGeometry = rackUiGeometryIsTrustworthy(params, inputs, outputs),
+    hasTrustworthySourceGeometry = rackUiGeometryIsTrustworthy(
+      definition?.width ?? module.width,
+      params,
+      inputs,
+      outputs,
+    ),
     allowSourceGeometry = !panelArtworkFailed && hasTrustworthySourceGeometry,
     positionedParams = allowSourceGeometry ? params.filter((param) => param.position) : [],
     hasParamSourceLayout = Boolean(

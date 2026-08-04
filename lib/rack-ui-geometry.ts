@@ -1,6 +1,5 @@
 import type { ParamSpec, PortSpec } from "./web-plugin-registry.ts";
-
-type PositionedWidget = ParamSpec | PortSpec;
+import { rackParamControlSize } from "./rack-param-visual-data.ts";
 
 const MIN_WIDGET_CENTER_DISTANCE = 3;
 
@@ -10,13 +9,28 @@ function visiblePositionedWidgets(
   outputs: readonly PortSpec[],
 ) {
   return [
-    ...params.filter((item) => !item.hidden && !item.contextOnly),
-    ...inputs.filter((item) => !item.hidden),
-    ...outputs.filter((item) => !item.hidden),
-  ].filter(
-    (item): item is PositionedWidget & { position: NonNullable<PositionedWidget["position"]> } =>
-      Boolean(item.position),
-  );
+    ...params
+      .filter((item) => !item.hidden && !item.contextOnly && item.position)
+      .map((item) => ({ item, size: rackParamControlSize(item) })),
+    ...inputs
+      .filter((item) => !item.hidden && item.position)
+      .map((item) => ({
+        item,
+        size: { width: item.position?.width ?? 24, height: item.position?.height ?? 24 },
+      })),
+    ...outputs
+      .filter((item) => !item.hidden && item.position)
+      .map((item) => ({
+        item,
+        size: { width: item.position?.width ?? 24, height: item.position?.height ?? 24 },
+      })),
+  ].map(({ item, size }) => {
+    const position = item.position!;
+    return {
+      x: position.x + (position.centered ? 0 : size.width / 2),
+      y: position.y + (position.centered ? 0 : size.height / 2),
+    };
+  });
 }
 
 /**
@@ -25,27 +39,24 @@ function visiblePositionedWidgets(
  * safer than drawing interactive widgets at coordinates we know are corrupt.
  */
 export function rackUiGeometryIsTrustworthy(
+  panelWidth: number,
   params: readonly ParamSpec[],
   inputs: readonly PortSpec[],
   outputs: readonly PortSpec[],
 ) {
   const widgets = visiblePositionedWidgets(params, inputs, outputs);
-  if (!widgets.length) return false;
+  if (!Number.isFinite(panelWidth) || panelWidth <= 0 || !widgets.length) return false;
   if (
     widgets.some(
-      ({ position }) =>
-        !Number.isFinite(position.x) ||
-        !Number.isFinite(position.y) ||
-        position.x < 0 ||
-        position.y < 0 ||
-        position.y > 380,
+      ({ x, y }) =>
+        !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > panelWidth || y < 0 || y > 380,
     )
   )
     return false;
   for (let index = 0; index < widgets.length; index += 1) {
-    const current = widgets[index].position;
+    const current = widgets[index];
     for (let candidate = index + 1; candidate < widgets.length; candidate += 1) {
-      const other = widgets[candidate].position;
+      const other = widgets[candidate];
       if (Math.hypot(current.x - other.x, current.y - other.y) < MIN_WIDGET_CENTER_DISTANCE)
         return false;
     }

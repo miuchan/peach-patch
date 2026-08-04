@@ -25,6 +25,7 @@ function isModulePackage(value: unknown): value is WebPluginModule & {
     typeof value.screenshotUrl !== "string" ||
     typeof value.wasmUrl !== "string" ||
     !isFiniteNumber(value.width) ||
+    value.width <= 0 ||
     typeof value.description !== "string" ||
     !Array.isArray(value.params) ||
     !Array.isArray(value.inputs) ||
@@ -61,68 +62,6 @@ function isPortSpec(value: unknown): boolean {
   );
 }
 
-function geometryWidth(module: WebPluginModule): number {
-  const positions = [
-    ...module.params.map((param) => ({ position: param.position, size: 30 })),
-    ...module.inputs.map((port) => ({ position: port.position, size: 16 })),
-    ...module.outputs.map((port) => ({ position: port.position, size: 16 })),
-  ];
-  const rightEdge = positions.reduce((maximum, item) => {
-    const position = item.position;
-    if (!position || !isFiniteNumber(position.x)) return maximum;
-    const elementWidth = isFiniteNumber(position.width) ? position.width : item.size;
-    return Math.max(maximum, position.x + (position.centered ? elementWidth / 2 : elementWidth));
-  }, 15);
-  return Math.ceil(rightEdge / 15) * 15;
-}
-
-function normalizePositions<T extends { position?: WebPluginModule["params"][number]["position"] }>(
-  items: T[],
-  size: number,
-): T[] {
-  const outOfBoundsY = items
-    .map((item, index) => ({ index, y: item.position?.y }))
-    .filter((item) => isFiniteNumber(item.y) && (item.y < 0 || item.y > 380));
-  if (
-    !items.some(
-      (item) =>
-        item.position && (item.position.x < 0 || item.position.y < 0 || item.position.y > 380),
-    )
-  )
-    return items;
-  return items.map((item, index) => {
-    const position = item.position;
-    if (!position) return item;
-    const outlierIndex = outOfBoundsY.findIndex((candidate) => candidate.index === index);
-    const nextX = position.x < 0 ? (position.centered ? size / 2 : 0) : position.x;
-    const nextY =
-      position.y < 0 || position.y > 380
-        ? outOfBoundsY.length === 1
-          ? position.y < 0
-            ? 36
-            : 344
-          : 36 + (outlierIndex / Math.max(1, outOfBoundsY.length - 1)) * 308
-        : position.y;
-    return {
-      ...item,
-      position: { ...position, x: nextX, y: nextY },
-    };
-  });
-}
-
-function normalizeModuleGeometry(module: WebPluginModule): WebPluginModule {
-  const width = Math.max(module.width, geometryWidth(module));
-  const params = normalizePositions(module.params, 30);
-  const inputs = normalizePositions(module.inputs, 16);
-  const outputs = normalizePositions(module.outputs, 16);
-  return width === module.width &&
-    params === module.params &&
-    inputs === module.inputs &&
-    outputs === module.outputs
-    ? module
-    : { ...module, width, params, inputs, outputs };
-}
-
 export function modulesFromRegistryIndex(input: unknown, indexUrl: string): WebPluginModule[] {
   if (!input || typeof input !== "object")
     throw new Error("Peach Patch registry index is not an object");
@@ -134,11 +73,11 @@ export function modulesFromRegistryIndex(input: unknown, indexUrl: string): WebP
     if (!isModulePackage(item)) throw new Error("Registry contains an invalid package");
     if (seen.has(item.key)) throw new Error(`Duplicate registry key ${item.key}`);
     seen.add(item.key);
-    return normalizeModuleGeometry({
+    return {
       ...item,
       wasmUrl: new URL(item.wasmUrl, indexUrl).href,
       ...(item.manifestUrl ? { manifestUrl: new URL(item.manifestUrl, indexUrl).href } : {}),
-    });
+    };
   });
 }
 
