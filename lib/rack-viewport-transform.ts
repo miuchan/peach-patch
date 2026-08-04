@@ -1,9 +1,30 @@
+import type { ModuleInstance } from "./patch-types";
+
 export type RackViewport = {
   pan: { x: number; y: number };
   zoom: number;
 };
 
 export const RACK_VIEWPORT_OVERVIEW_ZOOM = 0.2;
+
+export function rackModuleIntersectsViewport(
+  module: Pick<ModuleInstance, "x" | "y" | "width">,
+  viewport: RackViewport,
+  size: { width: number; height: number },
+  overscanPixels = 480,
+) {
+  if (size.width <= 0 || size.height <= 0 || viewport.zoom <= 0) return true;
+  const left = (-viewport.pan.x - overscanPixels) / viewport.zoom,
+    top = (-viewport.pan.y - overscanPixels) / viewport.zoom,
+    right = (size.width - viewport.pan.x + overscanPixels) / viewport.zoom,
+    bottom = (size.height - viewport.pan.y + overscanPixels) / viewport.zoom;
+  return (
+    module.x + module.width >= left &&
+    module.x <= right &&
+    module.y + 380 >= top &&
+    module.y <= bottom
+  );
+}
 
 export function rackViewportTransform({ pan, zoom }: RackViewport) {
   return `translate3d(${pan.x}px,${pan.y}px,0) scale(${zoom})`;

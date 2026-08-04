@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createRackViewportTransformWriter,
+  rackModuleIntersectsViewport,
   rackViewportTransform,
 } from "../lib/rack-viewport-transform.ts";
 
@@ -45,4 +46,24 @@ test("high-frequency viewport previews coalesce into one write per frame", () =>
   writer.preview({ pan: { x: 90, y: 100 }, zoom: 0.6 });
   writer.cancel();
   assert.deepEqual(cancelled, [2, 3]);
+});
+
+test("large racks keep only the viewport and an overscan margin mounted", () => {
+  const viewport = { pan: { x: -1_000, y: -380 }, zoom: 1 };
+  const size = { width: 1_000, height: 760 };
+  assert.equal(
+    rackModuleIntersectsViewport({ x: 1_200, y: 380, width: 120 }, viewport, size),
+    true,
+  );
+  assert.equal(
+    rackModuleIntersectsViewport({ x: 3_000, y: 380, width: 120 }, viewport, size),
+    false,
+  );
+  assert.equal(
+    rackModuleIntersectsViewport({ x: 9_000, y: 9_000, width: 120 }, viewport, {
+      width: 0,
+      height: 0,
+    }),
+    true,
+  );
 });

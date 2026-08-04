@@ -9,6 +9,7 @@
     "check": "npm run format:check && npm run lint && npm test",
     "dev": "vite",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite build",
+    "benchmark:audio": "node --experimental-strip-types scripts/benchmark-audio-worklet.ts",
     "format": "prettier --write --cache --ignore-unknown .",
     "format:check": "prettier --check --cache --ignore-unknown .",
     "typecheck": "tsc --noEmit --pretty false",

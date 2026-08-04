@@ -87,6 +87,11 @@ test("large racks keep viewport gestures off the React render path", async () =>
     /\.pw-module\s*\{[^}]*content-visibility:\s*auto/,
     "transformed rack modules must not use Chromium's unstable automatic content culling",
   );
+  assert.doesNotMatch(
+    styles,
+    /\.pw-world\s*\{[^}]*(?:contain:|will-change:|backface-visibility:)/,
+    "the viewport-sized world must not force a compositor layer or hide overflowing paint bounds",
+  );
 });
 
 test("Registry completion invalidates restored module panels without a click", async () => {

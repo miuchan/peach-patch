@@ -3,6 +3,7 @@ import type { MadzineManualTarget } from "./rack-madzine-manual";
 import { ModulePanel } from "./module-panel";
 import type { ModuleInstance, PatchDocument } from "../../lib/patch-types";
 import type { WebPluginModule } from "../../lib/web-plugin-registry";
+import { rackModuleIntersectsViewport, type RackViewport } from "../../lib/rack-viewport-transform";
 
 export type RackStudioPortClick = {
   moduleId: string;
@@ -17,6 +18,8 @@ type SignalState = {
 
 export type RackStudioModuleLayerProps = {
   modules: ModuleInstance[];
+  viewport: RackViewport;
+  viewportSize: { width: number; height: number };
   cables: PatchDocument["cables"];
   definitions: readonly WebPluginModule[];
   selectedIds: ReadonlySet<string>;
@@ -69,6 +72,8 @@ const EMPTY_CONNECTED_INPUT_IDS: ReadonlySet<number> = new Set();
 
 function RackStudioModuleLayerView({
   modules,
+  viewport,
+  viewportSize,
   cables,
   definitions,
   selectedIds,
@@ -124,10 +129,21 @@ function RackStudioModuleLayerView({
     }
     return connected;
   }, [cables]);
+  const visibleModules = useMemo(
+    () =>
+      modules.filter(
+        (module) =>
+          selectedIds.has(module.id) ||
+          recordingIds.has(module.id) ||
+          pending?.moduleId === module.id ||
+          rackModuleIntersectsViewport(module, viewport, viewportSize),
+      ),
+    [modules, pending?.moduleId, recordingIds, selectedIds, viewport, viewportSize],
+  );
 
   return (
     <>
-      {modules.map((module) => {
+      {visibleModules.map((module) => {
         const definition = definitionsByKey.get(module.key);
         const inputSignalLevels: Record<number, number> = {};
         for (const port of definition?.inputs ?? []) {
@@ -205,6 +221,11 @@ function moduleLayerPropsEqual(
 ) {
   return (
     previous.modules === next.modules &&
+    previous.viewport.pan.x === next.viewport.pan.x &&
+    previous.viewport.pan.y === next.viewport.pan.y &&
+    previous.viewport.zoom === next.viewport.zoom &&
+    previous.viewportSize.width === next.viewportSize.width &&
+    previous.viewportSize.height === next.viewportSize.height &&
     previous.cables === next.cables &&
     previous.definitions === next.definitions &&
     previous.selectedIds === next.selectedIds &&

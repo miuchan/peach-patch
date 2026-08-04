@@ -134,10 +134,6 @@ export class RackAudioEngine {
         ? navigator.requestMIDIAccess().catch(() => null)
         : Promise.resolve(null);
     await this.stop();
-    const context = new AudioContext({ latencyHint: "interactive" });
-    this.context = context;
-    await context.audioWorklet.addModule("/audio/rack-graph-processor.js?abi=0.4");
-
     const outgoing = new Set(patch.cables.map((cable) => `${cable.fromModule}:${cable.fromPort}`));
     const readyModules = patch.modules.filter((module) => getWebPlugin(module.key));
     const activeInstances = readyModules.filter((instance) => {
@@ -153,6 +149,12 @@ export class RackAudioEngine {
           Boolean(definition.runtime?.visuals?.length))
       );
     });
+    const context = new AudioContext({
+      latencyHint: activeInstances.length >= 48 ? "balanced" : "interactive",
+    });
+    this.context = context;
+    await context.audioWorklet.addModule("/audio/rack-graph-processor.js?abi=0.7");
+
     const activeIds = new Set(activeInstances.map((instance) => instance.id));
     const moduleById = new Map(patch.modules.map((module) => [module.id, module]));
     const artifactPromises = new Map<string, Promise<ArrayBuffer>>();
@@ -169,6 +171,7 @@ export class RackAudioEngine {
     const modules = await Promise.all(
       activeInstances.map(async (instance) => {
         const definition = getWebPlugin(instance.key)!;
+        await artifact(definition);
         const stored = instance.asset
           ? await getSample(instance.asset.storageKey).catch(() => undefined)
           : undefined;
@@ -183,7 +186,7 @@ export class RackAudioEngine {
         return {
           id: instance.id,
           key: instance.key,
-          wasm: (await artifact(definition)).slice(0),
+          wasmId: definition.wasmUrl,
           params: instance.params,
           state: instance.state ?? [],
           stateJson: JSON.stringify(
@@ -209,6 +212,7 @@ export class RackAudioEngine {
           hostControl: definition.runtime?.hostControl,
           visuals: definition.runtime?.visuals ?? [],
           capture: definition.runtime?.capture,
+          midiOutput: Boolean(definition.runtime?.midi?.output),
           outputConnections: definition.outputs.map((port) =>
             outgoing.has(`${instance.id}:${port.id}`),
           ),
@@ -218,6 +222,9 @@ export class RackAudioEngine {
           ),
         };
       }),
+    );
+    const wasmArtifacts = await Promise.all(
+      [...artifactPromises].map(async ([id, promise]) => ({ id, wasm: await promise })),
     );
     const audioBoundaries = readyModules.flatMap((instance) => {
       const definition = getWebPlugin(instance.key)!;
@@ -337,14 +344,16 @@ export class RackAudioEngine {
         }
       };
     });
-    const transfer: Transferable[] = [];
+    const transfer: Transferable[] = wasmArtifacts.map(({ wasm }) => wasm);
     for (const rackModule of modules) {
-      transfer.push(rackModule.wasm);
       if (rackModule.asset) transfer.push(rackModule.asset.samples.buffer as ArrayBuffer);
       for (const asset of rackModule.assets ?? [])
         if (asset) transfer.push(asset.samples.buffer as ArrayBuffer);
     }
-    node.port.postMessage({ type: "load-graph", modules, cables, audioBoundaries }, transfer);
+    node.port.postMessage(
+      { type: "load-graph", modules, wasmArtifacts, cables, audioBoundaries },
+      transfer,
+    );
     const level = context.createGain();
     level.gain.value = 0.5;
     node.connect(level).connect(context.destination);

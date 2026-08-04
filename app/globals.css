@@ -3350,15 +3350,9 @@ input {
   background: linear-gradient(90deg, #222, #aaa, #222);
 }
 
-/* Viewport gestures only change this compositor layer. Keep module contents
-   paintable here: Chromium can intermittently cull content-visibility:auto
-   descendants while their scaled ancestor is moving. The explicit overview
-   mode below provides deterministic low-zoom simplification instead. */
-.pw-world {
-  will-change: transform;
-  backface-visibility: hidden;
-  contain: layout style;
-}
+/* Keep this viewport-sized world out of a permanent compositing/containment
+   layer: its modules overflow the box in world space, and Chromium can drop
+   their panel tiles while audio-driven descendants repaint. */
 .pw-world.viewport-overview .pw-module {
   border: 1px solid #171819;
   background: linear-gradient(90deg, #aaa79e, #e5e1d7 12%, #cfcbc1 88%, #8e8b84);

@@ -2373,13 +2373,19 @@ export function RackWebStudio() {
           />
           <RackStudioModuleLayer
             modules={patch.modules}
+            viewport={{ pan, zoom }}
+            viewportSize={rackViewportSize}
             cables={patch.cables}
             definitions={registry}
             selectedIds={selectedIds}
             pending={pending}
             jackSignalLevels={jackSignalLevels}
             visualSignals={visualSignals}
-            visualUpdatesPaused={directInteractionActive || Boolean(cableDrag || cableDraft)}
+            visualUpdatesPaused={
+              directInteractionActive ||
+              Boolean(cableDrag || cableDraft) ||
+              zoom < RACK_VIEWPORT_OVERVIEW_ZOOM
+            }
             audioRunning={audioRunning}
             recordingIds={recordingIds}
             midiDevices={midiDevices}

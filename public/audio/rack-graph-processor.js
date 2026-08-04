@@ -5,7 +5,9 @@ function rackWebWasiImports(holder) {
   const unsupported = () => -52;
   return {
     env: {
-      emscripten_notify_memory_growth() {},
+      emscripten_notify_memory_growth() {
+        holder.memoryGrew = true;
+      },
       _emscripten_system: unsupported,
       getnameinfo: unsupported,
       getaddrinfo: unsupported,
@@ -136,9 +138,13 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     super();
     this.modules = new Map();
     this.order = [];
+    this.execution = [];
     this.cables = [];
     this.incoming = new Map();
     this.deviceCables = [];
+    this.feedbackSources = [];
+    this.captureModules = [];
+    this.midiOutputModules = [];
     this.audioBoundaries = new Map();
     this.expanderChains = new Map();
     this.expanderOwners = new Map();
@@ -155,8 +161,10 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.monitorModuleId = "";
     this.monitorTick = 0;
     this.visualTick = 0;
+    this.visualInterval = 16;
     this.visualUpdatesEnabled = true;
     this.plugLights = new Map();
+    this.processErrorReported = false;
     this.ready = false;
     this.port.onmessage = ({ data }) => {
       if (data.type === "load-graph")
@@ -169,7 +177,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         );
       else if (data.type === "param") {
         const rackModule = this.modules.get(data.moduleId);
-        if (rackModule) rackModule.params[data.id] = data.value;
+        if (rackModule) this.setModuleParam(rackModule, data.id, data.value);
         else {
           const boundary = this.audioBoundaries.get(data.moduleId);
           if (boundary) boundary.params[data.id] = data.value;
@@ -189,6 +197,8 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           if (rackModule.runtime.rack_web_reset_param)
             rackModule.runtime.rack_web_reset_param(id, value);
           else rackModule.runtime.rack_web_set_param(id, value);
+          rackModule.paramCache[id] = value;
+          rackModule.dirtyParams.delete(id);
         } else {
           const boundary = this.audioBoundaries.get(data.moduleId);
           if (
@@ -205,7 +215,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           id = Number(data.id);
         if (rackModule && Number.isInteger(id) && id >= 0 && id < rackModule.params.length) {
           if (data.active) {
-            rackModule.params[id] = 1;
+            this.setModuleParam(rackModule, id, 1);
             rackModule.momentaryReleases.delete(id);
           } else rackModule.momentaryReleases.add(id);
         }
@@ -304,13 +314,73 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     };
   }
 
+  setModuleParam(rackModule, id, value) {
+    if (!Number.isInteger(id) || id < 0 || id >= rackModule.params.length) return;
+    if (Object.is(rackModule.params[id], value)) return;
+    rackModule.params[id] = value;
+    rackModule.dirtyParams.add(id);
+  }
+
+  syncModuleParams(rackModule) {
+    if (!rackModule.dirtyParams.size) return;
+    for (const id of rackModule.dirtyParams) {
+      const value = rackModule.params[id];
+      rackModule.runtime.rack_web_set_param(id, value);
+      rackModule.paramCache[id] = value;
+    }
+    rackModule.dirtyParams.clear();
+  }
+
+  refreshRuntimeViews(rackModule) {
+    const memoryBuffer = rackModule.runtime.memory.buffer;
+    if (rackModule.memoryBuffer === memoryBuffer && !rackModule.wasiHolder.memoryGrew) return;
+    rackModule.wasiHolder.memoryGrew = false;
+    rackModule.memoryBuffer = memoryBuffer;
+    rackModule.inputs = new Float32Array(
+      memoryBuffer,
+      rackModule.runtime.rack_web_input_buffer(),
+      Math.max(1, rackModule.inputCount) * rackModule.maxChannels * 128,
+    );
+    rackModule.outputs = new Float32Array(
+      memoryBuffer,
+      rackModule.runtime.rack_web_output_buffer(),
+      Math.max(1, rackModule.outputCount) * rackModule.maxChannels * 128,
+    );
+    rackModule.lights =
+      rackModule.lightCount && rackModule.runtime.rack_web_light_buffer
+        ? new Float32Array(
+            memoryBuffer,
+            rackModule.runtime.rack_web_light_buffer(),
+            rackModule.lightCount,
+          )
+        : null;
+    rackModule.expanderInputs = rackModule.expanderCapacity
+      ? new Float32Array(
+          memoryBuffer,
+          rackModule.runtime.rack_web_expander_input_buffer(),
+          rackModule.expanderCapacity * 16 * rackModule.maxChannels * 128,
+        )
+      : null;
+    rackModule.expanderOutputs = rackModule.expanderCapacity
+      ? new Float32Array(
+          memoryBuffer,
+          rackModule.runtime.rack_web_expander_output_buffer(),
+          rackModule.expanderCapacity * 16 * rackModule.maxChannels * 128,
+        )
+      : null;
+  }
+
   async loadGraph(data) {
     this.ready = false;
     this.modules.clear();
     this.order = [];
+    this.execution = [];
     this.cables = [];
     this.incoming.clear();
     this.deviceCables = [];
+    this.feedbackSources = [];
+    this.captureModules = [];
+    this.midiOutputModules = [];
     this.audioBoundaries.clear();
     this.expanderChains.clear();
     this.expanderOwners.clear();
@@ -325,6 +395,16 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.automationEndFrame = 0;
     this.automationActive = false;
     this.plugLights.clear();
+    this.processErrorReported = false;
+
+    const wasmArtifacts = new Map(
+      await Promise.all(
+        (data.wasmArtifacts || []).map(async ({ id, wasm }) => [
+          id,
+          await WebAssembly.compile(wasm),
+        ]),
+      ),
+    );
 
     for (const boundary of data.audioBoundaries || [])
       this.audioBoundaries.set(boundary.id, {
@@ -335,8 +415,11 @@ class RackGraphProcessor extends AudioWorkletProcessor {
 
     for (const item of data.modules || []) {
       const wasiHolder = { runtime: null };
-      const result = await WebAssembly.instantiate(item.wasm, rackWebWasiImports(wasiHolder));
-      const runtime = result.instance.exports;
+      const wasm = item.wasmId ? wasmArtifacts.get(item.wasmId) : item.wasm;
+      if (!wasm) throw new Error(`Missing WASM artifact for ${item.key || item.id}`);
+      const result = await WebAssembly.instantiate(wasm, rackWebWasiImports(wasiHolder));
+      const instance = result instanceof WebAssembly.Instance ? result : result.instance,
+        runtime = instance.exports;
       wasiHolder.runtime = runtime;
       runtime._initialize();
       runtime.rack_web_seed(item.seed || 1);
@@ -395,13 +478,23 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         captureCapacity = runtime.rack_web_capture_capacity?.() || 0;
       for (let port = 0; port < outputCount; port++)
         runtime.rack_web_set_output_connected(port, item.outputConnections?.[port] ? 1 : 0);
-      this.modules.set(item.id, {
+      const params = item.params || [],
+        paramCache = new Float64Array(params.length),
+        connectedInputChannels = new Int8Array(Math.max(1, inputCount));
+      paramCache.fill(Number.NaN);
+      connectedInputChannels.fill(-1);
+      const rackModule = {
         id: item.id,
         key: item.key || "",
         runtime,
-        params: item.params || [],
+        wasiHolder,
+        memoryBuffer: null,
+        params,
+        paramCache,
+        dirtyParams: new Set(params.keys()),
         momentaryReleases: new Set(),
         bypassed: Boolean(item.bypassed),
+        faulted: false,
         bypassRoutes: item.bypassRoutes || [],
         x: Number(item.x) || 0,
         y: Number(item.y) || 0,
@@ -424,41 +517,26 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         inputCount,
         outputCount,
         lightCount,
-        lights:
-          lightCount && runtime.rack_web_light_buffer
-            ? new Float32Array(runtime.memory.buffer, runtime.rack_web_light_buffer(), lightCount)
-            : null,
+        lights: null,
         maxChannels,
-        inputs: new Float32Array(
-          runtime.memory.buffer,
-          runtime.rack_web_input_buffer(),
-          Math.max(1, inputCount) * maxChannels * 128,
-        ),
-        outputs: new Float32Array(
-          runtime.memory.buffer,
-          runtime.rack_web_output_buffer(),
-          Math.max(1, outputCount) * maxChannels * 128,
-        ),
-        previous: new Float32Array(Math.max(1, outputCount) * maxChannels * 128),
+        inputs: null,
+        outputs: null,
+        previous: null,
+        feedbackOutputPorts: new Uint8Array(Math.max(1, outputCount)),
         previousChannels: new Uint8Array(Math.max(1, outputCount)),
         currentChannels: new Uint8Array(Math.max(1, outputCount)),
         inputChannels: new Uint8Array(Math.max(1, inputCount)),
-        expanderInputs: expanderCapacity
-          ? new Float32Array(
-              runtime.memory.buffer,
-              runtime.rack_web_expander_input_buffer(),
-              expanderCapacity * 16 * maxChannels * 128,
-            )
-          : null,
-        expanderOutputs: expanderCapacity
-          ? new Float32Array(
-              runtime.memory.buffer,
-              runtime.rack_web_expander_output_buffer(),
-              expanderCapacity * 16 * maxChannels * 128,
-            )
-          : null,
-      });
-      this.configureMidiMap(this.modules.get(item.id), item.stateJson);
+        connectedInputChannels,
+        inputCables: Array.from({ length: inputCount }, () => []),
+        expanderInputs: null,
+        expanderOutputs: null,
+      };
+      this.refreshRuntimeViews(rackModule);
+      this.syncModuleParams(rackModule);
+      this.modules.set(item.id, rackModule);
+      if (captureCapacity) this.captureModules.push(rackModule);
+      if (item.midiOutput) this.midiOutputModules.push(rackModule);
+      this.configureMidiMap(rackModule, item.stateJson);
     }
 
     this.configureExpanderChains();
@@ -474,15 +552,22 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         target = this.modules.get(cable.toModule);
       if (!source) continue;
       if (cable.toAudio) {
-        if (cable.toPort < 2) this.deviceCables.push({ ...cable, feedback: false });
+        if (cable.toPort < 2)
+          this.deviceCables.push({
+            ...cable,
+            source,
+            boundary: this.audioBoundaries.get(cable.audioModuleId),
+            feedback: false,
+          });
         continue;
       }
       if (!target || cable.fromPort >= source.outputCount || cable.toPort >= target.inputCount)
         continue;
-      const edge = { ...cable, feedback: false };
+      const edge = { ...cable, source, target, feedback: false };
       this.cables.push(edge);
       if (!this.incoming.has(target.id)) this.incoming.set(target.id, []);
       this.incoming.get(target.id).push(edge);
+      target.inputCables[cable.toPort].push(edge);
       const sourceOwner = owner(source.id),
         targetOwner = owner(target.id);
       if (sourceOwner === targetOwner) edge.feedback = true;
@@ -515,6 +600,23 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       }
     }
     for (const id of executionIds) if (!this.order.includes(id)) this.order.push(id);
+    this.execution = this.order.map((id) => {
+      const rackModule = this.modules.get(id);
+      rackModule.messageGroup = this.messageGroups.get(id) || null;
+      return rackModule;
+    });
+    const feedbackSources = new Set();
+    for (const cable of this.cables) {
+      if (!cable.feedback) continue;
+      cable.source.feedbackOutputPorts[cable.fromPort] = 1;
+      feedbackSources.add(cable.source);
+    }
+    this.feedbackSources = [...feedbackSources];
+    for (const rackModule of this.feedbackSources)
+      rackModule.previous = new Float32Array(
+        Math.max(1, rackModule.outputCount) * rackModule.maxChannels * 128,
+      );
+    this.visualInterval = this.modules.size >= 64 || this.cables.length >= 128 ? 32 : 16;
     this.ready = true;
     this.port.postMessage({
       type: "ready",
@@ -619,7 +721,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         current = Number(target.params[map.paramId]) || 0,
         currentScaled = maximum === minimum ? 0 : (current - minimum) / (maximum - minimum);
       if (!rackModule.midiMapSmooth || Math.abs(currentScaled - scaled) >= 1) {
-        target.params[map.paramId] = value;
+        this.setModuleParam(target, map.paramId, value);
         this.midiAutomations.delete(key);
         this.port.postMessage({ type: "midi-param", moduleId: target.id, id: map.paramId, value });
       } else {
@@ -634,7 +736,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       const current = Number(automation.target.params[automation.id]) || 0,
         next = current + (automation.value - current) * amount;
       if (Math.abs(next - automation.value) < 1e-5) {
-        automation.target.params[automation.id] = automation.value;
+        this.setModuleParam(automation.target, automation.id, automation.value);
         this.midiAutomations.delete(key);
         this.port.postMessage({
           type: "midi-param",
@@ -642,7 +744,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           id: automation.id,
           value: automation.value,
         });
-      } else automation.target.params[automation.id] = next;
+      } else this.setModuleParam(automation.target, automation.id, next);
     }
   }
 
@@ -705,78 +807,122 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.messageMode = this.messageLinks.length > 0;
   }
 
+  inputCablesFor(rackModule) {
+    if (rackModule.inputCables) return rackModule.inputCables;
+    rackModule.inputCables = Array.from({ length: rackModule.inputCount }, () => []);
+    for (const cable of this.incoming.get(rackModule.id) || [])
+      rackModule.inputCables[cable.toPort]?.push(cable);
+    return rackModule.inputCables;
+  }
+
+  updateInputConnection(rackModule, port, channels) {
+    if (!rackModule.connectedInputChannels) {
+      rackModule.connectedInputChannels = new Int8Array(Math.max(1, rackModule.inputCount));
+      rackModule.connectedInputChannels.fill(-1);
+    }
+    if (rackModule.connectedInputChannels[port] === channels) return;
+    rackModule.connectedInputChannels[port] = channels;
+    rackModule.runtime.rack_web_set_input_connected(port, channels > 0 ? 1 : 0);
+    rackModule.runtime.rack_web_set_input_channels(port, channels);
+  }
+
   prepareInputs(rackModule, frames) {
-    rackModule.inputs.fill(0);
+    const inputCables = this.inputCablesFor(rackModule);
     rackModule.inputChannels.fill(0);
-    for (const cable of this.incoming.get(rackModule.id) || []) {
-      const source = this.modules.get(cable.fromModule),
-        channels = cable.feedback
-          ? source.previousChannels[cable.fromPort]
-          : source.currentChannels[cable.fromPort];
-      rackModule.inputChannels[cable.toPort] = Math.max(
-        rackModule.inputChannels[cable.toPort],
-        channels,
-      );
-    }
-    for (const cable of this.incoming.get(rackModule.id) || []) {
-      const source = this.modules.get(cable.fromModule),
-        buffer = cable.feedback ? source.previous : source.outputs,
-        channels = cable.feedback
-          ? source.previousChannels[cable.fromPort]
-          : source.currentChannels[cable.fromPort],
-        inputChannels = rackModule.inputChannels[cable.toPort];
-      for (let channel = 0; channel < inputChannels; channel++) {
-        const sourceChannel = channels === 1 ? 0 : channel;
-        if (sourceChannel >= channels) continue;
-        for (let frame = 0; frame < frames; frame++)
-          rackModule.inputs[(channel * rackModule.inputCount + cable.toPort) * 128 + frame] +=
-            buffer[(sourceChannel * source.outputCount + cable.fromPort) * 128 + frame];
-      }
-    }
     for (let port = 0; port < rackModule.inputCount; port++) {
-      rackModule.runtime.rack_web_set_input_connected(
-        port,
-        rackModule.inputChannels[port] > 0 ? 1 : 0,
-      );
-      rackModule.runtime.rack_web_set_input_channels(port, rackModule.inputChannels[port]);
+      const cables = inputCables[port],
+        oldChannels = Math.max(0, rackModule.connectedInputChannels?.[port] ?? 0);
+      let inputChannels = 0;
+      for (const cable of cables) {
+        const source = cable.source || this.modules.get(cable.fromModule),
+          channels = cable.feedback
+            ? source.previousChannels[cable.fromPort]
+            : source.currentChannels[cable.fromPort];
+        inputChannels = Math.max(inputChannels, channels);
+      }
+      rackModule.inputChannels[port] = inputChannels;
+      if (cables.length === 1 && inputChannels > 0) {
+        const cable = cables[0],
+          source = cable.source || this.modules.get(cable.fromModule),
+          buffer = cable.feedback ? source.previous : source.outputs,
+          sourceChannels = cable.feedback
+            ? source.previousChannels[cable.fromPort]
+            : source.currentChannels[cable.fromPort];
+        for (let channel = 0; channel < inputChannels; channel++) {
+          const sourceChannel = sourceChannels === 1 ? 0 : channel,
+            targetOffset = (channel * rackModule.inputCount + port) * 128;
+          if (!buffer || sourceChannel >= sourceChannels)
+            rackModule.inputs.fill(0, targetOffset, targetOffset + frames);
+          else {
+            const sourceOffset = (sourceChannel * source.outputCount + cable.fromPort) * 128;
+            rackModule.inputs.set(
+              buffer.subarray(sourceOffset, sourceOffset + frames),
+              targetOffset,
+            );
+          }
+        }
+        for (let channel = inputChannels; channel < oldChannels; channel++) {
+          const targetOffset = (channel * rackModule.inputCount + port) * 128;
+          rackModule.inputs.fill(0, targetOffset, targetOffset + frames);
+        }
+      } else {
+        for (let channel = 0; channel < Math.max(oldChannels, inputChannels); channel++) {
+          const targetOffset = (channel * rackModule.inputCount + port) * 128;
+          rackModule.inputs.fill(0, targetOffset, targetOffset + frames);
+        }
+        for (const cable of cables) {
+          const source = cable.source || this.modules.get(cable.fromModule),
+            buffer = cable.feedback ? source.previous : source.outputs,
+            sourceChannels = cable.feedback
+              ? source.previousChannels[cable.fromPort]
+              : source.currentChannels[cable.fromPort];
+          if (!buffer) continue;
+          for (let channel = 0; channel < inputChannels; channel++) {
+            const sourceChannel = sourceChannels === 1 ? 0 : channel;
+            if (sourceChannel >= sourceChannels) continue;
+            const sourceOffset = (sourceChannel * source.outputCount + cable.fromPort) * 128,
+              targetOffset = (channel * rackModule.inputCount + port) * 128;
+            for (let frame = 0; frame < frames; frame++)
+              rackModule.inputs[targetOffset + frame] += buffer[sourceOffset + frame];
+          }
+        }
+      }
+      this.updateInputConnection(rackModule, port, inputChannels);
     }
   }
 
   prepareInputFrame(rackModule, frame) {
+    const inputCables = this.inputCablesFor(rackModule);
     rackModule.inputChannels.fill(0);
-    for (let port = 0; port < rackModule.inputCount; port++)
-      for (let channel = 0; channel < rackModule.maxChannels; channel++)
-        rackModule.inputs[(channel * rackModule.inputCount + port) * 128 + frame] = 0;
-    for (const cable of this.incoming.get(rackModule.id) || []) {
-      const source = this.modules.get(cable.fromModule),
-        channels = cable.feedback
-          ? source.previousChannels[cable.fromPort]
-          : source.currentChannels[cable.fromPort];
-      rackModule.inputChannels[cable.toPort] = Math.max(
-        rackModule.inputChannels[cable.toPort],
-        channels,
-      );
-    }
-    for (const cable of this.incoming.get(rackModule.id) || []) {
-      const source = this.modules.get(cable.fromModule),
-        buffer = cable.feedback ? source.previous : source.outputs,
-        channels = cable.feedback
-          ? source.previousChannels[cable.fromPort]
-          : source.currentChannels[cable.fromPort],
-        inputChannels = rackModule.inputChannels[cable.toPort];
-      for (let channel = 0; channel < inputChannels; channel++) {
-        const sourceChannel = channels === 1 ? 0 : channel;
-        if (sourceChannel >= channels) continue;
-        rackModule.inputs[(channel * rackModule.inputCount + cable.toPort) * 128 + frame] +=
-          buffer[(sourceChannel * source.outputCount + cable.fromPort) * 128 + frame];
-      }
-    }
     for (let port = 0; port < rackModule.inputCount; port++) {
-      rackModule.runtime.rack_web_set_input_connected(
-        port,
-        rackModule.inputChannels[port] > 0 ? 1 : 0,
-      );
-      rackModule.runtime.rack_web_set_input_channels(port, rackModule.inputChannels[port]);
+      const cables = inputCables[port],
+        oldChannels = Math.max(0, rackModule.connectedInputChannels?.[port] ?? 0);
+      let inputChannels = 0;
+      for (const cable of cables) {
+        const source = cable.source || this.modules.get(cable.fromModule),
+          channels = cable.feedback
+            ? source.previousChannels[cable.fromPort]
+            : source.currentChannels[cable.fromPort];
+        inputChannels = Math.max(inputChannels, channels);
+      }
+      rackModule.inputChannels[port] = inputChannels;
+      for (let channel = 0; channel < Math.max(oldChannels, inputChannels); channel++)
+        rackModule.inputs[(channel * rackModule.inputCount + port) * 128 + frame] = 0;
+      for (const cable of cables) {
+        const source = cable.source || this.modules.get(cable.fromModule),
+          buffer = cable.feedback ? source.previous : source.outputs,
+          sourceChannels = cable.feedback
+            ? source.previousChannels[cable.fromPort]
+            : source.currentChannels[cable.fromPort];
+        if (!buffer) continue;
+        for (let channel = 0; channel < inputChannels; channel++) {
+          const sourceChannel = sourceChannels === 1 ? 0 : channel;
+          if (sourceChannel >= sourceChannels) continue;
+          rackModule.inputs[(channel * rackModule.inputCount + port) * 128 + frame] +=
+            buffer[(sourceChannel * source.outputCount + cable.fromPort) * 128 + frame];
+        }
+      }
+      this.updateInputConnection(rackModule, port, inputChannels);
     }
   }
 
@@ -785,6 +931,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     if (!members) return;
     base.expanderInputs.fill(0);
     members.forEach(({ module, paramCache }, index) => {
+      this.refreshRuntimeViews(module);
       this.prepareInputs(module, frames);
       base.runtime.rack_web_set_expander_bypassed(index, module.bypassed ? 1 : 0);
       for (let id = 0; id < module.params.length; id++)
@@ -808,6 +955,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     const members = this.expanderChains.get(base.id);
     if (!members) return;
     members.forEach(({ module, paramCache }, index) => {
+      this.refreshRuntimeViews(module);
       this.prepareInputFrame(module, frame);
       base.runtime.rack_web_set_expander_bypassed(index, module.bypassed ? 1 : 0);
       for (let id = 0; id < module.params.length; id++)
@@ -835,10 +983,12 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       module.outputs.fill(0);
       module.currentChannels.fill(0);
       for (let port = 0; port < module.outputCount; port++) {
-        const channels = Math.min(
-          module.maxChannels,
-          base.runtime.rack_web_get_expander_output_channels(index, port),
-        );
+        const channels = module.outputConnections[port]
+          ? Math.min(
+              module.maxChannels,
+              base.runtime.rack_web_get_expander_output_channels(index, port),
+            )
+          : 0;
         module.currentChannels[port] = channels;
         for (let channel = 0; channel < channels; channel++)
           for (let frame = 0; frame < frames; frame++)
@@ -853,10 +1003,12 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     if (!members) return;
     members.forEach(({ module }, index) => {
       for (let port = 0; port < module.outputCount; port++) {
-        const channels = Math.min(
-          module.maxChannels,
-          base.runtime.rack_web_get_expander_output_channels(index, port),
-        );
+        const channels = module.outputConnections[port]
+          ? Math.min(
+              module.maxChannels,
+              base.runtime.rack_web_get_expander_output_channels(index, port),
+            )
+          : 0;
         module.currentChannels[port] = channels;
         for (let channel = 0; channel < module.maxChannels; channel++)
           module.outputs[(channel * module.outputCount + port) * 128 + frame] =
@@ -956,6 +1108,10 @@ class RackGraphProcessor extends AudioWorkletProcessor {
 
   copyNeighborOutputs(module, side, neighbor, frame) {
     for (let port = 0; port < neighbor.outputCount; port++) {
+      if (!neighbor.outputConnections[port]) {
+        neighbor.currentChannels[port] = 0;
+        continue;
+      }
       const channels = Math.min(
         neighbor.maxChannels,
         module.runtime.rack_web_get_neighbor_output_channels(side, port),
@@ -1002,6 +1158,10 @@ class RackGraphProcessor extends AudioWorkletProcessor {
   copyChainNeighborOutputs(module, side, index, neighbor, frame) {
     const runtime = module.runtime;
     for (let port = 0; port < neighbor.outputCount; port++) {
+      if (!neighbor.outputConnections[port]) {
+        neighbor.currentChannels[port] = 0;
+        continue;
+      }
       const channels = Math.min(
         neighbor.maxChannels,
         runtime.rack_web_get_chain_neighbor_output_channels(side, index, port),
@@ -1086,8 +1246,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
   }
 
   drainCaptures() {
-    for (const rackModule of this.modules.values()) {
-      if (!rackModule.captureCapacity) continue;
+    for (const rackModule of this.captureModules) {
       const runtime = rackModule.runtime,
         channels = Math.max(1, Math.min(2, Number(runtime.rack_web_capture_channels?.()) || 1)),
         available = Math.min(
@@ -1121,7 +1280,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
   }
 
   drainMidiOutputs() {
-    for (const rackModule of this.modules.values()) {
+    for (const rackModule of this.midiOutputModules) {
       const runtime = rackModule.runtime,
         available = Math.min(
           1024,
@@ -1189,7 +1348,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
   }
 
   emitVisualSignals(frames) {
-    if (++this.visualTick < 16) return;
+    if (++this.visualTick < this.visualInterval) return;
     this.visualTick = 0;
     const peakForOutput = (rackModule, port) => {
       if (!rackModule || port < 0 || port >= rackModule.outputCount) return 0;
@@ -1446,11 +1605,46 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     };
   }
 
+  reportModuleFault(rackModule, error) {
+    rackModule.faulted = true;
+    if (rackModule.errorReported) return;
+    rackModule.errorReported = true;
+    this.port.postMessage({
+      type: "error",
+      message: `${rackModule.key || rackModule.id} DSP failed and was safely bypassed: ${
+        error instanceof Error ? error.message : "unknown WebAssembly error"
+      }`,
+    });
+  }
+
+  runModuleBlock(rackModule, frames) {
+    try {
+      rackModule.runtime.rack_web_process(frames, sampleRate);
+      this.refreshRuntimeViews(rackModule);
+      return true;
+    } catch (error) {
+      this.reportModuleFault(rackModule, error);
+      return false;
+    }
+  }
+
+  runModuleFrame(rackModule, frame) {
+    try {
+      rackModule.runtime.rack_web_process_frame(frame, sampleRate);
+      this.refreshRuntimeViews(rackModule);
+      return true;
+    } catch (error) {
+      this.reportModuleFault(rackModule, error);
+      return false;
+    }
+  }
+
   processMessageGroup(group, frames, frameOffset = 0) {
     const groupIds = new Set(group.map((module) => module.id));
-    for (const rackModule of group)
-      for (let id = 0; id < rackModule.params.length; id++)
-        rackModule.runtime.rack_web_set_param(id, rackModule.params[id]);
+    for (const rackModule of group) {
+      this.refreshRuntimeViews(rackModule);
+      this.syncModuleParams(rackModule);
+    }
     for (let localFrame = 0; localFrame < frames; localFrame++) {
       const frame = frameOffset + localFrame;
       for (const rackModule of group) this.prepareInputFrame(rackModule, frame);
@@ -1465,7 +1659,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           this.syncChainNeighborSnapshot(root, 1, groupIndex - 1, group[groupIndex], frame);
       for (const rackModule of group) {
         const runtime = rackModule.runtime;
-        if (rackModule.bypassed) {
+        if (rackModule.bypassed || rackModule.faulted) {
           rackModule.currentChannels.fill(0);
           for (let port = 0; port < rackModule.outputCount; port++)
             for (let channel = 0; channel < rackModule.maxChannels; channel++)
@@ -1480,12 +1674,17 @@ class RackGraphProcessor extends AudioWorkletProcessor {
                 rackModule.inputs[(channel * rackModule.inputCount + inputPort) * 128 + frame];
           }
         } else {
-          runtime.rack_web_process_frame(frame, sampleRate);
+          if (!this.runModuleFrame(rackModule, frame)) {
+            rackModule.currentChannels.fill(0);
+            for (let port = 0; port < rackModule.outputCount; port++)
+              for (let channel = 0; channel < rackModule.maxChannels; channel++)
+                rackModule.outputs[(channel * rackModule.outputCount + port) * 128 + frame] = 0;
+            continue;
+          }
           for (let port = 0; port < rackModule.outputCount; port++)
-            rackModule.currentChannels[port] = Math.min(
-              rackModule.maxChannels,
-              runtime.rack_web_get_output_channels(port),
-            );
+            rackModule.currentChannels[port] = rackModule.outputConnections[port]
+              ? Math.min(rackModule.maxChannels, runtime.rack_web_get_output_channels(port))
+              : 0;
         }
       }
       for (const { left, right } of this.messageLinks) {
@@ -1501,17 +1700,17 @@ class RackGraphProcessor extends AudioWorkletProcessor {
   }
 
   processGraphFrame(frame) {
-    for (const moduleId of this.order) {
-      const rackModule = this.modules.get(moduleId),
-        runtime = rackModule.runtime;
-      const messageGroup = this.messageGroups.get(moduleId);
+    for (const rackModule of this.execution) {
+      const runtime = rackModule.runtime,
+        messageGroup = rackModule.messageGroup;
       if (messageGroup) {
         this.processMessageGroup(messageGroup, 1, frame);
         continue;
       }
+      this.refreshRuntimeViews(rackModule);
       this.prepareInputFrame(rackModule, frame);
       this.syncExpanderChainFrame(rackModule, frame);
-      if (rackModule.bypassed) {
+      if (rackModule.bypassed || rackModule.faulted) {
         rackModule.currentChannels.fill(1);
         for (let port = 0; port < rackModule.outputCount; port++)
           for (let channel = 0; channel < rackModule.maxChannels; channel++)
@@ -1531,14 +1730,18 @@ class RackGraphProcessor extends AudioWorkletProcessor {
               rackModule.inputs[(channel * rackModule.inputCount + inputPort) * 128 + frame];
         }
       } else {
-        for (let id = 0; id < rackModule.params.length; id++)
-          runtime.rack_web_set_param(id, rackModule.params[id]);
-        runtime.rack_web_process_frame(frame, sampleRate);
+        this.syncModuleParams(rackModule);
+        if (!this.runModuleFrame(rackModule, frame)) {
+          rackModule.currentChannels.fill(0);
+          for (let port = 0; port < rackModule.outputCount; port++)
+            for (let channel = 0; channel < rackModule.maxChannels; channel++)
+              rackModule.outputs[(channel * rackModule.outputCount + port) * 128 + frame] = 0;
+          continue;
+        }
         for (let port = 0; port < rackModule.outputCount; port++)
-          rackModule.currentChannels[port] = Math.min(
-            rackModule.maxChannels,
-            runtime.rack_web_get_output_channels(port),
-          );
+          rackModule.currentChannels[port] = rackModule.outputConnections[port]
+            ? Math.min(rackModule.maxChannels, runtime.rack_web_get_output_channels(port))
+            : 0;
         this.copyExpanderOutputFrame(rackModule, frame);
       }
     }
@@ -1546,19 +1749,36 @@ class RackGraphProcessor extends AudioWorkletProcessor {
 
   mixDeviceFrame(left, right, frame) {
     for (const cable of this.deviceCables) {
-      const source = this.modules.get(cable.fromModule);
+      const source = cable.source || this.modules.get(cable.fromModule);
       if (!source || cable.fromPort >= source.outputCount) continue;
       const destination = cable.toPort === 0 ? left : right;
       if (!destination) continue;
       destination[frame] +=
         (source.outputs[cable.fromPort * 128 + frame] / 5) *
-        (this.audioBoundaries.get(cable.audioModuleId)?.key === "Core/AudioInterface2"
-          ? Number(this.audioBoundaries.get(cable.audioModuleId)?.params[0]) || 0
+        ((cable.boundary || this.audioBoundaries.get(cable.audioModuleId))?.key ===
+        "Core/AudioInterface2"
+          ? Number((cable.boundary || this.audioBoundaries.get(cable.audioModuleId))?.params[0]) ||
+            0
           : 1);
     }
   }
 
-  process(_inputs, outputs) {
+  saveFeedbackHistory(frames) {
+    for (const rackModule of this.feedbackSources) {
+      this.refreshRuntimeViews(rackModule);
+      for (let port = 0; port < rackModule.outputCount; port++) {
+        if (!rackModule.feedbackOutputPorts[port]) continue;
+        const channels = rackModule.currentChannels[port];
+        for (let channel = 0; channel < channels; channel++) {
+          const offset = (channel * rackModule.outputCount + port) * 128;
+          rackModule.previous.set(rackModule.outputs.subarray(offset, offset + frames), offset);
+        }
+        rackModule.previousChannels[port] = channels;
+      }
+    }
+  }
+
+  processQuantum(_inputs, outputs) {
     const left = outputs[0]?.[0],
       right = outputs[0]?.[1] || left,
       frames = left?.length || 128;
@@ -1577,7 +1797,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
             rackModule = this.modules.get(event.moduleId),
             boundary = this.audioBoundaries.get(event.moduleId);
           if (rackModule && event.paramId >= 0 && event.paramId < rackModule.params.length) {
-            rackModule.params[event.paramId] = event.value;
+            this.setModuleParam(rackModule, event.paramId, event.value);
           } else if (boundary && event.paramId >= 0 && event.paramId < boundary.params.length) {
             boundary.params[event.paramId] = event.value;
           } else continue;
@@ -1601,17 +1821,17 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         }
       }
     } else {
-      for (const moduleId of this.order) {
-        const rackModule = this.modules.get(moduleId),
-          runtime = rackModule.runtime;
-        const messageGroup = this.messageGroups.get(moduleId);
+      for (const rackModule of this.execution) {
+        const runtime = rackModule.runtime,
+          messageGroup = rackModule.messageGroup;
         if (messageGroup) {
           this.processMessageGroup(messageGroup, frames);
           continue;
         }
+        this.refreshRuntimeViews(rackModule);
         this.prepareInputs(rackModule, frames);
         this.syncExpanderChain(rackModule, frames);
-        if (rackModule.bypassed) {
+        if (rackModule.bypassed || rackModule.faulted) {
           rackModule.outputs.fill(0);
           rackModule.currentChannels.fill(1);
           for (const { module } of this.expanderChains.get(rackModule.id) || []) {
@@ -1629,24 +1849,27 @@ class RackGraphProcessor extends AudioWorkletProcessor {
                   rackModule.inputs[(channel * rackModule.inputCount + inputPort) * 128 + frame];
           }
         } else {
-          for (let id = 0; id < rackModule.params.length; id++)
-            runtime.rack_web_set_param(id, rackModule.params[id]);
-          runtime.rack_web_process(frames, sampleRate);
+          this.syncModuleParams(rackModule);
+          if (!this.runModuleBlock(rackModule, frames)) {
+            rackModule.outputs.fill(0);
+            rackModule.currentChannels.fill(0);
+            for (const { module } of this.expanderChains.get(rackModule.id) || []) {
+              module.outputs.fill(0);
+              module.currentChannels.fill(0);
+            }
+            continue;
+          }
           for (let port = 0; port < rackModule.outputCount; port++)
-            rackModule.currentChannels[port] = Math.min(
-              rackModule.maxChannels,
-              runtime.rack_web_get_output_channels(port),
-            );
+            rackModule.currentChannels[port] = rackModule.outputConnections[port]
+              ? Math.min(rackModule.maxChannels, runtime.rack_web_get_output_channels(port))
+              : 0;
           this.copyExpanderOutputs(rackModule, frames);
         }
       }
     }
     if (!sampleAccurateAutomation)
       for (let frame = 0; frame < frames; frame++) this.mixDeviceFrame(left, right, frame);
-    for (const rackModule of this.modules.values()) {
-      rackModule.previous.set(rackModule.outputs);
-      rackModule.previousChannels.set(rackModule.currentChannels);
-    }
+    this.saveFeedbackHistory(frames);
     this.drainCaptures();
     this.drainMidiOutputs();
     if (this.visualUpdatesEnabled) {
@@ -1655,10 +1878,28 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     }
     for (const rackModule of this.modules.values())
       for (const id of rackModule.momentaryReleases) {
-        rackModule.params[id] = 0;
+        this.setModuleParam(rackModule, id, 0);
         rackModule.momentaryReleases.delete(id);
       }
     return true;
+  }
+
+  process(inputs, outputs) {
+    try {
+      return this.processQuantum(inputs, outputs);
+    } catch (error) {
+      for (const channel of outputs[0] || []) channel.fill(0);
+      if (!this.processErrorReported) {
+        this.processErrorReported = true;
+        this.port.postMessage({
+          type: "error",
+          message: `Rack graph recovered from a real-time processing error: ${
+            error instanceof Error ? error.message : "unknown AudioWorklet error"
+          }`,
+        });
+      }
+      return true;
+    }
   }
 }
 
