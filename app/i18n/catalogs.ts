@@ -118,6 +118,10 @@ export const enMessages = {
   "module.status.resolving": "RESOLVING",
   "module.status.sourceRequired": "SOURCE BUILD NEEDED",
   "module.status.loadError": "LOAD ERROR",
+  "module.panelArtworkLoadFailed":
+    "The verified panel artwork could not be loaded. Controls are disabled instead of showing an invented layout.",
+  "module.panelArtworkUnavailable":
+    "The registry did not provide verified panel artwork. Controls are disabled instead of showing an invented layout.",
   "module.webRuntimeUnavailable": "This module is not compiled for the web runtime yet.",
   "module.registryUnavailable": "Not available in the verified browser registry",
   "module.runtimeLoadFailed": "The browser runtime could not load this module",
@@ -594,6 +598,7 @@ export const enMessages = {
   "display.wolframMenu": "Wolfram {content} menu",
   "display.wolframAutomaton": "Wolfram {content} cellular automaton display",
   "display.xyPad": "XY Pad recordable trajectory display",
+  "display.morphPad": "Morph snapshot pad",
 
   "rack.label": "Peach Patch modular rack",
   "rack.emptyTitle": "Empty rack.",
@@ -718,6 +723,9 @@ export const zhCNMessages = {
   "module.status.resolving": "正在解析",
   "module.status.sourceRequired": "需要源码构建",
   "module.status.loadError": "加载错误",
+  "module.panelArtworkLoadFailed": "无法加载已验证的面板图片。控件已停用，不会显示猜测生成的布局。",
+  "module.panelArtworkUnavailable":
+    "注册表未提供已验证的面板图片。控件已停用，不会显示猜测生成的布局。",
   "module.webRuntimeUnavailable": "此模块尚未编译为 Web 运行时版本。",
   "module.registryUnavailable": "经验证的浏览器注册表中不可用",
   "module.runtimeLoadFailed": "浏览器运行时无法加载此模块",
@@ -1166,6 +1174,7 @@ export const zhCNMessages = {
   "display.wolframMenu": "Wolfram {content} 菜单",
   "display.wolframAutomaton": "Wolfram {content} 元胞自动机显示",
   "display.xyPad": "XY Pad 可录制轨迹显示",
+  "display.morphPad": "Morph 快照混合面板",
 
   "rack.label": "Peach Patch 模块合成器机架",
   "rack.emptyTitle": "空机架。",

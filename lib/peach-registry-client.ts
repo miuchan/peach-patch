@@ -75,6 +75,7 @@ export function modulesFromRegistryIndex(input: unknown, indexUrl: string): WebP
     seen.add(item.key);
     return {
       ...item,
+      screenshotUrl: item.screenshotUrl ? new URL(item.screenshotUrl, indexUrl).href : "",
       wasmUrl: new URL(item.wasmUrl, indexUrl).href,
       ...(item.manifestUrl ? { manifestUrl: new URL(item.manifestUrl, indexUrl).href } : {}),
     };

@@ -381,6 +381,19 @@ input {
   color: #777;
   font: 7px var(--mono);
 }
+.pw-panel-asset-error {
+  position: absolute;
+  z-index: 20;
+  inset: 42px 10px auto;
+  padding: 10px;
+  border: 1px solid #913d34;
+  background: #1a1211ee;
+  color: #fff;
+  font: 9px/1.45 var(--mono);
+}
+.pw-module.panel-artwork-failed {
+  background: #211716;
+}
 .pw-ports {
   position: absolute;
   bottom: 22px;

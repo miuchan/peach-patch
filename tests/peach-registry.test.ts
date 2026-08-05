@@ -80,6 +80,26 @@ test("registry index resolves immutable artifact URLs", () => {
   );
 });
 
+test("registry index resolves source-built panel artwork without inventing a UI fallback", () => {
+  const [module] = modulesFromRegistryIndex(
+    {
+      schemaVersion: 1,
+      abiVersion: "0.3",
+      packages: [
+        {
+          ...moduleRecord,
+          screenshotUrl: "packages/Test/Osc/1.0.0/panel.webp",
+        },
+      ],
+    },
+    "https://raw.example/registry/index.json",
+  );
+  assert.equal(
+    module.screenshotUrl,
+    "https://raw.example/registry/packages/Test/Osc/1.0.0/panel.webp",
+  );
+});
+
 test("registry preserves canonical panel width when source coordinates are clipped", () => {
   const [module] = modulesFromRegistryIndex(
     {

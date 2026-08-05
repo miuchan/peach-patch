@@ -20,6 +20,7 @@ import { RackMadzineManual, type MadzineManualTarget } from "./rack-madzine-manu
 import { RackMadzineScopeDisplay } from "./rack-madzine-scope-display";
 import { RackMadzineWaveformDisplay } from "./rack-madzine-waveform-display";
 import { RackMlArpeggiatorDisplay } from "./rack-ml-arpeggiator-display";
+import { RackMorphPadDisplay } from "./rack-morph-pad-display";
 import { RackMultiMeterDisplay } from "./rack-multi-meter-display";
 import { RackNesScreenDisplay } from "./rack-nes-screen-display";
 import { RackNoteEchoDisplay } from "./rack-note-echo-display";
@@ -575,6 +576,18 @@ export function ModulePanelVisuals({
             values={scopeSamples?.[0]}
             scaleX={module.width / definition.width}
             onMomentary={onMomentary}
+          />
+        ))}
+      {definition?.runtime?.visuals
+        ?.filter((visual) => visual.kind === "morph-pad")
+        .map((visual, index) => (
+          <RackMorphPadDisplay
+            key={`morph-pad-${index}`}
+            {...visual}
+            xValue={module.params[visual.xParam] ?? 0}
+            yValue={module.params[visual.yParam] ?? 0}
+            scaleX={module.width / definition.width}
+            onParam={updateParam}
           />
         ))}
       {definition?.runtime?.visuals

@@ -396,6 +396,15 @@ export type RuntimeVisual =
       y: number;
     }
   | {
+      kind: "morph-pad";
+      xParam: number;
+      yParam: number;
+      width: number;
+      height: number;
+      x: number;
+      y: number;
+    }
+  | {
       kind: "wavetable-editor";
       actionBase: number;
       tables: number;

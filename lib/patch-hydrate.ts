@@ -80,9 +80,14 @@ export function hydrateModulesWithDefinitions(
     }
     const moduleStateKeys = module.stateKeys?.map((item) => item.key) ?? [],
       definitionStateKeys = definition.stateKeys?.map((item) => item.key) ?? [],
+      compatibilityUi = rackLegacyUi(module),
+      expectedScreenshotUrl = compatibilityUi.hidePanelArtwork
+        ? undefined
+        : definition.screenshotUrl || undefined,
       definitionMatches =
         Math.abs(module.width - definition.width) < 0.001 &&
         module.params.length === definition.params.length &&
+        module.screenshotUrl === expectedScreenshotUrl &&
         moduleStateKeys.length === definitionStateKeys.length &&
         moduleStateKeys.every((key, index) => key === definitionStateKeys[index]);
     if (definitionMatches && !deprecatedWidths.has(module.id)) return module;

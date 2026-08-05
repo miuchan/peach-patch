@@ -98,6 +98,7 @@ test("module hydration preserves matching modules and ignores blanks or unknown 
     params: [0.25],
     state: [1],
     stateKeys: definition.stateKeys,
+    screenshotUrl: definition.screenshotUrl,
     status: "ready",
   };
   const blank = {
@@ -124,6 +125,12 @@ test("module hydration preserves matching modules and ignores blanks or unknown 
   const changed = hydrateModulesWithDefinitions([{ ...matching, width: 90 }], [definition]);
   assert.notEqual(changed[0], matching);
   assert.equal(changed[0].width, definition.width);
+
+  const refreshedArtwork = hydrateModulesWithDefinitions(
+    [{ ...matching, screenshotUrl: undefined }],
+    [definition],
+  );
+  assert.equal(refreshedArtwork[0].screenshotUrl, definition.screenshotUrl);
 });
 
 test("Rack state adapters preserve typed nested state and legacy module data", () => {

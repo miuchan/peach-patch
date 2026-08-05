@@ -209,6 +209,9 @@ export function ModulePanel({
         : []);
   const hasDeclaredPanelArtwork = Boolean(module.screenshotUrl),
     panelArtworkFailed = failedPanelArtworkUrl === module.screenshotUrl,
+    expectsPanelArtwork = !compatibilityUi.hidePanelArtwork,
+    panelArtworkUnavailable =
+      expectsPanelArtwork && (!hasDeclaredPanelArtwork || panelArtworkFailed),
     hasPanelArtwork = hasDeclaredPanelArtwork && !panelArtworkFailed;
   const panelStyle = {
     left: module.x,
@@ -223,22 +226,26 @@ export function ModulePanel({
       inputs,
       outputs,
     ),
-    allowSourceGeometry = !panelArtworkFailed && hasTrustworthySourceGeometry,
+    allowSourceGeometry = !panelArtworkUnavailable && hasTrustworthySourceGeometry,
     positionedParams = allowSourceGeometry ? params.filter((param) => param.position) : [],
     hasParamSourceLayout = Boolean(
       definition && !definition.runtime?.midi && (positionedParams.length || hasPanelArtwork),
     ),
     panelParams = hasParamSourceLayout ? positionedParams : params,
-    panelInputs = hasPanelArtwork
-      ? hasTrustworthySourceGeometry
-        ? inputs.filter((port) => port.position)
-        : []
-      : inputs,
-    panelOutputs = hasPanelArtwork
-      ? hasTrustworthySourceGeometry
-        ? outputs.filter((port) => port.position)
-        : []
-      : outputs,
+    panelInputs = panelArtworkUnavailable
+      ? []
+      : hasPanelArtwork
+        ? hasTrustworthySourceGeometry
+          ? inputs.filter((port) => port.position)
+          : []
+        : inputs,
+    panelOutputs = panelArtworkUnavailable
+      ? []
+      : hasPanelArtwork
+        ? hasTrustworthySourceGeometry
+          ? outputs.filter((port) => port.position)
+          : []
+        : outputs,
     hasPortSourceLayout = Boolean(
       definition &&
       allowSourceGeometry &&
@@ -325,7 +332,7 @@ export function ModulePanel({
                         : t("asset.urlError");
   return (
     <article
-      className={`pw-module ${selected ? "selected" : ""} ${dropTarget ? "drop-target" : ""} ${module.bypassed ? "bypassed" : ""} ${hasSourceLayout ? "has-source-layout" : ""} ${hasPanelArtwork ? "has-panel-artwork" : ""} status-${module.status}`}
+      className={`pw-module ${selected ? "selected" : ""} ${dropTarget ? "drop-target" : ""} ${module.bypassed ? "bypassed" : ""} ${hasSourceLayout ? "has-source-layout" : ""} ${hasPanelArtwork ? "has-panel-artwork" : ""} ${panelArtworkUnavailable ? "panel-artwork-failed" : ""} status-${module.status}`}
       style={panelStyle}
       aria-label={t("module.ariaLabel", { plugin: module.plugin, model: module.model })}
       onPointerDown={onSelect}
@@ -399,260 +406,270 @@ export function ModulePanel({
             onError={() => setFailedPanelArtworkUrl(module.screenshotUrl ?? null)}
           />
         </>
-      ) : (
+      ) : !expectsPanelArtwork ? (
         <div className="pw-module-image" aria-hidden="true" />
-      )}
-      <ModulePanelVisuals
-        module={module}
-        definition={definition}
-        scopeSamples={scopeSamples}
-        renderedLightValues={renderedLightValues}
-        rackData={rackData}
-        audioData={audioData}
-        audioRunning={audioRunning}
-        selectedAsset={selectedAsset}
-        paramNotice={paramNotice}
-        manualHelpTarget={manualHelpTarget}
-        onLoadAsset={() => assetInputRef.current?.click()}
-        onLoadAssetSlot={(slot) => {
-          pendingAssetSlotRef.current = slot;
-          assetInputRef.current?.click();
-        }}
-        onParam={updateParam}
-        onParamReset={onParamReset}
-        onMomentary={onMomentary}
-        onState={onState}
-        onData={onData}
-      />
-      {definition?.lightWidgets?.map((light) => (
-        <RackLightVisual
-          key={`light-${light.id}`}
-          light={light}
-          values={renderedLightValues}
-          moduleWidth={module.width}
-          sourceWidth={definition.width}
-          param={
-            light.paramId === undefined
-              ? undefined
-              : definition.params.find((param) => param.id === light.paramId)
-          }
-          paramValue={light.paramId === undefined ? undefined : module.params[light.paramId]}
-        />
-      ))}
-      {hasParamSourceLayout &&
-        definition &&
-        panelParams.map((param) => (
-          <RackParamVisual
-            key={`visual-${param.id}`}
-            param={param}
-            value={module.params[param.id] ?? param.default}
-            moduleWidth={module.width}
-            sourceWidth={definition.width}
-          />
-        ))}
-      <div className="pw-module-state">
-        <i />
-        <span>
-          {module.status === "ready"
-            ? t("module.status.ready")
-            : module.status === "resolving"
-              ? t("module.status.resolving")
-              : module.status === "source-required"
-                ? t("module.status.sourceRequired")
-                : t("module.status.loadError")}
-        </span>
-      </div>
-      {module.status === "ready" ? (
-        <ModulePanelControls
-          module={module}
-          definition={definition}
-          params={panelParams}
-          hasSourceLayout={hasParamSourceLayout}
-          midiDevices={midiDevices}
-          onOpenAssetPicker={() => assetInputRef.current?.click()}
-          onParam={updateParam}
-          onParamReset={onParamReset}
-          onMomentary={onMomentary}
-          onParamHover={onParamHover}
-          onState={onState}
-          onData={onData}
-          onPolyphony={onPolyphony}
-          onMidiDevice={onMidiDevice}
-        />
-      ) : (
-        <div className="pw-missing">
-          <p>{module.description || t("module.webRuntimeUnavailable")}</p>
-          {module.sourceUrl && (
-            <a href={module.sourceUrl} target="_blank" rel="noreferrer">
-              {t("module.sourceRepository")} ↗
-            </a>
+      ) : null}
+      {panelArtworkUnavailable ? (
+        <div className="pw-panel-asset-error" role="alert">
+          {t(
+            panelArtworkFailed ? "module.panelArtworkLoadFailed" : "module.panelArtworkUnavailable",
           )}
-          <small>
-            {module.license ||
-              (module.status === "source-required"
-                ? t("module.registryUnavailable")
-                : t("module.runtimeLoadFailed"))}
-          </small>
         </div>
-      )}
-      {definition?.runtime?.asset && (
+      ) : (
         <>
-          {definition.runtime.asset.url && (
-            <form className="pw-url-load" onSubmit={loadAssetUrl}>
-              <input
-                aria-label={t("asset.audioUrlLabel", { module: module.model })}
-                type="url"
-                placeholder="https://…/stream.mp3 or .m3u"
-                value={assetUrl}
-                onChange={(event) => {
-                  setAssetUrl(event.target.value);
-                  setUrlStatus({ kind: "idle" });
-                }}
-                onBlur={() => {
-                  if (assetUrl.trim()) onData({ url: assetUrl.trim() });
-                }}
-              />
-              <button type="submit" disabled={!assetUrl.trim()}>
-                {t("asset.loadUrl")}
-              </button>
-              {urlStatusText && <small title={urlStatusText}>{urlStatusText}</small>}
-            </form>
-          )}
-          <label
-            className={`pw-sample-load ${definition.runtime.asset.url ? "with-url" : ""} ${definition.runtime.visuals?.some((visual) => visual.kind === "octobir-display") ? "input-only" : ""}`}
-          >
-            <input
-              ref={assetInputRef}
-              aria-label={t("asset.inputLabel", {
-                module: module.model,
-                type: definition.runtime.asset.type,
-              })}
-              type="file"
-              accept={
-                definition.runtime.asset.type === "image"
-                  ? "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
-                  : definition.runtime.asset.type === "binary"
-                    ? ".nes,application/octet-stream"
-                    : definition.runtime.asset.type === "midi"
-                      ? "audio/midi,audio/x-midi,.mid,.midi"
-                      : definition.runtime.asset.type === "script"
-                        ? "text/plain,text/x-lua,.lua,.luna,.lunaire,.anair"
-                        : "audio/*,.wav,.aif,.aiff,.mp3,.m4a,.ogg,.flac"
+          <ModulePanelVisuals
+            module={module}
+            definition={definition}
+            scopeSamples={scopeSamples}
+            renderedLightValues={renderedLightValues}
+            rackData={rackData}
+            audioData={audioData}
+            audioRunning={audioRunning}
+            selectedAsset={selectedAsset}
+            paramNotice={paramNotice}
+            manualHelpTarget={manualHelpTarget}
+            onLoadAsset={() => assetInputRef.current?.click()}
+            onLoadAssetSlot={(slot) => {
+              pendingAssetSlotRef.current = slot;
+              assetInputRef.current?.click();
+            }}
+            onParam={updateParam}
+            onParamReset={onParamReset}
+            onMomentary={onMomentary}
+            onState={onState}
+            onData={onData}
+          />
+          {definition?.lightWidgets?.map((light) => (
+            <RackLightVisual
+              key={`light-${light.id}`}
+              light={light}
+              values={renderedLightValues}
+              moduleWidth={module.width}
+              sourceWidth={definition.width}
+              param={
+                light.paramId === undefined
+                  ? undefined
+                  : definition.params.find((param) => param.id === light.paramId)
               }
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                const targetSlot = pendingAssetSlotRef.current ?? assetSlot;
-                pendingAssetSlotRef.current = null;
-                if (file) onSample(file, targetSlot);
-                event.target.value = "";
-              }}
+              paramValue={light.paramId === undefined ? undefined : module.params[light.paramId]}
             />
-            <b>
-              {selectedAsset
-                ? `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${selectedAsset.name}`
-                : `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${definition.runtime.asset.type === "image" ? t("asset.loadImage") : definition.runtime.asset.type === "binary" ? t("asset.loadNesRom") : definition.runtime.asset.type === "midi" ? t("asset.loadMidiFile") : definition.runtime.asset.type === "script" ? t("asset.loadLuaScript") : t("asset.loadAudioSample")}`}
-            </b>
-            <small>
-              {selectedAsset
-                ? definition.runtime.asset.type === "image"
-                  ? t("asset.imageDetails", {
-                      width: selectedAsset.sampleRate,
-                      height: Math.floor(selectedAsset.frames / selectedAsset.sampleRate),
-                    })
-                  : definition.runtime.asset.type === "binary" ||
-                      definition.runtime.asset.type === "midi" ||
-                      definition.runtime.asset.type === "script"
-                    ? t("asset.bytesStored", { count: selectedAsset.frames })
-                    : definition.runtime.asset.maxSeconds > 0
-                      ? t("asset.durationDetails", {
-                          duration: secondsFormatter.format(
-                            selectedAsset.frames / selectedAsset.sampleRate,
-                          ),
-                          channels:
-                            selectedAsset.channels === 2 ? t("asset.stereo") : t("asset.mono"),
-                        })
-                      : t("asset.sampleDetails", {
-                          count: selectedAsset.frames,
-                          channels:
-                            selectedAsset.channels === 2 ? t("asset.stereo") : t("asset.mono"),
-                        })
-                : definition.runtime.asset.type === "image"
-                  ? t("asset.imageFormats")
-                  : definition.runtime.asset.type === "binary"
-                    ? t("asset.nesLimit", { count: definition.runtime.asset.maxSamples })
-                    : definition.runtime.asset.type === "midi"
-                      ? t("asset.midiLimit", { count: definition.runtime.asset.maxSamples })
-                      : definition.runtime.asset.type === "script"
-                        ? t("asset.luaLimit", { count: definition.runtime.asset.maxSamples })
-                        : definition.runtime.asset.maxSeconds > 0
-                          ? t("asset.audioDurationLimit", {
-                              seconds: definition.runtime.asset.maxSeconds,
-                            })
-                          : t("asset.audioSampleLimit", {
-                              count: definition.runtime.asset.maxSamples,
-                            })}
-            </small>
-          </label>
-        </>
-      )}
-      {definition?.runtime?.capture &&
-        definition.runtime.capture.panelControlParam === undefined && (
-          <button
-            type="button"
-            className={`pw-record ${recording ? "active" : ""}`}
-            aria-pressed={recording}
-            onClick={onCapture}
-          >
+          ))}
+          {hasParamSourceLayout &&
+            definition &&
+            panelParams.map((param) => (
+              <RackParamVisual
+                key={`visual-${param.id}`}
+                param={param}
+                value={module.params[param.id] ?? param.default}
+                moduleWidth={module.width}
+                sourceWidth={definition.width}
+              />
+            ))}
+          <div className="pw-module-state">
             <i />
             <span>
-              {recording
-                ? t("capture.stopAndDownload", {
-                    format: definition.runtime.capture.format.toUpperCase(),
-                  })
-                : t("capture.record", {
-                    format: definition.runtime.capture.format.toUpperCase(),
-                  })}
+              {module.status === "ready"
+                ? t("module.status.ready")
+                : module.status === "resolving"
+                  ? t("module.status.resolving")
+                  : module.status === "source-required"
+                    ? t("module.status.sourceRequired")
+                    : t("module.status.loadError")}
             </span>
-          </button>
-        )}
-      <ModulePanelPortBank
-        moduleId={module.id}
-        moduleModel={module.model}
-        direction="in"
-        ports={panelInputs}
-        pending={pending}
-        signalLevels={inputSignalLevels}
-        sourceLayout={hasPortSourceLayout}
-        portStyle={rackPortStyle}
-        onPort={onPort}
-        onPortDragStart={onPortDragStart}
-        onPortDrop={onPortDrop}
-        onPortDragEnd={onPortDragEnd}
-        onPortPointerDown={onPortPointerDown}
-        onPortPointerUp={onPortPointerUp}
-        onPortHover={onPortHover}
-      />
-      <ModulePanelPortBank
-        moduleId={module.id}
-        moduleModel={module.model}
-        direction="out"
-        ports={panelOutputs}
-        pending={pending}
-        signalLevels={outputSignalLevels}
-        sourceLayout={hasPortSourceLayout}
-        portStyle={rackPortStyle}
-        onPort={onPort}
-        onPortDragStart={onPortDragStart}
-        onPortDrop={onPortDrop}
-        onPortDragEnd={onPortDragEnd}
-        onPortPointerDown={onPortPointerDown}
-        onPortPointerUp={onPortPointerUp}
-        onPortHover={onPortHover}
-      />
-      {module.status === "ready" && (
-        <button type="button" className="pw-test-clock" onClick={onClock}>
-          {t("module.runWasmBlock")}
-        </button>
+          </div>
+          {module.status === "ready" ? (
+            <ModulePanelControls
+              module={module}
+              definition={definition}
+              params={panelParams}
+              hasSourceLayout={hasParamSourceLayout}
+              midiDevices={midiDevices}
+              onOpenAssetPicker={() => assetInputRef.current?.click()}
+              onParam={updateParam}
+              onParamReset={onParamReset}
+              onMomentary={onMomentary}
+              onParamHover={onParamHover}
+              onState={onState}
+              onData={onData}
+              onPolyphony={onPolyphony}
+              onMidiDevice={onMidiDevice}
+            />
+          ) : (
+            <div className="pw-missing">
+              <p>{module.description || t("module.webRuntimeUnavailable")}</p>
+              {module.sourceUrl && (
+                <a href={module.sourceUrl} target="_blank" rel="noreferrer">
+                  {t("module.sourceRepository")} ↗
+                </a>
+              )}
+              <small>
+                {module.license ||
+                  (module.status === "source-required"
+                    ? t("module.registryUnavailable")
+                    : t("module.runtimeLoadFailed"))}
+              </small>
+            </div>
+          )}
+          {definition?.runtime?.asset && (
+            <>
+              {definition.runtime.asset.url && (
+                <form className="pw-url-load" onSubmit={loadAssetUrl}>
+                  <input
+                    aria-label={t("asset.audioUrlLabel", { module: module.model })}
+                    type="url"
+                    placeholder="https://…/stream.mp3 or .m3u"
+                    value={assetUrl}
+                    onChange={(event) => {
+                      setAssetUrl(event.target.value);
+                      setUrlStatus({ kind: "idle" });
+                    }}
+                    onBlur={() => {
+                      if (assetUrl.trim()) onData({ url: assetUrl.trim() });
+                    }}
+                  />
+                  <button type="submit" disabled={!assetUrl.trim()}>
+                    {t("asset.loadUrl")}
+                  </button>
+                  {urlStatusText && <small title={urlStatusText}>{urlStatusText}</small>}
+                </form>
+              )}
+              <label
+                className={`pw-sample-load ${definition.runtime.asset.url ? "with-url" : ""} ${definition.runtime.visuals?.some((visual) => visual.kind === "octobir-display") ? "input-only" : ""}`}
+              >
+                <input
+                  ref={assetInputRef}
+                  aria-label={t("asset.inputLabel", {
+                    module: module.model,
+                    type: definition.runtime.asset.type,
+                  })}
+                  type="file"
+                  accept={
+                    definition.runtime.asset.type === "image"
+                      ? "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                      : definition.runtime.asset.type === "binary"
+                        ? ".nes,application/octet-stream"
+                        : definition.runtime.asset.type === "midi"
+                          ? "audio/midi,audio/x-midi,.mid,.midi"
+                          : definition.runtime.asset.type === "script"
+                            ? "text/plain,text/x-lua,.lua,.luna,.lunaire,.anair"
+                            : "audio/*,.wav,.aif,.aiff,.mp3,.m4a,.ogg,.flac"
+                  }
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    const targetSlot = pendingAssetSlotRef.current ?? assetSlot;
+                    pendingAssetSlotRef.current = null;
+                    if (file) onSample(file, targetSlot);
+                    event.target.value = "";
+                  }}
+                />
+                <b>
+                  {selectedAsset
+                    ? `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${selectedAsset.name}`
+                    : `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${definition.runtime.asset.type === "image" ? t("asset.loadImage") : definition.runtime.asset.type === "binary" ? t("asset.loadNesRom") : definition.runtime.asset.type === "midi" ? t("asset.loadMidiFile") : definition.runtime.asset.type === "script" ? t("asset.loadLuaScript") : t("asset.loadAudioSample")}`}
+                </b>
+                <small>
+                  {selectedAsset
+                    ? definition.runtime.asset.type === "image"
+                      ? t("asset.imageDetails", {
+                          width: selectedAsset.sampleRate,
+                          height: Math.floor(selectedAsset.frames / selectedAsset.sampleRate),
+                        })
+                      : definition.runtime.asset.type === "binary" ||
+                          definition.runtime.asset.type === "midi" ||
+                          definition.runtime.asset.type === "script"
+                        ? t("asset.bytesStored", { count: selectedAsset.frames })
+                        : definition.runtime.asset.maxSeconds > 0
+                          ? t("asset.durationDetails", {
+                              duration: secondsFormatter.format(
+                                selectedAsset.frames / selectedAsset.sampleRate,
+                              ),
+                              channels:
+                                selectedAsset.channels === 2 ? t("asset.stereo") : t("asset.mono"),
+                            })
+                          : t("asset.sampleDetails", {
+                              count: selectedAsset.frames,
+                              channels:
+                                selectedAsset.channels === 2 ? t("asset.stereo") : t("asset.mono"),
+                            })
+                    : definition.runtime.asset.type === "image"
+                      ? t("asset.imageFormats")
+                      : definition.runtime.asset.type === "binary"
+                        ? t("asset.nesLimit", { count: definition.runtime.asset.maxSamples })
+                        : definition.runtime.asset.type === "midi"
+                          ? t("asset.midiLimit", { count: definition.runtime.asset.maxSamples })
+                          : definition.runtime.asset.type === "script"
+                            ? t("asset.luaLimit", { count: definition.runtime.asset.maxSamples })
+                            : definition.runtime.asset.maxSeconds > 0
+                              ? t("asset.audioDurationLimit", {
+                                  seconds: definition.runtime.asset.maxSeconds,
+                                })
+                              : t("asset.audioSampleLimit", {
+                                  count: definition.runtime.asset.maxSamples,
+                                })}
+                </small>
+              </label>
+            </>
+          )}
+          {definition?.runtime?.capture &&
+            definition.runtime.capture.panelControlParam === undefined && (
+              <button
+                type="button"
+                className={`pw-record ${recording ? "active" : ""}`}
+                aria-pressed={recording}
+                onClick={onCapture}
+              >
+                <i />
+                <span>
+                  {recording
+                    ? t("capture.stopAndDownload", {
+                        format: definition.runtime.capture.format.toUpperCase(),
+                      })
+                    : t("capture.record", {
+                        format: definition.runtime.capture.format.toUpperCase(),
+                      })}
+                </span>
+              </button>
+            )}
+          <ModulePanelPortBank
+            moduleId={module.id}
+            moduleModel={module.model}
+            direction="in"
+            ports={panelInputs}
+            pending={pending}
+            signalLevels={inputSignalLevels}
+            sourceLayout={hasPortSourceLayout}
+            portStyle={rackPortStyle}
+            onPort={onPort}
+            onPortDragStart={onPortDragStart}
+            onPortDrop={onPortDrop}
+            onPortDragEnd={onPortDragEnd}
+            onPortPointerDown={onPortPointerDown}
+            onPortPointerUp={onPortPointerUp}
+            onPortHover={onPortHover}
+          />
+          <ModulePanelPortBank
+            moduleId={module.id}
+            moduleModel={module.model}
+            direction="out"
+            ports={panelOutputs}
+            pending={pending}
+            signalLevels={outputSignalLevels}
+            sourceLayout={hasPortSourceLayout}
+            portStyle={rackPortStyle}
+            onPort={onPort}
+            onPortDragStart={onPortDragStart}
+            onPortDrop={onPortDrop}
+            onPortDragEnd={onPortDragEnd}
+            onPortPointerDown={onPortPointerDown}
+            onPortPointerUp={onPortPointerUp}
+            onPortHover={onPortHover}
+          />
+          {module.status === "ready" && (
+            <button type="button" className="pw-test-clock" onClick={onClock}>
+              {t("module.runWasmBlock")}
+            </button>
+          )}
+        </>
       )}
     </article>
   );

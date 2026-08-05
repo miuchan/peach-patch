@@ -150,6 +150,7 @@ test("official source widths stay canonical across image loads and autosave rest
     tapestry,
     paramVisual,
     paramVisualData,
+    morphPad,
   ] = await Promise.all([
     readSearchableSource("app/components/module-panel.tsx"),
     readSearchableSource("app/components/module-panel-controls.tsx"),
@@ -168,6 +169,7 @@ test("official source widths stay canonical across image loads and autosave rest
     readSearchableSource("app/components/rack-tapestry-display.tsx"),
     readSearchableSource("app/components/rack-param-visual.tsx"),
     readSearchableSource("lib/rack-param-visual-data.ts"),
+    readSearchableSource("app/components/rack-morph-pad-display.tsx"),
   ]);
   assert.doesNotMatch(panel, /naturalWidth\s*\/\s*image\.naturalHeight/);
   assert.match(panel, /resolvedModulePortPosition\(module,direction,port\.id/);
@@ -176,14 +178,14 @@ test("official source widths stay canonical across image loads and autosave rest
     panel,
     /hasTrustworthySourceGeometry=rackUiGeometryIsTrustworthy\(definition\?\.width\?\?module\.width,params,inputs,outputs\)/,
   );
-  assert.match(panel, /allowSourceGeometry=!panelArtworkFailed&&hasTrustworthySourceGeometry/);
+  assert.match(panel, /allowSourceGeometry=!panelArtworkUnavailable&&hasTrustworthySourceGeometry/);
   assert.match(
     panel,
-    /panelInputs=hasPanelArtwork\?hasTrustworthySourceGeometry\?inputs\.filter\(port=>port\.position\):\[\]:inputs/,
+    /panelInputs=panelArtworkUnavailable\?\[\]:hasPanelArtwork\?hasTrustworthySourceGeometry\?inputs\.filter\(port=>port\.position\):\[\]:inputs/,
   );
   assert.match(
     panel,
-    /panelOutputs=hasPanelArtwork\?hasTrustworthySourceGeometry\?outputs\.filter\(port=>port\.position\):\[\]:outputs/,
+    /panelOutputs=panelArtworkUnavailable\?\[\]:hasPanelArtwork\?hasTrustworthySourceGeometry\?outputs\.filter\(port=>port\.position\):\[\]:outputs/,
   );
   assert.match(
     panel,
@@ -193,12 +195,22 @@ test("official source widths stay canonical across image loads and autosave rest
     panel,
     /onError=\{\(\)=>setFailedPanelArtworkUrl\(module\.screenshotUrl\?\?null\)\}/,
   );
+  assert.match(panel, /!expectsPanelArtwork\s*\?\s*\(\s*<div className="pw-module-image"/);
+  assert.match(
+    panel,
+    /panelArtworkUnavailable\s*\?\s*\(\s*<div className="pw-panel-asset-error" role="alert"/,
+  );
+  assert.match(panel, /"module\.panelArtworkLoadFailed"/);
+  assert.match(panel, /"module\.panelArtworkUnavailable"/);
   assert.match(panel, /<ModulePanelControls/);
   assert.match(controls, /paramDragRef/);
   assert.match(controls, /setPointerCapture/);
   assert.match(controls, /rackParamInteraction/);
   assert.match(controls, /pw-param-switch/);
   assert.match(panel, /<ModulePanelVisuals/);
+  assert.match(visuals, /visual\.kind==="morph-pad"/);
+  assert.match(morphPad, /onParam\(xParam,clampUnit\(normalizedX\)\)/);
+  assert.match(morphPad, /onParam\(yParam,clampUnit\(normalizedY\)\)/);
   assert.match(visuals, /RackMadzineScopeDisplay/);
   assert.match(visuals, /visual\.kind==="madzine-scope"/);
   assert.match(visuals, /RackMadzineWaveformDisplay/);
