@@ -1,4 +1,4 @@
-import { Link2, PackagePlus, Search, X } from "lucide-react";
+import { ChevronDown, Link2, PackagePlus, Search, X } from "lucide-react";
 import { memo } from "react";
 import type { WebPluginModule } from "../../lib/web-plugin-registry";
 import { useI18n } from "../i18n/provider";
@@ -66,10 +66,7 @@ function RackStudioLibraryView({
       />
       <aside id="pw-module-library" className="pw-library" aria-label={t("library.title")}>
         <header className="pw-library-header">
-          <div>
-            <span>{t("library.eyebrow")}</span>
-            <h2>{t("library.title")}</h2>
-          </div>
+          <h2>{t("library.title")}</h2>
           <button type="button" onClick={onClose} aria-label={t("library.close")}>
             <X aria-hidden="true" />
           </button>
@@ -165,6 +162,7 @@ function RackStudioLibraryView({
               <b>{t("library.urlSection")}</b>
               <small>{t("library.urlSectionHelp")}</small>
             </span>
+            <ChevronDown className="pw-library-disclosure-chevron" aria-hidden="true" />
           </summary>
           <form
             onSubmit={(event) => {
