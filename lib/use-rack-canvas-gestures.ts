@@ -87,7 +87,6 @@ export type RackCanvasGestureOptions = RackCanvasGestureRefs & {
   checkpointPatch: (patch: PatchDocument) => void;
   bumpLayoutRevision: () => void;
   onDirectInteractionChange?: (active: boolean) => void;
-  onViewportInteractionChange?: (active: boolean) => void;
 };
 
 export function useRackCanvasGestures({
@@ -112,7 +111,6 @@ export function useRackCanvasGestures({
   checkpointPatch,
   bumpLayoutRevision,
   onDirectInteractionChange,
-  onViewportInteractionChange,
 }: RackCanvasGestureOptions) {
   const viewportCommitTimerRef = useRef<number | null>(null);
   const viewportInteractionActiveRef = useRef(false);
@@ -147,14 +145,12 @@ export function useRackCanvasGestures({
     if (viewportInteractionActiveRef.current) return;
     viewportInteractionActiveRef.current = true;
     onDirectInteractionChange?.(true);
-    onViewportInteractionChange?.(true);
-  }, [clearViewportCommitTimer, onDirectInteractionChange, onViewportInteractionChange]);
+  }, [clearViewportCommitTimer, onDirectInteractionChange]);
   const endViewportInteraction = useCallback(() => {
     if (!viewportInteractionActiveRef.current) return;
     viewportInteractionActiveRef.current = false;
     onDirectInteractionChange?.(false);
-    onViewportInteractionChange?.(false);
-  }, [onDirectInteractionChange, onViewportInteractionChange]);
+  }, [onDirectInteractionChange]);
   const previewViewport = useCallback(
     (viewport: RackViewport) => {
       beginViewportInteraction();

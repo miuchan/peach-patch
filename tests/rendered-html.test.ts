@@ -83,8 +83,8 @@ test("large racks keep viewport gestures off the React render path", async () =>
   assert.match(cableLayer, /const cablePaths = useMemo/);
   assert.match(library, /memo\(RackStudioLibraryView\)/);
   assert.match(studio, /viewport-overview/);
-  assert.match(studio, /viewport-interaction/);
   assert.match(studio, /rackCableIntersectsViewport/);
+  assert.doesNotMatch(studio, /viewport-interaction/);
   assert.match(
     styles,
     /\.pw-world\.viewport-overview\s+\.pw-module\s*>\s*\*\s*\{\s*display:\s*none\s*!important/,
@@ -328,8 +328,5 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(styles, /\.pw-rack\{overflow:clip;/);
   assert.match(styles, /\.pw-rack\{[^}]*overscroll-behavior:none/);
   assert.match(styles, /\.pw-cable-hits\{[^}]*overflow:hidden/);
-  assert.match(
-    styles,
-    /\.pw-rack\.viewport-interaction\s+\.pw-rack-surface[\s\S]*display:none!important/,
-  );
+  assert.doesNotMatch(styles, /\.pw-rack\.viewport-interaction/);
 });

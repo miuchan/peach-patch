@@ -3397,20 +3397,6 @@ input {
 .pw-rack.direct-interaction .pw-plug-light {
   transition: none;
 }
-.pw-rack.viewport-interaction .pw-rack-surface,
-.pw-rack.viewport-interaction .pw-cables,
-.pw-rack.viewport-interaction .pw-cable-hits {
-  display: none !important;
-}
-.pw-rack.viewport-interaction .pw-module {
-  border: 1px solid #171819;
-  background: linear-gradient(90deg, #aaa79e, #e5e1d7 12%, #cfcbc1 88%, #8e8b84);
-  box-shadow: none;
-  overflow: hidden;
-}
-.pw-rack.viewport-interaction .pw-module > * {
-  display: none !important;
-}
 
 /* Responsive application chrome -------------------------------------------------
    The rack stays full-size while navigation and module discovery adapt around it.

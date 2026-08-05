@@ -288,7 +288,6 @@ export function RackWebStudio() {
     [cableTension, setCableTension] = useState(0.5),
     [modulesLocked, setModulesLocked] = useState(false),
     [directInteractionActive, setDirectInteractionActive] = useState(false),
-    [viewportInteractionActive, setViewportInteractionActive] = useState(false),
     [libraryOpen, setLibraryOpen] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null),
     presetFileRef = useRef<HTMLInputElement>(null),
@@ -1687,7 +1686,6 @@ export function RackWebStudio() {
     checkpointPatch: history.checkpoint,
     bumpLayoutRevision: () => setLayoutRevision((revision) => revision + 1),
     onDirectInteractionChange: handleDirectInteractionChange,
-    onViewportInteractionChange: setViewportInteractionActive,
   });
   const addFromUrlEvent = useStableEvent(() => void addFromUrl());
   const addRegistryModuleEvent = useStableEvent(addRegistryModule);
@@ -2165,7 +2163,7 @@ export function RackWebStudio() {
       />
       <section
         ref={rackRef}
-        className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${directInteractionActive ? "direct-interaction" : ""} ${viewportInteractionActive ? "viewport-interaction" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
+        className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${directInteractionActive ? "direct-interaction" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
         aria-label={t("rack.label")}
         onPointerMove={(event) => {
           const cableInteraction = cableDrag ?? cableDraft;
