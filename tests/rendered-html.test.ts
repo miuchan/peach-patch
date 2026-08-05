@@ -12,8 +12,8 @@ async function readSearchableSource(path: string) {
 test("builds the independent Peach Patch runtime as a client-only SPA", async () => {
   const [html, worker, wrangler] = await Promise.all([
     readFile(new URL("dist/client/index.html", root), "utf8"),
-    readFile(new URL("dist/peach_patch/index.js", root), "utf8"),
-    readFile(new URL("dist/peach_patch/wrangler.json", root), "utf8"),
+    readFile(new URL("dist/peachpatch/index.js", root), "utf8"),
+    readFile(new URL("dist/peachpatch/wrangler.json", root), "utf8"),
   ]);
   assert.match(html, /<title>Peach Patch — Rack-compatible modular runtime<\/title>/i);
   assert.match(html, /<div id="root"><\/div>/);
@@ -24,6 +24,9 @@ test("builds the independent Peach Patch runtime as a client-only SPA", async ()
   assert.match(worker, /\/api\/rack-rail/);
   assert.doesNotMatch(worker, /vinext|app-router-entry|react-server|\bRSC\b/);
   const deployment = JSON.parse(wrangler);
+  assert.equal(deployment.name, "peachpatch");
+  assert.equal(deployment.workers_dev, true);
+  assert.deepEqual(deployment.routes, [{ pattern: "peachpatch.io", custom_domain: true }]);
   assert.equal(deployment.assets.not_found_handling, "single-page-application");
   assert.deepEqual(deployment.assets.run_worker_first, ["/api/*"]);
 });

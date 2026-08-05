@@ -1,6 +1,7 @@
 import {
   startTransition,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -1177,8 +1178,9 @@ export function RackWebStudio() {
       ),
     [pan, patch.modules, rackViewportSize.height, rackViewportSize.width, zoom],
   );
+  const deferredModuleQuery = useDeferredValue(moduleQuery);
   const filteredModules = useMemo(() => {
-    const query = moduleQuery.trim().toLowerCase();
+    const query = deferredModuleQuery.trim().toLowerCase();
     return query
       ? registry.filter((module) =>
           `${module.key} ${module.name} ${module.brand} ${module.description}`
@@ -1186,7 +1188,7 @@ export function RackWebStudio() {
             .includes(query),
         )
       : registry;
-  }, [moduleQuery, registry]);
+  }, [deferredModuleQuery, registry]);
   const quickAddQuery = quickAdd?.query ?? "";
   const quickAddMatches = useMemo(() => {
     const query = quickAddQuery.trim().toLowerCase();
@@ -2153,6 +2155,7 @@ export function RackWebStudio() {
         onModuleQueryChange={setModuleQuery}
         onAddFromUrl={addFromUrlEvent}
         onAddModule={addRegistryModuleEvent}
+        onClose={() => setLibraryOpen(false)}
       />
       <section
         ref={rackRef}

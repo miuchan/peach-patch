@@ -10,9 +10,12 @@ const { r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const localBindingConfig = {
+  name: "peachpatch",
   main: "./worker/index.ts",
   compatibility_date: "2026-05-22",
   compatibility_flags: ["nodejs_compat"],
+  workers_dev: true,
+  routes: [{ pattern: "peachpatch.io", custom_domain: true }],
   assets: {
     binding: "ASSETS",
     not_found_handling: "single-page-application" as const,
