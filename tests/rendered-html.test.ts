@@ -57,38 +57,47 @@ test("ships product metadata and removes starter preview", async () => {
 });
 
 test("large racks keep viewport gestures off the React render path", async () => {
-  const [studio, gestures, viewport, moduleLayer, cableLayer, library, styles] = await Promise.all([
-    readSearchableSource("app/rack-web-studio.tsx"),
-    readSearchableSource("lib/use-rack-canvas-gestures.ts"),
-    readSearchableSource("lib/rack-viewport-transform.ts"),
-    readSearchableSource("app/components/rack-studio-module-layer.tsx"),
-    readSearchableSource("app/components/rack-studio-cable-layer.tsx"),
-    readSearchableSource("app/components/rack-studio-library.tsx"),
-    readSearchableSource("app/globals.css"),
-  ]);
+  const [studio, gestures, viewport, moduleLayer, modulePanel, cableLayer, library, styles] =
+    await Promise.all([
+      readSearchableSource("app/rack-web-studio.tsx"),
+      readSearchableSource("lib/use-rack-canvas-gestures.ts"),
+      readSearchableSource("lib/rack-viewport-transform.ts"),
+      readSearchableSource("app/components/rack-studio-module-layer.tsx"),
+      readSearchableSource("app/components/module-panel.tsx"),
+      readSearchableSource("app/components/rack-studio-cable-layer.tsx"),
+      readSearchableSource("app/components/rack-studio-library.tsx"),
+      readSearchableSource("app/globals.css"),
+    ]);
   const pointerMove = gestures.slice(
     gestures.indexOf("const pointerMove"),
     gestures.indexOf("const pointerUp"),
   );
-  assert.match(gestures, /createRackViewportTransformWriter/);
-  assert.match(gestures, /startTransition\(\(\) =>/);
+  assert.match(gestures, /createRackViewportFrameWriter/);
+  assert.match(gestures, /Publish the final viewport in the same React batch/);
   assert.match(gestures, /addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
   assert.match(gestures, /addEventListener\("gesturechange", handleGestureChange/);
   assert.match(gestures, /nativeGestureActiveRef\.current/);
   assert.match(gestures, /if\s*\(viewportInteractionActiveRef\.current\)\s*return/);
   assert.doesNotMatch(studio, /onWheel=/);
   assert.doesNotMatch(pointerMove, /setPan\(|setZoom\(/);
-  assert.match(viewport, /translate3d\(/);
+  assert.match(viewport, /cableViewBox/);
   assert.match(moduleLayer, /memo\(\s*RackStudioModuleLayerView/);
+  assert.match(moduleLayer, /className="pw-module-layer"/);
+  assert.match(modulePanel, /--rack-module-x/);
+  assert.match(modulePanel, /--rack-module-y/);
+  assert.match(modulePanel, /data-rack-x=\{module\.x\}/);
+  assert.match(gestures, /panel\.style\.visibility=rackModuleIntersectsViewport\(/);
   assert.match(cableLayer, /const cablePaths = useMemo/);
+  assert.match(cableLayer, /preserveAspectRatio="none"/);
   assert.match(library, /memo\(RackStudioLibraryView\)/);
-  assert.match(studio, /viewport-overview/);
   assert.match(studio, /rackCableIntersectsViewport/);
-  assert.doesNotMatch(studio, /viewport-interaction/);
-  assert.match(
-    styles,
-    /\.pw-world\.viewport-overview\s+\.pw-module\s*>\s*\*\s*\{\s*display:\s*none\s*!important/,
-  );
+  assert.doesNotMatch(studio, /viewport-(?:interaction|overview)/);
+  assert.doesNotMatch(studio, /pw-rack-surface/);
+  assert.match(styles, /\.pw-module\{[^}]*--rack-module-x/);
+  assert.match(styles, /\.pw-module\{[^}]*translate3d\(var\(--rack-pan-x\)/);
+  assert.match(styles, /\.pw-module-layer\{[^}]*z-index:1/);
+  assert.match(styles, /\.pw-cable-hits\{[^}]*z-index:5/);
+  assert.match(styles, /\.pw-cables\{[^}]*z-index:30/);
   assert.doesNotMatch(
     styles,
     /\.pw-module\s*\{[^}]*content-visibility:\s*auto/,
@@ -96,8 +105,8 @@ test("large racks keep viewport gestures off the React render path", async () =>
   );
   assert.doesNotMatch(
     styles,
-    /\.pw-world\s*\{[^}]*(?:contain:|will-change:|backface-visibility:)/,
-    "the viewport-sized world must not force a compositor layer or hide overflowing paint bounds",
+    /\.pw-world\s*\{[^}]*(?:transform:|contain:|will-change:|backface-visibility:)/,
+    "the shared viewport layer must not become a transformed compositor surface",
   );
 });
 
@@ -304,7 +313,7 @@ test("official source widths stay canonical across image loads and autosave rest
   );
   assert.match(studio, /import \{ Maximize2 \} from "lucide-react"/);
   assert.match(studio, /className="pw-zoom"[\s\S]*className="pw-zoom-fit"/);
-  assert.match(studio, /className="pw-rack-surface"/);
+  assert.doesNotMatch(studio, /className="pw-rack-surface"/);
   assert.match(cableLayer, /className="pw-cable-hits"/);
   assert.match(registryHook, /loadPeachRegistry\(undefined,controller\.signal\)/);
   assert.match(registryHook, /replaceRegistryModules\(nextModules\)/);
@@ -316,7 +325,7 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(strokeControlsHook, /dispatchStroke\(event,true\)/);
   assert.match(strokeControlsHook, /window\.addEventListener\("keyup",handleKeyUp\)/);
   assert.doesNotMatch(studio, /\/dynamic-plugins\/catalog\.json|127\.0\.0\.1:4179|\/compile/);
-  assert.match(studio, /rackSurfaceBounds\(/);
+  assert.match(studio, /rackViewportPresentation\(/);
   assert.match(studio, /setManualHelpHover/);
   assert.match(studio, /onPortHover=/);
   assert.doesNotMatch(studio, /choose a Library module to insert it on this cable/);

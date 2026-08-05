@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent,
 } from "react";
 import { Maximize2 } from "lucide-react";
@@ -63,7 +64,6 @@ import {
   duplicatePatchModules,
   fittedPatchViewport,
   randomizeModuleControls,
-  rackSurfaceBounds,
   removeModuleAndHealCable,
   replaceModuleKeepingCompatibleCables,
   resetModuleControls,
@@ -93,8 +93,7 @@ import {
 } from "../lib/use-rack-canvas-gestures";
 import {
   rackCableIntersectsViewport,
-  rackViewportTransform,
-  RACK_VIEWPORT_OVERVIEW_ZOOM,
+  rackViewportPresentation,
 } from "../lib/rack-viewport-transform";
 import { useStableEvent } from "../lib/use-stable-event";
 import {
@@ -1171,9 +1170,9 @@ export function RackWebStudio() {
     () => cableSignalLevels(patch.cables, visualSignals.cables),
     [patch.cables, visualSignals.cables],
   );
-  const rackSurface = useMemo(
-    () => rackSurfaceBounds(rackViewportSize.width || 1, rackViewportSize.height || 1, pan, zoom),
-    [pan, rackViewportSize.height, rackViewportSize.width, zoom],
+  const rackPresentation = useMemo(
+    () => rackViewportPresentation({ pan, zoom }, rackViewportSize),
+    [pan, rackViewportSize, zoom],
   );
   const visibleCablePaths = useMemo(
     () =>
@@ -2164,6 +2163,15 @@ export function RackWebStudio() {
       <section
         ref={rackRef}
         className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${directInteractionActive ? "direct-interaction" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
+        style={
+          {
+            "--rack-pan-x": rackPresentation.panX,
+            "--rack-pan-y": rackPresentation.panY,
+            "--rack-zoom": rackPresentation.zoom,
+            "--rack-rail-width": rackPresentation.railWidth,
+            "--rack-rail-height": rackPresentation.railHeight,
+          } as CSSProperties
+        }
         aria-label={t("rack.label")}
         onPointerMove={(event) => {
           const cableInteraction = cableDrag ?? cableDraft;
@@ -2346,31 +2354,11 @@ export function RackWebStudio() {
             onDismiss={() => setQuickAdd(null)}
           />
         )}
-        <div
-          ref={worldRef}
-          className={`pw-world ${zoom < RACK_VIEWPORT_OVERVIEW_ZOOM ? "viewport-overview" : ""}`}
-          style={{
-            transform: rackViewportTransform({ pan, zoom }),
-          }}
-        >
-          <div
-            className="pw-rack-surface"
-            aria-hidden="true"
-            data-rack-left={rackSurface.x}
-            data-rack-top={rackSurface.y}
-            data-rack-right={rackSurface.right}
-            data-rack-bottom={rackSurface.bottom}
-            style={{
-              left: rackSurface.x,
-              top: rackSurface.y,
-              width: rackSurface.width,
-              height: rackSurface.height,
-              backgroundPosition: `${-rackSurface.x}px ${-rackSurface.y}px`,
-            }}
-          />
+        <div ref={worldRef} className="pw-world">
           <RackStudioCableLayer
             paths={visibleCablePaths}
-            surface={rackSurface}
+            viewport={{ pan, zoom }}
+            viewportSize={rackViewportSize}
             visible={cablesVisible}
             opacity={cableOpacity}
             selectedIds={selectedCableIds}
@@ -2391,11 +2379,7 @@ export function RackWebStudio() {
             pending={pending}
             jackSignalLevels={jackSignalLevels}
             visualSignals={visualSignals}
-            visualUpdatesPaused={
-              directInteractionActive ||
-              Boolean(cableDrag || cableDraft) ||
-              zoom < RACK_VIEWPORT_OVERVIEW_ZOOM
-            }
+            visualUpdatesPaused={directInteractionActive || Boolean(cableDrag || cableDraft)}
             audioRunning={audioRunning}
             recordingIds={recordingIds}
             midiDevices={midiDevices}

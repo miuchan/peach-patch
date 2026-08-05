@@ -214,9 +214,11 @@ export function ModulePanel({
       expectsPanelArtwork && (!hasDeclaredPanelArtwork || panelArtworkFailed),
     hasPanelArtwork = hasDeclaredPanelArtwork && !panelArtworkFailed;
   const panelStyle = {
-    left: module.x,
-    top: module.y,
+    left: 0,
+    top: 0,
     width: module.width,
+    "--rack-module-x": `${module.x}px`,
+    "--rack-module-y": `${module.y}px`,
     "--panel-image": hasPanelArtwork ? `url(${module.screenshotUrl})` : "none",
   } as CSSProperties;
   const sourcePorts = [...inputs, ...outputs],
@@ -334,6 +336,9 @@ export function ModulePanel({
     <article
       className={`pw-module ${selected ? "selected" : ""} ${dropTarget ? "drop-target" : ""} ${module.bypassed ? "bypassed" : ""} ${hasSourceLayout ? "has-source-layout" : ""} ${hasPanelArtwork ? "has-panel-artwork" : ""} ${panelArtworkUnavailable ? "panel-artwork-failed" : ""} status-${module.status}`}
       style={panelStyle}
+      data-rack-x={module.x}
+      data-rack-y={module.y}
+      data-rack-width={module.width}
       aria-label={t("module.ariaLabel", { plugin: module.plugin, model: module.model })}
       onPointerDown={onSelect}
       onContextMenu={onContextMenu}

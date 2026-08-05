@@ -14,7 +14,6 @@ import {
   modulePortPosition,
   resolvedModulePortPosition,
   randomizeModuleControls,
-  rackSurfaceBounds,
   removeModuleAndHealCable,
   replaceModuleKeepingCompatibleCables,
   resetModuleControls,
@@ -110,30 +109,6 @@ test("fit viewport centers a tall patch and keeps the supported zoom range", () 
 
 test("fit viewport ignores an empty patch", () => {
   assert.equal(fittedPatchViewport([], 1300, 660), null);
-});
-
-test("Rack surface stays bounded to the viewport and a gesture margin", () => {
-  const bounds = rackSurfaceBounds(1200, 680, { x: 30, y: 40 }, 1);
-  assert.deepEqual(bounds, {
-    x: -190,
-    y: -200,
-    width: 1520,
-    height: 1000,
-    right: 1330,
-    bottom: 800,
-  });
-  const magnified = rackSurfaceBounds(1200, 680, { x: 30, y: 40 }, 1.5);
-  assert.ok(magnified.width * 1.5 <= 1200 + 322);
-  assert.ok(magnified.height * 1.5 <= 680 + 322);
-});
-
-test("Rack surface follows a viewport panned far from the patch without spanning the gap", () => {
-  const bounds = rackSurfaceBounds(1000, 600, { x: 4000, y: 2400 }, 1);
-  assert.equal(bounds.x, -4160);
-  assert.equal(bounds.y, -2560);
-  assert.equal(bounds.right, -2840);
-  assert.equal(bounds.bottom, -1640);
-  assert.ok(bounds.right < 0);
 });
 
 test("module replacement keeps valid cable ports and reports dropped ones", () => {

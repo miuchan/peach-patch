@@ -2,47 +2,11 @@ import type { ModuleInstance } from "./patch-types";
 
 export const RACK_GRID_WIDTH = 15;
 export const RACK_GRID_HEIGHT = 380;
-export const RACK_SURFACE_OVERSCAN = 160;
 
 export function snapRackPosition(position: { x: number; y: number }) {
   return {
     x: Math.round(position.x / RACK_GRID_WIDTH) * RACK_GRID_WIDTH,
     y: Math.round(position.y / RACK_GRID_HEIGHT) * RACK_GRID_HEIGHT,
-  };
-}
-
-export function rackSurfaceBounds(
-  viewportWidth: number,
-  viewportHeight: number,
-  pan: { x: number; y: number },
-  zoom: number,
-) {
-  const safeZoom = Math.max(0.0001, zoom),
-    safeViewportWidth = Math.max(1, viewportWidth),
-    safeViewportHeight = Math.max(1, viewportHeight),
-    viewport = {
-      left: -pan.x / safeZoom,
-      top: -pan.y / safeZoom,
-      right: (safeViewportWidth - pan.x) / safeZoom,
-      bottom: (safeViewportHeight - pan.y) / safeZoom,
-    };
-  // Keep the repeated Rack rail close to the visible viewport. Expanding this
-  // element to every module in a patch makes its transformed paint bounds grow
-  // into tens of thousands of device pixels on a high-DPR phone. Viewport
-  // interactions temporarily hide this layer, so a fixed visual overscan is
-  // enough once the committed pan/zoom pair rebuilds it.
-  const visualMargin = RACK_SURFACE_OVERSCAN / safeZoom,
-    left = Math.floor(viewport.left - visualMargin),
-    top = Math.floor(viewport.top - visualMargin),
-    right = Math.ceil(viewport.right + visualMargin),
-    bottom = Math.ceil(viewport.bottom + visualMargin);
-  return {
-    x: left,
-    y: top,
-    width: Math.max(RACK_GRID_WIDTH, right - left),
-    height: Math.max(RACK_GRID_HEIGHT, bottom - top),
-    right,
-    bottom,
   };
 }
 

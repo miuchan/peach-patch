@@ -5,7 +5,8 @@ export type RackViewport = {
   zoom: number;
 };
 
-export const RACK_VIEWPORT_OVERVIEW_ZOOM = 0.2;
+export const RACK_RAIL_WIDTH = 304;
+export const RACK_RAIL_HEIGHT = 380;
 
 function rackViewportWorldBounds(
   viewport: RackViewport,
@@ -69,8 +70,21 @@ export function rackCableIntersectsViewport(
   );
 }
 
-export function rackViewportTransform({ pan, zoom }: RackViewport) {
-  return `translate3d(${pan.x}px,${pan.y}px,0) scale(${zoom})`;
+export function rackViewportPresentation(
+  viewport: RackViewport,
+  size: { width: number; height: number },
+) {
+  const safeZoom = Math.max(0.0001, viewport.zoom),
+    safeWidth = Math.max(1, size.width),
+    safeHeight = Math.max(1, size.height);
+  return {
+    panX: `${viewport.pan.x}px`,
+    panY: `${viewport.pan.y}px`,
+    zoom: String(safeZoom),
+    railWidth: `${RACK_RAIL_WIDTH * safeZoom}px`,
+    railHeight: `${RACK_RAIL_HEIGHT * safeZoom}px`,
+    cableViewBox: `${-viewport.pan.x / safeZoom} ${-viewport.pan.y / safeZoom} ${safeWidth / safeZoom} ${safeHeight / safeZoom}`,
+  };
 }
 
 type FrameScheduler = {
@@ -84,12 +98,12 @@ const browserFrameScheduler: FrameScheduler = {
 };
 
 /**
- * Coalesces high-frequency viewport previews into one compositor write per
+ * Coalesces high-frequency viewport previews into one presentation write per
  * animation frame. React state can then be committed once when the gesture
  * finishes instead of reconciling the complete rack on every pointer event.
  */
-export function createRackViewportTransformWriter(
-  write: (transform: string) => void,
+export function createRackViewportFrameWriter(
+  write: (viewport: RackViewport) => void,
   scheduler: FrameScheduler = browserFrameScheduler,
 ) {
   let frame: number | null = null;
@@ -99,7 +113,7 @@ export function createRackViewportTransformWriter(
     frame = null;
     const viewport = pending;
     pending = null;
-    if (viewport) write(rackViewportTransform(viewport));
+    if (viewport) write(viewport);
   };
 
   return {

@@ -142,7 +142,7 @@ function RackStudioModuleLayerView({
   );
 
   return (
-    <>
+    <div className="pw-module-layer">
       {visibleModules.map((module) => {
         const definition = definitionsByKey.get(module.key);
         const inputSignalLevels: Record<number, number> = {};
@@ -211,7 +211,7 @@ function RackStudioModuleLayerView({
           />
         );
       })}
-    </>
+    </div>
   );
 }
 

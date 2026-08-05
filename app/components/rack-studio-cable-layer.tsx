@@ -1,21 +1,14 @@
 import { memo, useMemo, type MouseEvent, type PointerEvent } from "react";
 import type { RackCableLayout } from "../../lib/rack-cable-layout";
 import type { RackPlugSignal } from "../../lib/rack-audio-engine";
+import { rackViewportPresentation, type RackViewport } from "../../lib/rack-viewport-transform";
 import { RackCablePlug } from "./rack-cable-plug";
 import { useI18n } from "../i18n/provider";
 
-export type RackCableSurface = {
-  x: number;
-  y: number;
-  right: number;
-  bottom: number;
-  width: number;
-  height: number;
-};
-
 export type RackStudioCableLayerProps = {
   paths: RackCableLayout[];
-  surface: RackCableSurface;
+  viewport: RackViewport;
+  viewportSize: { width: number; height: number };
   visible: boolean;
   opacity: number;
   selectedIds: ReadonlySet<string>;
@@ -40,7 +33,8 @@ export type CableSelectionEvent = {
 
 function RackStudioCableLayerView({
   paths,
-  surface,
+  viewport,
+  viewportSize,
   visible,
   opacity,
   selectedIds,
@@ -51,7 +45,7 @@ function RackStudioCableLayerView({
   onPlugPointerDown,
 }: RackStudioCableLayerProps) {
   const { t } = useI18n();
-  const viewBox = `${surface.x} ${surface.y} ${surface.width} ${surface.height}`;
+  const viewBox = rackViewportPresentation(viewport, viewportSize).cableViewBox;
   const hitPaths = useMemo(
     () =>
       paths.map((path) => (
@@ -119,11 +113,8 @@ function RackStudioCableLayerView({
       <svg
         className="pw-cable-hits"
         viewBox={viewBox}
+        preserveAspectRatio="none"
         style={{
-          left: surface.x,
-          top: surface.y,
-          width: surface.width,
-          height: surface.height,
           display: visible ? undefined : "none",
         }}
       >
@@ -132,11 +123,8 @@ function RackStudioCableLayerView({
       <svg
         className="pw-cables"
         viewBox={viewBox}
+        preserveAspectRatio="none"
         style={{
-          left: surface.x,
-          top: surface.y,
-          width: surface.width,
-          height: surface.height,
           opacity,
           display: visible ? undefined : "none",
         }}
@@ -153,7 +141,11 @@ function cableLayerPropsEqual(
 ) {
   return (
     previous.paths === next.paths &&
-    previous.surface === next.surface &&
+    previous.viewport.pan.x === next.viewport.pan.x &&
+    previous.viewport.pan.y === next.viewport.pan.y &&
+    previous.viewport.zoom === next.viewport.zoom &&
+    previous.viewportSize.width === next.viewportSize.width &&
+    previous.viewportSize.height === next.viewportSize.height &&
     previous.visible === next.visible &&
     previous.opacity === next.opacity &&
     previous.selectedIds === next.selectedIds &&

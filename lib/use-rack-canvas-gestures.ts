@@ -1,5 +1,4 @@
 import {
-  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -17,8 +16,9 @@ import {
   moveRackModulesWithoutOverlap,
 } from "./patch-operations";
 import {
-  createRackViewportTransformWriter,
-  RACK_VIEWPORT_OVERVIEW_ZOOM,
+  createRackViewportFrameWriter,
+  rackModuleIntersectsViewport,
+  rackViewportPresentation,
   type RackViewport,
 } from "./rack-viewport-transform";
 
@@ -115,26 +115,44 @@ export function useRackCanvasGestures({
   const viewportCommitTimerRef = useRef<number | null>(null);
   const viewportInteractionActiveRef = useRef(false);
   const nativeGestureActiveRef = useRef(false);
-  const viewportWriterRef = useRef<ReturnType<typeof createRackViewportTransformWriter> | null>(
-    null,
-  );
+  const viewportWriterRef = useRef<ReturnType<typeof createRackViewportFrameWriter> | null>(null);
   useEffect(() => {
-    const writer = createRackViewportTransformWriter((transform) => {
-      const world = worldRef.current;
-      if (world) {
-        world.style.transform = transform;
-        world.classList.toggle(
-          "viewport-overview",
-          viewportRef.current.zoom < RACK_VIEWPORT_OVERVIEW_ZOOM,
-        );
+    const writer = createRackViewportFrameWriter((viewport) => {
+      const rack = rackRef.current,
+        world = worldRef.current;
+      if (!rack) return;
+      const presentation = rackViewportPresentation(viewport, {
+        width: rack.clientWidth,
+        height: rack.clientHeight,
+      });
+      rack.style.setProperty("--rack-pan-x", presentation.panX);
+      rack.style.setProperty("--rack-pan-y", presentation.panY);
+      rack.style.setProperty("--rack-zoom", presentation.zoom);
+      rack.style.setProperty("--rack-rail-width", presentation.railWidth);
+      rack.style.setProperty("--rack-rail-height", presentation.railHeight);
+      const viewportSize = { width: rack.clientWidth, height: rack.clientHeight };
+      for (const panel of world?.querySelectorAll<HTMLElement>(".pw-module") ?? []) {
+        const x = Number(panel.dataset.rackX),
+          y = Number(panel.dataset.rackY),
+          width = Number(panel.dataset.rackWidth);
+        if (![x, y, width].every(Number.isFinite)) continue;
+        panel.style.visibility = rackModuleIntersectsViewport(
+          { x, y, width },
+          viewport,
+          viewportSize,
+        )
+          ? ""
+          : "hidden";
       }
+      for (const svg of world?.querySelectorAll<SVGSVGElement>(".pw-cables,.pw-cable-hits") ?? [])
+        svg.setAttribute("viewBox", presentation.cableViewBox);
     });
     viewportWriterRef.current = writer;
     return () => {
       writer.cancel();
       viewportWriterRef.current = null;
     };
-  }, [viewportRef, worldRef]);
+  }, [rackRef, worldRef]);
   const clearViewportCommitTimer = useCallback(() => {
     if (viewportCommitTimerRef.current === null) return;
     window.clearTimeout(viewportCommitTimerRef.current);
@@ -167,12 +185,14 @@ export function useRackCanvasGestures({
     clearViewportCommitTimer();
     viewportWriterRef.current?.flush();
     const viewport = viewportRef.current;
-    startTransition(() => {
-      setPan((current) =>
-        current.x === viewport.pan.x && current.y === viewport.pan.y ? current : viewport.pan,
-      );
-      setZoom((current) => (current === viewport.zoom ? current : viewport.zoom));
-    });
+    // Publish the final viewport in the same React batch as the interaction
+    // flag. A lower-priority transition can otherwise render the old inline
+    // CSS variables after the imperative final frame and visibly roll back the
+    // viewport until the transition catches up.
+    setPan((current) =>
+      current.x === viewport.pan.x && current.y === viewport.pan.y ? current : viewport.pan,
+    );
+    setZoom((current) => (current === viewport.zoom ? current : viewport.zoom));
     endViewportInteraction();
   }, [clearViewportCommitTimer, endViewportInteraction, setPan, setZoom, viewportRef]);
   const commitViewportSoon = useCallback(
@@ -282,13 +302,18 @@ export function useRackCanvasGestures({
   useLayoutEffect(() => {
     // The interaction-only React render must not overwrite the imperative
     // preview or cancel its pending commit. Once commitViewport publishes the
-    // final pan/zoom pair, this effect observes equal state and becomes a no-op.
+    // final pan/zoom pair, repeat the presentation write so modules retained
+    // for selection/recording cannot keep stale offscreen visibility.
     if (viewportInteractionActiveRef.current) return;
     const current = viewportRef.current;
-    if (current.pan.x === pan.x && current.pan.y === pan.y && current.zoom === zoom) return;
-    clearViewportCommitTimer();
-    viewportWriterRef.current?.cancel();
-    viewportRef.current = { pan, zoom };
+    const stateViewport = { pan, zoom };
+    if (current.pan.x !== pan.x || current.pan.y !== pan.y || current.zoom !== zoom) {
+      clearViewportCommitTimer();
+      viewportWriterRef.current?.cancel();
+      viewportRef.current = stateViewport;
+    }
+    viewportWriterRef.current?.preview(stateViewport);
+    viewportWriterRef.current?.flush();
   }, [clearViewportCommitTimer, pan, viewportRef, zoom]);
 
   useEffect(

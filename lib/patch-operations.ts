@@ -33,7 +33,6 @@ export {
   RACK_GRID_HEIGHT,
   RACK_GRID_WIDTH,
   rackModulesOverlap,
-  rackSurfaceBounds,
   resolvedModulePortPosition,
   snapRackPosition,
 } from "./rack-patch-layout.ts";
