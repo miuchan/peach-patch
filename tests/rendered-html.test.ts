@@ -74,6 +74,8 @@ test("large racks keep viewport gestures off the React render path", async () =>
   assert.match(gestures, /startTransition\(\(\) =>/);
   assert.match(gestures, /addEventListener\("wheel", handleWheel, \{ passive: false \}\)/);
   assert.match(gestures, /addEventListener\("gesturechange", handleGestureChange/);
+  assert.match(gestures, /nativeGestureActiveRef\.current/);
+  assert.match(gestures, /if\s*\(viewportInteractionActiveRef\.current\)\s*return/);
   assert.doesNotMatch(studio, /onWheel=/);
   assert.doesNotMatch(pointerMove, /setPan\(|setZoom\(/);
   assert.match(viewport, /translate3d\(/);
@@ -81,6 +83,8 @@ test("large racks keep viewport gestures off the React render path", async () =>
   assert.match(cableLayer, /const cablePaths = useMemo/);
   assert.match(library, /memo\(RackStudioLibraryView\)/);
   assert.match(studio, /viewport-overview/);
+  assert.match(studio, /viewport-interaction/);
+  assert.match(studio, /rackCableIntersectsViewport/);
   assert.match(
     styles,
     /\.pw-world\.viewport-overview\s+\.pw-module\s*>\s*\*\s*\{\s*display:\s*none\s*!important/,
@@ -322,4 +326,10 @@ test("official source widths stay canonical across image loads and autosave rest
   assert.match(arpeggiator, /display\.arpeggiator/);
   assert.match(arpeggiator, /className="active"/);
   assert.match(styles, /\.pw-rack\{overflow:clip;/);
+  assert.match(styles, /\.pw-rack\{[^}]*overscroll-behavior:none/);
+  assert.match(styles, /\.pw-cable-hits\{[^}]*overflow:hidden/);
+  assert.match(
+    styles,
+    /\.pw-rack\.viewport-interaction\s+\.pw-rack-surface[\s\S]*display:none!important/,
+  );
 });

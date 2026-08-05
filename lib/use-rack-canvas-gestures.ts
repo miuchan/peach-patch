@@ -87,6 +87,7 @@ export type RackCanvasGestureOptions = RackCanvasGestureRefs & {
   checkpointPatch: (patch: PatchDocument) => void;
   bumpLayoutRevision: () => void;
   onDirectInteractionChange?: (active: boolean) => void;
+  onViewportInteractionChange?: (active: boolean) => void;
 };
 
 export function useRackCanvasGestures({
@@ -111,9 +112,11 @@ export function useRackCanvasGestures({
   checkpointPatch,
   bumpLayoutRevision,
   onDirectInteractionChange,
+  onViewportInteractionChange,
 }: RackCanvasGestureOptions) {
   const viewportCommitTimerRef = useRef<number | null>(null);
   const viewportInteractionActiveRef = useRef(false);
+  const nativeGestureActiveRef = useRef(false);
   const viewportWriterRef = useRef<ReturnType<typeof createRackViewportTransformWriter> | null>(
     null,
   );
@@ -140,15 +143,18 @@ export function useRackCanvasGestures({
     viewportCommitTimerRef.current = null;
   }, []);
   const beginViewportInteraction = useCallback(() => {
+    clearViewportCommitTimer();
     if (viewportInteractionActiveRef.current) return;
     viewportInteractionActiveRef.current = true;
     onDirectInteractionChange?.(true);
-  }, [onDirectInteractionChange]);
+    onViewportInteractionChange?.(true);
+  }, [clearViewportCommitTimer, onDirectInteractionChange, onViewportInteractionChange]);
   const endViewportInteraction = useCallback(() => {
     if (!viewportInteractionActiveRef.current) return;
     viewportInteractionActiveRef.current = false;
     onDirectInteractionChange?.(false);
-  }, [onDirectInteractionChange]);
+    onViewportInteractionChange?.(false);
+  }, [onDirectInteractionChange, onViewportInteractionChange]);
   const previewViewport = useCallback(
     (viewport: RackViewport) => {
       beginViewportInteraction();
@@ -236,6 +242,7 @@ export function useRackCanvasGestures({
         worldX: (anchor.x - viewport.pan.x) / viewport.zoom,
         worldY: (anchor.y - viewport.pan.y) / viewport.zoom,
       };
+      nativeGestureActiveRef.current = true;
       beginViewportInteraction();
     };
     const handleGestureChange = (source: Event) => {
@@ -255,6 +262,7 @@ export function useRackCanvasGestures({
     const handleGestureEnd = (event: Event) => {
       event.preventDefault();
       gesture = null;
+      nativeGestureActiveRef.current = false;
       commitViewportSoon();
     };
 
@@ -271,10 +279,15 @@ export function useRackCanvasGestures({
       rack.removeEventListener("gesturestart", handleGestureStart);
       rack.removeEventListener("gesturechange", handleGestureChange);
       rack.removeEventListener("gestureend", handleGestureEnd);
+      nativeGestureActiveRef.current = false;
     };
   }, [beginViewportInteraction, commitViewportSoon, previewViewport, rackRef, viewportRef]);
 
   useLayoutEffect(() => {
+    // The interaction-only React render must not overwrite the imperative
+    // preview or cancel its pending commit. Once commitViewport publishes the
+    // final pan/zoom pair, this effect observes equal state and becomes a no-op.
+    if (viewportInteractionActiveRef.current) return;
     const current = viewportRef.current;
     if (current.pan.x === pan.x && current.pan.y === pan.y && current.zoom === zoom) return;
     clearViewportCommitTimer();
@@ -375,6 +388,10 @@ export function useRackCanvasGestures({
       }
       if (event.pointerType === "touch" && touchPointsRef.current.has(event.pointerId)) {
         touchPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (nativeGestureActiveRef.current) {
+          event.preventDefault();
+          return;
+        }
         const points = [...touchPointsRef.current.values()];
         const pinch = pinchRef.current;
         const rack = rackRef.current;

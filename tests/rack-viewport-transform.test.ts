@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createRackViewportTransformWriter,
+  rackCableIntersectsViewport,
   rackModuleIntersectsViewport,
   rackViewportTransform,
 } from "../lib/rack-viewport-transform.ts";
@@ -66,4 +67,32 @@ test("large racks keep only the viewport and an overscan margin mounted", () => 
     }),
     true,
   );
+});
+
+test("large racks keep only cables whose complete curve can reach the viewport", () => {
+  const viewport = { pan: { x: -1_000, y: -380 }, zoom: 1 };
+  const size = { width: 1_000, height: 760 };
+  const visibleCable = {
+    x1: 200,
+    y1: 200,
+    x2: 2_400,
+    y2: 400,
+    curveStartX: 220,
+    curveStartY: 220,
+    curveControlX: 1_200,
+    curveControlY: 500,
+    curveEndX: 2_380,
+    curveEndY: 400,
+  };
+  const distantCable = {
+    ...visibleCable,
+    x1: 3_000,
+    x2: 4_000,
+    curveStartX: 3_020,
+    curveControlX: 3_500,
+    curveEndX: 3_980,
+  };
+  assert.equal(rackCableIntersectsViewport(visibleCable, viewport, size), true);
+  assert.equal(rackCableIntersectsViewport(distantCable, viewport, size), false);
+  assert.equal(rackCableIntersectsViewport(distantCable, viewport, { width: 0, height: 0 }), true);
 });

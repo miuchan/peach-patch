@@ -2,6 +2,7 @@ import type { ModuleInstance } from "./patch-types";
 
 export const RACK_GRID_WIDTH = 15;
 export const RACK_GRID_HEIGHT = 380;
+export const RACK_SURFACE_OVERSCAN = 160;
 
 export function snapRackPosition(position: { x: number; y: number }) {
   return {
@@ -11,7 +12,6 @@ export function snapRackPosition(position: { x: number; y: number }) {
 }
 
 export function rackSurfaceBounds(
-  modules: Array<Pick<ModuleInstance, "x" | "y" | "width">>,
   viewportWidth: number,
   viewportHeight: number,
   pan: { x: number; y: number },
@@ -26,33 +26,16 @@ export function rackSurfaceBounds(
       right: (safeViewportWidth - pan.x) / safeZoom,
       bottom: (safeViewportHeight - pan.y) / safeZoom,
     };
-  const moduleBox = { left: 0, top: 0, right: 0, bottom: 0 };
-  if (modules.length) {
-    moduleBox.left = Number.POSITIVE_INFINITY;
-    moduleBox.top = Number.POSITIVE_INFINITY;
-    moduleBox.right = Number.NEGATIVE_INFINITY;
-    moduleBox.bottom = Number.NEGATIVE_INFINITY;
-    for (const module of modules) {
-      moduleBox.left = Math.min(moduleBox.left, module.x);
-      moduleBox.top = Math.min(moduleBox.top, module.y);
-      moduleBox.right = Math.max(moduleBox.right, module.x + module.width);
-      moduleBox.bottom = Math.max(moduleBox.bottom, module.y + RACK_GRID_HEIGHT);
-    }
-  }
-  const horizontalMargin = (safeViewportWidth / safeZoom) * 0.9,
-    verticalMargin = (safeViewportHeight / safeZoom) * 0.9,
-    left =
-      Math.floor(Math.min(viewport.left, moduleBox.left - horizontalMargin) / RACK_GRID_WIDTH) *
-      RACK_GRID_WIDTH,
-    top =
-      Math.floor(Math.min(viewport.top, moduleBox.top - verticalMargin) / RACK_GRID_HEIGHT) *
-      RACK_GRID_HEIGHT,
-    right =
-      Math.ceil(Math.max(viewport.right, moduleBox.right + horizontalMargin) / RACK_GRID_WIDTH) *
-      RACK_GRID_WIDTH,
-    bottom =
-      Math.ceil(Math.max(viewport.bottom, moduleBox.bottom + verticalMargin) / RACK_GRID_HEIGHT) *
-      RACK_GRID_HEIGHT;
+  // Keep the repeated Rack rail close to the visible viewport. Expanding this
+  // element to every module in a patch makes its transformed paint bounds grow
+  // into tens of thousands of device pixels on a high-DPR phone. Viewport
+  // interactions temporarily hide this layer, so a fixed visual overscan is
+  // enough once the committed pan/zoom pair rebuilds it.
+  const visualMargin = RACK_SURFACE_OVERSCAN / safeZoom,
+    left = Math.floor(viewport.left - visualMargin),
+    top = Math.floor(viewport.top - visualMargin),
+    right = Math.ceil(viewport.right + visualMargin),
+    bottom = Math.ceil(viewport.bottom + visualMargin);
   return {
     x: left,
     y: top,

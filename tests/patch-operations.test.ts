@@ -112,33 +112,28 @@ test("fit viewport ignores an empty patch", () => {
   assert.equal(fittedPatchViewport([], 1300, 660), null);
 });
 
-test("Rack surface grows by nearly a viewport around modules in every direction", () => {
-  const bounds = rackSurfaceBounds(
-    [
-      { x: -150, y: -380, width: 90 },
-      { x: 600, y: 760, width: 180 },
-    ],
-    1200,
-    680,
-    { x: 30, y: 40 },
-    1,
-  );
-  assert.ok(bounds.x <= -1230);
-  assert.ok(bounds.y <= -1140);
-  assert.ok(bounds.right >= 1860);
-  assert.ok(bounds.bottom >= 1900);
-  assert.ok(Number.isInteger(bounds.x / 15));
-  assert.ok(Number.isInteger(bounds.y / 380));
-  assert.ok(Number.isInteger(bounds.right / 15));
-  assert.ok(Number.isInteger(bounds.bottom / 380));
+test("Rack surface stays bounded to the viewport and a gesture margin", () => {
+  const bounds = rackSurfaceBounds(1200, 680, { x: 30, y: 40 }, 1);
+  assert.deepEqual(bounds, {
+    x: -190,
+    y: -200,
+    width: 1520,
+    height: 1000,
+    right: 1330,
+    bottom: 800,
+  });
+  const magnified = rackSurfaceBounds(1200, 680, { x: 30, y: 40 }, 1.5);
+  assert.ok(magnified.width * 1.5 <= 1200 + 322);
+  assert.ok(magnified.height * 1.5 <= 680 + 322);
 });
 
-test("Rack surface includes a viewport panned beyond the current modules", () => {
-  const bounds = rackSurfaceBounds([{ x: 0, y: 0, width: 90 }], 1000, 600, { x: 4000, y: 2400 }, 1);
-  assert.ok(bounds.x <= -4000);
-  assert.ok(bounds.y <= -2400);
-  assert.ok(bounds.right >= 90);
-  assert.ok(bounds.bottom >= 380);
+test("Rack surface follows a viewport panned far from the patch without spanning the gap", () => {
+  const bounds = rackSurfaceBounds(1000, 600, { x: 4000, y: 2400 }, 1);
+  assert.equal(bounds.x, -4160);
+  assert.equal(bounds.y, -2560);
+  assert.equal(bounds.right, -2840);
+  assert.equal(bounds.bottom, -1640);
+  assert.ok(bounds.right < 0);
 });
 
 test("module replacement keeps valid cable ports and reports dropped ones", () => {

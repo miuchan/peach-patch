@@ -7,22 +7,65 @@ export type RackViewport = {
 
 export const RACK_VIEWPORT_OVERVIEW_ZOOM = 0.2;
 
+function rackViewportWorldBounds(
+  viewport: RackViewport,
+  size: { width: number; height: number },
+  overscanPixels: number,
+) {
+  if (size.width <= 0 || size.height <= 0 || viewport.zoom <= 0) return null;
+  return {
+    left: (-viewport.pan.x - overscanPixels) / viewport.zoom,
+    top: (-viewport.pan.y - overscanPixels) / viewport.zoom,
+    right: (size.width - viewport.pan.x + overscanPixels) / viewport.zoom,
+    bottom: (size.height - viewport.pan.y + overscanPixels) / viewport.zoom,
+  };
+}
+
 export function rackModuleIntersectsViewport(
   module: Pick<ModuleInstance, "x" | "y" | "width">,
   viewport: RackViewport,
   size: { width: number; height: number },
   overscanPixels = 480,
 ) {
-  if (size.width <= 0 || size.height <= 0 || viewport.zoom <= 0) return true;
-  const left = (-viewport.pan.x - overscanPixels) / viewport.zoom,
-    top = (-viewport.pan.y - overscanPixels) / viewport.zoom,
-    right = (size.width - viewport.pan.x + overscanPixels) / viewport.zoom,
-    bottom = (size.height - viewport.pan.y + overscanPixels) / viewport.zoom;
+  const bounds = rackViewportWorldBounds(viewport, size, overscanPixels);
+  if (!bounds) return true;
   return (
-    module.x + module.width >= left &&
-    module.x <= right &&
-    module.y + 380 >= top &&
-    module.y <= bottom
+    module.x + module.width >= bounds.left &&
+    module.x <= bounds.right &&
+    module.y + 380 >= bounds.top &&
+    module.y <= bounds.bottom
+  );
+}
+
+type RackCableViewportGeometry = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  curveStartX: number;
+  curveStartY: number;
+  curveControlX: number;
+  curveControlY: number;
+  curveEndX: number;
+  curveEndY: number;
+};
+
+export function rackCableIntersectsViewport(
+  cable: RackCableViewportGeometry,
+  viewport: RackViewport,
+  size: { width: number; height: number },
+  overscanPixels = 160,
+) {
+  const bounds = rackViewportWorldBounds(viewport, size, overscanPixels);
+  if (!bounds) return true;
+  const xs = [cable.x1, cable.x2, cable.curveStartX, cable.curveControlX, cable.curveEndX],
+    ys = [cable.y1, cable.y2, cable.curveStartY, cable.curveControlY, cable.curveEndY],
+    left = Math.min(...xs),
+    right = Math.max(...xs),
+    top = Math.min(...ys),
+    bottom = Math.max(...ys);
+  return (
+    right >= bounds.left && left <= bounds.right && bottom >= bounds.top && top <= bounds.bottom
   );
 }
 

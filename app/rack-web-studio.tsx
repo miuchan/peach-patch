@@ -91,7 +91,11 @@ import {
   type RackPanGestureState,
   type RackPinchState,
 } from "../lib/use-rack-canvas-gestures";
-import { rackViewportTransform, RACK_VIEWPORT_OVERVIEW_ZOOM } from "../lib/rack-viewport-transform";
+import {
+  rackCableIntersectsViewport,
+  rackViewportTransform,
+  RACK_VIEWPORT_OVERVIEW_ZOOM,
+} from "../lib/rack-viewport-transform";
 import { useStableEvent } from "../lib/use-stable-event";
 import {
   PatchOpenFailureDialog,
@@ -284,6 +288,7 @@ export function RackWebStudio() {
     [cableTension, setCableTension] = useState(0.5),
     [modulesLocked, setModulesLocked] = useState(false),
     [directInteractionActive, setDirectInteractionActive] = useState(false),
+    [viewportInteractionActive, setViewportInteractionActive] = useState(false),
     [libraryOpen, setLibraryOpen] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null),
     presetFileRef = useRef<HTMLInputElement>(null),
@@ -1168,15 +1173,15 @@ export function RackWebStudio() {
     [patch.cables, visualSignals.cables],
   );
   const rackSurface = useMemo(
+    () => rackSurfaceBounds(rackViewportSize.width || 1, rackViewportSize.height || 1, pan, zoom),
+    [pan, rackViewportSize.height, rackViewportSize.width, zoom],
+  );
+  const visibleCablePaths = useMemo(
     () =>
-      rackSurfaceBounds(
-        patch.modules,
-        rackViewportSize.width || 1,
-        rackViewportSize.height || 1,
-        pan,
-        zoom,
+      cablePaths.filter((path) =>
+        rackCableIntersectsViewport(path, { pan, zoom }, rackViewportSize),
       ),
-    [pan, patch.modules, rackViewportSize.height, rackViewportSize.width, zoom],
+    [cablePaths, pan, rackViewportSize, zoom],
   );
   const deferredModuleQuery = useDeferredValue(moduleQuery);
   const filteredModules = useMemo(() => {
@@ -1682,6 +1687,7 @@ export function RackWebStudio() {
     checkpointPatch: history.checkpoint,
     bumpLayoutRevision: () => setLayoutRevision((revision) => revision + 1),
     onDirectInteractionChange: handleDirectInteractionChange,
+    onViewportInteractionChange: setViewportInteractionActive,
   });
   const addFromUrlEvent = useStableEvent(() => void addFromUrl());
   const addRegistryModuleEvent = useStableEvent(addRegistryModule);
@@ -2159,7 +2165,7 @@ export function RackWebStudio() {
       />
       <section
         ref={rackRef}
-        className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${directInteractionActive ? "direct-interaction" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
+        className={`pw-rack ${modulesLocked ? "modules-locked" : ""} ${directInteractionActive ? "direct-interaction" : ""} ${viewportInteractionActive ? "viewport-interaction" : ""} ${cableDrag || cableDraft ? "cable-active" : ""}`}
         aria-label={t("rack.label")}
         onPointerMove={(event) => {
           const cableInteraction = cableDrag ?? cableDraft;
@@ -2213,6 +2219,9 @@ export function RackWebStudio() {
             return;
           }
           pointerUp(event);
+        }}
+        onLostPointerCapture={(event) => {
+          if (!cableDrag && !cableDraft) pointerUp(event);
         }}
         onPointerDown={(event) => {
           const target = event.target as Element,
@@ -2362,7 +2371,7 @@ export function RackWebStudio() {
             }}
           />
           <RackStudioCableLayer
-            paths={cablePaths}
+            paths={visibleCablePaths}
             surface={rackSurface}
             visible={cablesVisible}
             opacity={cableOpacity}
