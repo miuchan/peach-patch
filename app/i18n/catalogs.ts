@@ -380,6 +380,7 @@ export const enMessages = {
   "status.registry.readingModuleMetadata": "Reading official Library module metadata…",
   "status.registry.moduleLoaded": "{module} loaded from the GitHub registry",
   "status.registry.moduleUnavailable": "{module} is not available in the GitHub registry",
+  "status.registry.moduleHidden": "{module} is hidden and cannot be added from the Library",
 
   "status.capture.midiCaptured": "{file} captured · {bytes}",
   "status.capture.audioCaptured": "{file} captured · {duration}s · {channels}",
@@ -987,6 +988,7 @@ export const zhCNMessages = {
   "status.registry.readingModuleMetadata": "正在读取官方模块库元数据…",
   "status.registry.moduleLoaded": "已从 GitHub 注册表加载 {module}",
   "status.registry.moduleUnavailable": "GitHub 注册表中没有 {module}",
+  "status.registry.moduleHidden": "{module} 已被隐藏，无法从模块库添加",
 
   "status.capture.midiCaptured": "已捕获 {file} · {bytes}",
   "status.capture.audioCaptured": "已捕获 {file} · {duration} 秒 · {channels}",

@@ -132,6 +132,8 @@ The runtime treats the registry index as the source of truth for available modul
 3. resolves artifact URLs against the index and requires HTTPS for WASM downloads;
 4. verifies each artifact's declared byte length and SHA-256 digest before instantiation.
 
+Compatibility packages marked `hidden: true` remain available to existing Rack patches by exact module key, while Library search, quick-add, replacement lists, and visible counts exclude them.
+
 This keeps application code, module metadata, and generated binaries independently reviewable while preventing a truncated or unexpected artifact from silently entering the audio graph.
 
 ## Privacy and browser limits

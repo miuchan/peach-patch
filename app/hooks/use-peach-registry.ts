@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 import type { PatchDocument } from "../../lib/patch-types";
 import { hydrateModulesWithDefinitions } from "../../lib/patch-hydrate";
 import { loadPeachRegistry } from "../../lib/peach-registry-client";
-import { allWebPlugins, replaceRegistryModules } from "../../lib/runtime-plugin-registry";
+import {
+  allWebPlugins,
+  discoverableRegistryModules,
+  replaceRegistryModules,
+} from "../../lib/runtime-plugin-registry";
 import { issue, message, type UserMessage } from "../i18n/user-message";
 
 export type PeachRegistryState = "loading" | "ready" | "error";
@@ -40,7 +44,9 @@ export function usePeachRegistry({ mutatePatch, onStatus }: UsePeachRegistryOpti
         });
         onStatus(
           message("status.registry.ready", {
-            modules: message("count.modules", { count: nextModules.length }),
+            modules: message("count.modules", {
+              count: discoverableRegistryModules(nextModules).length,
+            }),
           }),
         );
       } catch (error) {

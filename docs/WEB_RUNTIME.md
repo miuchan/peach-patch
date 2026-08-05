@@ -20,6 +20,8 @@ Native `.vcvplugin` bundles cannot satisfy this contract directly. Their Mach-O,
 
 At startup the application fetches the schema-version-1 index from the registry's HTTPS URL with cache revalidation. `lib/peach-registry-client.ts` validates required package identity, artifact, parameter, and port fields, rejects duplicate keys, resolves relative artifact URLs, and repairs bounded geometry cases before replacing the in-memory runtime catalog.
 
+An optional package-level `hidden: true` mirrors Rack's module-manifest semantics. Hidden packages stay in the in-memory runtime catalog so an existing `.vcv` can resolve its exact `Plugin/Model` key and verified WASM artifact, but they are excluded from the Library, quick-add, replacement choices, search results, and visible module counts.
+
 The index is the runtime source of truth. It may contain a `manifestUrl`, but Peach Patch does not fetch or independently verify that manifest during startup. Artifact integrity comes from the size and SHA-256 values already present in the validated index.
 
 When a user pastes a VCV Library URL:
@@ -27,8 +29,9 @@ When a user pastes a VCV Library URL:
 1. `/api/library/resolve` accepts only an exact HTTPS `library.vcvrack.com/Plugin/Model` address with no credentials, port, query, or fragment.
 2. The Worker extracts public title, description, screenshot, version, license, and source-link metadata.
 3. The `Plugin/Model` key is looked up in the already loaded Peach Patch catalog.
-4. Only the registry definition can make the module runnable; Library metadata alone cannot.
-5. The WASM download must use HTTPS and pass byte-length and SHA-256 verification before instantiation.
+4. A matching `hidden: true` package is rejected as non-addable even though exact-key patch hydration can still resolve it.
+5. Only the registry definition can make the module runnable; Library metadata alone cannot.
+6. The WASM download must use HTTPS and pass byte-length and SHA-256 verification before instantiation.
 
 There is no bundled module catalog, local compiler fallback, or website request path that builds C++ source.
 

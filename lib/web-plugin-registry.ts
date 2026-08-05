@@ -494,6 +494,7 @@ export type WebPluginModule = {
   plugin: string;
   model: string;
   name: string;
+  hidden?: boolean;
   brand: string;
   version: string;
   license: string;

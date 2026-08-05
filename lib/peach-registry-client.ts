@@ -17,6 +17,7 @@ function isModulePackage(value: unknown): value is WebPluginModule & {
     typeof value.plugin !== "string" ||
     typeof value.model !== "string" ||
     typeof value.name !== "string" ||
+    (value.hidden !== undefined && typeof value.hidden !== "boolean") ||
     typeof value.brand !== "string" ||
     typeof value.version !== "string" ||
     typeof value.license !== "string" ||

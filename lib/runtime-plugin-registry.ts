@@ -14,3 +14,11 @@ export function getWebPlugin(key: string) {
 export function allWebPlugins() {
   return [...registryModules.values()];
 }
+
+export function isRegistryModuleDiscoverable(module: WebPluginModule) {
+  return module.hidden !== true;
+}
+
+export function discoverableRegistryModules(modules: readonly WebPluginModule[]) {
+  return modules.filter(isRegistryModuleDiscoverable);
+}

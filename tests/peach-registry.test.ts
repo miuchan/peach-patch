@@ -80,6 +80,22 @@ test("registry index resolves immutable artifact URLs", () => {
   );
 });
 
+test("registry index preserves boolean hidden compatibility metadata", () => {
+  const [module] = modulesFromRegistryIndex(
+    { schemaVersion: 1, abiVersion: "0.3", packages: [{ ...moduleRecord, hidden: true }] },
+    "https://raw.example/registry/index.json",
+  );
+  assert.equal(module.hidden, true);
+  assert.throws(
+    () =>
+      modulesFromRegistryIndex(
+        { schemaVersion: 1, packages: [{ ...moduleRecord, hidden: "yes" }] },
+        "https://raw.example/registry/index.json",
+      ),
+    /invalid package/,
+  );
+});
+
 test("registry index resolves source-built panel artwork without inventing a UI fallback", () => {
   const [module] = modulesFromRegistryIndex(
     {

@@ -73,7 +73,11 @@ import {
   updateModuleState,
 } from "../lib/patch-operations";
 import { type WebPluginModule } from "../lib/web-plugin-registry";
-import { getWebPlugin } from "../lib/runtime-plugin-registry";
+import {
+  discoverableRegistryModules,
+  getWebPlugin,
+  isRegistryModuleDiscoverable,
+} from "../lib/runtime-plugin-registry";
 import { fetchVerifiedWasm } from "../lib/peach-registry-client";
 import { RackStudioLibrary } from "./components/rack-studio-library";
 import { RackStudioTopbar } from "./components/rack-studio-topbar";
@@ -597,6 +601,10 @@ export function RackWebStudio() {
           };
         });
       };
+      if (result.runtime && !isRegistryModuleDiscoverable(result.runtime)) {
+        setStatus(message("status.registry.moduleHidden", { module: result.key }));
+        return;
+      }
       if (result.runtime) {
         const runtime = result.runtime;
         addRuntime(runtime);
@@ -1182,29 +1190,30 @@ export function RackWebStudio() {
     [cablePaths, pan, rackViewportSize, zoom],
   );
   const deferredModuleQuery = useDeferredValue(moduleQuery);
+  const discoverableRegistry = useMemo(() => discoverableRegistryModules(registry), [registry]);
   const filteredModules = useMemo(() => {
     const query = deferredModuleQuery.trim().toLowerCase();
     return query
-      ? registry.filter((module) =>
+      ? discoverableRegistry.filter((module) =>
           `${module.key} ${module.name} ${module.brand} ${module.description}`
             .toLowerCase()
             .includes(query),
         )
-      : registry;
-  }, [deferredModuleQuery, registry]);
+      : discoverableRegistry;
+  }, [deferredModuleQuery, discoverableRegistry]);
   const quickAddQuery = quickAdd?.query ?? "";
   const quickAddMatches = useMemo(() => {
     const query = quickAddQuery.trim().toLowerCase();
     return (
       query
-        ? registry.filter((module) =>
+        ? discoverableRegistry.filter((module) =>
             `${module.key} ${module.name} ${module.brand} ${module.description}`
               .toLowerCase()
               .includes(query),
           )
-        : registry
+        : discoverableRegistry
     ).slice(0, 12);
-  }, [quickAddQuery, registry]);
+  }, [discoverableRegistry, quickAddQuery]);
   const replaceModule = (targetId: string, definition: WebPluginModule) => {
     const target = patch.modules.find((module) => module.id === targetId),
       targetDefinition = target ? getWebPlugin(target.key) : undefined;
@@ -2149,7 +2158,7 @@ export function RackWebStudio() {
         busy={busy}
         registryState={registryState}
         filteredModules={filteredModules}
-        registryCount={registry.length}
+        registryCount={discoverableRegistry.length}
         modulesLocked={modulesLocked}
         replaceMode={replaceMode}
         selectedModuleCount={selectedIds.size}

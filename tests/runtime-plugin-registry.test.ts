@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   allWebPlugins,
+  discoverableRegistryModules,
   getWebPlugin,
+  isRegistryModuleDiscoverable,
   replaceRegistryModules,
 } from "../lib/runtime-plugin-registry.ts";
 
@@ -40,4 +42,39 @@ test("the runtime registry contains only the latest GitHub registry snapshot", (
     undefined,
     "a stale or bundled module must not survive a remote snapshot replacement",
   );
+});
+
+test("hidden modules remain exactly loadable but are excluded from discovery", () => {
+  const visible = {
+      key: "Fixture/Visible",
+      plugin: "Fixture",
+      model: "Visible",
+      name: "Visible",
+      brand: "Fixture",
+      version: "1.0.0",
+      license: "MIT",
+      sourceUrl: "https://example.com/source",
+      libraryUrl: "https://example.com/library/visible",
+      screenshotUrl: "https://example.com/visible.webp",
+      wasmUrl: "https://example.com/visible.wasm",
+      width: 45,
+      description: "Visible module",
+      params: [],
+      inputs: [],
+      outputs: [],
+      lights: 0,
+    },
+    hidden = {
+      ...visible,
+      key: "Fixture/Hidden",
+      model: "Hidden",
+      name: "Hidden",
+      hidden: true,
+    };
+
+  replaceRegistryModules([visible, hidden]);
+  assert.deepEqual(discoverableRegistryModules(allWebPlugins()), [visible]);
+  assert.equal(isRegistryModuleDiscoverable(visible), true);
+  assert.equal(isRegistryModuleDiscoverable(hidden), false);
+  assert.equal(getWebPlugin(hidden.key), hidden);
 });

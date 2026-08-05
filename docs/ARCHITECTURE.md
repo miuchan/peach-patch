@@ -84,6 +84,8 @@ These modules must not import React or browser audio code. Unknown Rack fields a
 
 The browser downloads the mutable registry index directly from HTTPS. `lib/peach-registry-client.ts` validates schema version 1, required package identity/artifact fields, basic parameter and port data, and duplicate keys. It also resolves URLs and normalizes bounded geometry cases before replacing the in-memory catalog in `runtime-plugin-registry.ts`.
 
+The runtime registry retains `hidden: true` compatibility packages for exact-key patch hydration and WASM loading. Discovery surfaces derive a filtered view, so hidden modules cannot enter Library search, quick-add, replacement lists, or user-facing counts.
+
 The runtime index is the browser source of truth. `manifestUrl` may be retained as package metadata, but the application does not fetch an independent manifest during module startup. `fetchVerifiedWasm()` resolves the artifact URL, requires HTTPS, then checks declared byte length and SHA-256 before the bytes can reach WebAssembly.
 
 Other browser adapters remain isolated:
