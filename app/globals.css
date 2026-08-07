@@ -3329,8 +3329,21 @@ input {
 .pw-cable-plug image {
   pointer-events: none;
 }
+.pw-cable-plug-hit {
+  fill: transparent;
+  pointer-events: fill;
+}
 .pw-rack.cable-active .pw-cable-plug {
   pointer-events: none;
+}
+.pw-rack.cable-active .pw-ports button.cable-drop-target i,
+.pw-rack.cable-active .pw-ports.source-layout button.cable-drop-target i {
+  border: 3px solid #ffd36a;
+  outline: 4px solid #ef9e3173;
+  outline-offset: 3px;
+  background: #ef9e3140;
+  transform: scale(1.12);
+  box-shadow: 0 0 12px #ffd36a;
 }
 .pw-cable-preview {
   position: absolute;

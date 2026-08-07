@@ -81,6 +81,7 @@ export function RackCablePlug({
       onPointerDown={interactive ? onPointerDown : undefined}
     >
       {interactive && <title>{t("cable.dragHint")}</title>}
+      {interactive && <circle className="pw-cable-plug-hit" r={24} />}
       <g transform={`rotate(${rotation})`}>
         <image
           href={componentAsset("Plug", color)}

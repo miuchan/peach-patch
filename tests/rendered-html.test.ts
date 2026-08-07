@@ -124,13 +124,18 @@ test("Registry completion invalidates restored module panels without a click", a
 });
 
 test("cable endpoint previews use an isolated Canvas without React pointer-move state", async () => {
-  const [studio, preview, previewLayer, layout, cableLayer] = await Promise.all([
-    readSearchableSource("app/rack-web-studio.tsx"),
-    readSearchableSource("lib/rack-cable-preview.ts"),
-    readSearchableSource("app/components/rack-studio-cable-preview-layer.tsx"),
-    readSearchableSource("lib/rack-cable-layout.ts"),
-    readSearchableSource("app/components/rack-studio-cable-layer.tsx"),
-  ]);
+  const [studio, preview, previewLayer, layout, cableLayer, portBank, plug, targeting, styles] =
+    await Promise.all([
+      readSearchableSource("app/rack-web-studio.tsx"),
+      readSearchableSource("lib/rack-cable-preview.ts"),
+      readSearchableSource("app/components/rack-studio-cable-preview-layer.tsx"),
+      readSearchableSource("lib/rack-cable-layout.ts"),
+      readSearchableSource("app/components/rack-studio-cable-layer.tsx"),
+      readSearchableSource("app/components/module-panel-ports.tsx"),
+      readSearchableSource("app/components/rack-cable-plug.tsx"),
+      readSearchableSource("lib/rack-cable-targeting.ts"),
+      readSearchableSource("app/globals.css"),
+    ]);
   const rackStart = studio.indexOf("className={`pw-rack");
   const rackPointerMove = studio.slice(
     studio.indexOf("onPointerMove=", rackStart),
@@ -145,6 +150,15 @@ test("cable endpoint previews use an isolated Canvas without React pointer-move 
   assert.match(layout, /const modulesById = new Map/);
   assert.match(cableLayer, /data-cable-id=\{path\.id\}/);
   assert.match(cableLayer, /className="pw-cable-line"/);
+  assert.match(studio, /rack\.setPointerCapture\(event\.pointerId\)/);
+  assert.match(studio, /closestCablePort\(/);
+  assert.match(studio, /dropTarget\?\.clientX\?\?event\.clientX/);
+  assert.match(studio, /rackPortsMatch\(interaction\.value\.port,releasedPort\)/);
+  assert.match(studio, /connectPort\(interaction\.value\.port\)/);
+  assert.doesNotMatch(portBank, /\bdraggable\b|onPointerUp=/);
+  assert.match(plug, /className="pw-cable-plug-hit"/);
+  assert.match(targeting, /kind==="touch"\?48/);
+  assert.match(styles, /\.cable-drop-target i/);
 });
 
 test("SignalFunctionSet displays keep Rack colors and route canvas gestures through visual actions", async () => {

@@ -57,14 +57,7 @@ export type RackStudioModuleLayerProps = {
   onMidiDevice: (module: ModuleInstance, deviceName: string) => void;
   onBypass: (module: ModuleInstance) => void;
   onPort: (port: RackStudioPortClick) => void;
-  onPortDragStart: (port: RackStudioPortClick) => void;
-  onPortDrop: (from: RackStudioPortClick, to: RackStudioPortClick) => void;
-  onPortDragEnd: () => void;
   onPortPointerDown: (
-    port: RackStudioPortClick,
-    event: React.PointerEvent<HTMLButtonElement>,
-  ) => void;
-  onPortPointerUp: (
     port: RackStudioPortClick,
     event: React.PointerEvent<HTMLButtonElement>,
   ) => void;
@@ -112,11 +105,7 @@ function RackStudioModuleLayerView({
   onMidiDevice,
   onBypass,
   onPort,
-  onPortDragStart,
-  onPortDrop,
-  onPortDragEnd,
   onPortPointerDown,
-  onPortPointerUp,
   onClock,
   onSample,
   onCapture,
@@ -253,11 +242,7 @@ function RackStudioModuleLayerView({
             onMidiDevice={(deviceName) => onMidiDevice(module, deviceName)}
             onBypass={() => onBypass(module)}
             onPort={onPort}
-            onPortDragStart={onPortDragStart}
-            onPortDrop={onPortDrop}
-            onPortDragEnd={onPortDragEnd}
             onPortPointerDown={onPortPointerDown}
-            onPortPointerUp={onPortPointerUp}
             onClock={() => onClock(module)}
             onSample={(file, slot) => onSample(module, file, slot)}
             recording={recordingIds.has(module.id)}

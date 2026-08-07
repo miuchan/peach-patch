@@ -67,11 +67,7 @@ export function ModulePanel({
   onMidiDevice,
   onBypass,
   onPort,
-  onPortDragStart,
-  onPortDrop,
-  onPortDragEnd,
   onPortPointerDown,
-  onPortPointerUp,
   onClock,
   onSample,
   recording,
@@ -113,11 +109,7 @@ export function ModulePanel({
   onMidiDevice: (deviceName: string) => void;
   onBypass: () => void;
   onPort: (port: PortClick) => void;
-  onPortDragStart: (port: PortClick) => void;
-  onPortDrop: (from: PortClick, to: PortClick) => void;
-  onPortDragEnd: () => void;
   onPortPointerDown: (port: PortClick, event: React.PointerEvent<HTMLButtonElement>) => void;
-  onPortPointerUp: (port: PortClick, event: React.PointerEvent<HTMLButtonElement>) => void;
   onClock: () => void;
   onSample: (file: File, slot?: number) => void;
   recording: boolean;
@@ -675,11 +667,7 @@ export function ModulePanel({
             sourceLayout={hasPortSourceLayout}
             portStyle={rackPortStyle}
             onPort={onPort}
-            onPortDragStart={onPortDragStart}
-            onPortDrop={onPortDrop}
-            onPortDragEnd={onPortDragEnd}
             onPortPointerDown={onPortPointerDown}
-            onPortPointerUp={onPortPointerUp}
             onPortHover={onPortHover}
           />
           <ModulePanelPortBank
@@ -692,11 +680,7 @@ export function ModulePanel({
             sourceLayout={hasPortSourceLayout}
             portStyle={rackPortStyle}
             onPort={onPort}
-            onPortDragStart={onPortDragStart}
-            onPortDrop={onPortDrop}
-            onPortDragEnd={onPortDragEnd}
             onPortPointerDown={onPortPointerDown}
-            onPortPointerUp={onPortPointerUp}
             onPortHover={onPortHover}
           />
           {module.status === "ready" && (
