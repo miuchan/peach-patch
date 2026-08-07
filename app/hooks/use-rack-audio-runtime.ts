@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PatchDocument } from "../../lib/patch-types";
 import type { RackAudioEngine, RackAudioStats } from "../../lib/rack-audio-engine";
 import { syncRackAudioModules } from "../../lib/rack-audio-patch-sync";
-import { rackAudioGraphNeedsRebuild } from "../../lib/rack-audio-runtime-state";
+import {
+  crossfadeRackAudioEngines,
+  rackAudioGraphNeedsRebuild,
+} from "../../lib/rack-audio-runtime-state";
 import type { PeachRegistryState } from "./use-peach-registry";
 import {
   issue,
@@ -67,6 +70,7 @@ export function useRackAudioRuntime({
   const moduleSyncRef = useRef(new Map<string, { controls: string; data: string }>());
   const structureRef = useRef("");
   const generationRef = useRef(0);
+  const rebuildRef = useRef<Promise<void> | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -80,12 +84,12 @@ export function useRackAudioRuntime({
   );
 
   const startCurrentEngine = useCallback(
-    async (generation: number) => {
+    async (generation: number, muted = false) => {
       const patchSnapshot = latestPatchRef.current;
       const loadedStructureKey = latestStructureKeyRef.current;
       const engine = createEngine();
       try {
-        const stats = await engine.start(patchSnapshot);
+        const stats = await engine.start(patchSnapshot, { muted });
         if (!isCurrentGeneration(generation)) {
           await stopAfterFailedTransition(engine);
           return null;
@@ -94,7 +98,7 @@ export function useRackAudioRuntime({
         configureEngine(engine);
         structureRef.current = loadedStructureKey;
         setEngineRevision((revision) => revision + 1);
-        return { engine, stats };
+        return { engine, loadedStructureKey, stats };
       } catch (error) {
         if (audioRef.current === engine) audioRef.current = null;
         await stopAfterFailedTransition(engine);
@@ -184,7 +188,7 @@ export function useRackAudioRuntime({
       return;
     }
     syncRackAudioModules(engine, patch.modules, moduleSyncRef.current);
-  }, [audioRef, audioRunning, patch.modules]);
+  }, [audioRef, audioRunning, engineRevision, patch.modules]);
 
   useEffect(() => {
     const previous = audioRef.current;
@@ -200,38 +204,51 @@ export function useRackAudioRuntime({
     )
       return;
 
+    if (rebuildRef.current) return;
+
     const generation = ++generationRef.current;
-    audioRef.current = null;
-    onBusyChange(true);
     onStatus(message("status.audio.rebuilding"));
 
-    void (async () => {
+    const rebuild = (async () => {
       try {
-        await previous.stop();
-        if (!isCurrentGeneration(generation)) return;
-        const started = await startCurrentEngine(generation);
-        if (!started) return;
-        setAudioRunning(true);
-        onStatus(message("status.audio.rebuilt", graphValues(started.stats)));
+        while (isCurrentGeneration(generation)) {
+          const replacedEngine = audioRef.current;
+          if (!replacedEngine) return;
+          const replacedStructureKey = structureRef.current;
+
+          const started = await startCurrentEngine(generation, true);
+          if (!started) return;
+          if (started.loadedStructureKey !== latestStructureKeyRef.current) {
+            if (audioRef.current === started.engine) {
+              audioRef.current = replacedEngine;
+              structureRef.current = replacedStructureKey;
+            }
+            await stopAfterFailedTransition(started.engine);
+            continue;
+          }
+
+          await crossfadeRackAudioEngines(replacedEngine, started.engine);
+          if (!isCurrentGeneration(generation)) return;
+          setAudioRunning(true);
+          onStatus(message("status.audio.rebuilt", graphValues(started.stats)));
+          if (started.loadedStructureKey === latestStructureKeyRef.current) return;
+          onStatus(message("status.audio.rebuilding"));
+        }
       } catch (error) {
         if (!isCurrentGeneration(generation)) return;
-        const failedEngine = audioRef.current ?? previous;
-        if (audioRef.current === failedEngine) audioRef.current = null;
-        await stopAfterFailedTransition(failedEngine);
-        if (!isCurrentGeneration(generation)) return;
-        setAudioRunning(false);
+        if (!audioRef.current) audioRef.current = previous;
         onStatus(issue(error, "errors.audioRebuildFailed"));
       } finally {
-        if (isCurrentGeneration(generation)) onBusyChange(false);
+        rebuildRef.current = null;
       }
     })();
+    rebuildRef.current = rebuild;
   }, [
     audioRef,
     audioRunning,
     engineRevision,
     isCurrentGeneration,
     isRebuildDeferred,
-    onBusyChange,
     onStatus,
     startCurrentEngine,
     structureKey,

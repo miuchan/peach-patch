@@ -26,6 +26,10 @@ export type RackAudioStats = {
   midiOutputs: number;
 };
 
+export type RackAudioStartOptions = {
+  muted?: boolean;
+};
+
 export type RackPlugSignal = RackAudioPlugSignal;
 export type RackHostControl = RackAudioHostControl;
 export type RackHoveredControl = {
@@ -73,6 +77,7 @@ export type RackAudioCallbacks = {
 export class RackAudioEngine {
   private context: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
+  private level: GainNode | null = null;
   private readonly recordings = new Map<string, RackAudioCapture>();
   private stopRequest = 0;
   private stopResolvers = new Map<number, () => void>();
@@ -134,7 +139,10 @@ export class RackAudioEngine {
     });
   }
 
-  async start(patch: PatchDocument): Promise<RackAudioStats> {
+  async start(
+    patch: PatchDocument,
+    { muted = false }: RackAudioStartOptions = {},
+  ): Promise<RackAudioStats> {
     // Web MIDI permission must be requested while the Audio button's user
     // activation is still live, before the first await below.
     const midiAccessPromise: Promise<MIDIAccess | null> =
@@ -373,7 +381,8 @@ export class RackAudioEngine {
       transfer,
     );
     const level = context.createGain();
-    level.gain.value = 0.5;
+    level.gain.value = muted ? 0 : 0.5;
+    this.level = level;
     node.connect(level).connect(context.destination);
     const result = await loaded;
     const immediateMidiAccess = await Promise.race([
@@ -393,6 +402,27 @@ export class RackAudioEngine {
       midiInputs: this.midiAccess?.inputs.size ?? 0,
       midiOutputs: this.midiAccess?.outputs.size ?? 0,
     };
+  }
+
+  private rampOutput(target: number, durationMs: number) {
+    const context = this.context,
+      level = this.level;
+    if (!context || !level) return;
+    const now = context.currentTime,
+      durationSeconds = Math.max(0, durationMs) / 1_000;
+    level.gain.cancelScheduledValues(now);
+    level.gain.setValueAtTime(level.gain.value, now);
+    level.gain.linearRampToValueAtTime(target, now + durationSeconds);
+  }
+
+  activate(durationMs = 12) {
+    this.rampOutput(0.5, durationMs);
+  }
+
+  async fadeOut(durationMs = 12) {
+    this.rampOutput(0, durationMs);
+    if (durationMs > 0)
+      await new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
   }
 
   setParam(moduleId: string, id: number, value: number) {
@@ -535,6 +565,7 @@ export class RackAudioEngine {
       node.port.close();
     }
     this.node = null;
+    this.level = null;
     this.visualUpdatesEnabled = true;
     const context = this.context;
     this.context = null;
