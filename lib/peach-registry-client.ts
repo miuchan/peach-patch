@@ -74,8 +74,23 @@ export function modulesFromRegistryIndex(input: unknown, indexUrl: string): WebP
     if (!isModulePackage(item)) throw new Error("Registry contains an invalid package");
     if (seen.has(item.key)) throw new Error(`Duplicate registry key ${item.key}`);
     seen.add(item.key);
+    const runtime = item.runtime
+      ? {
+          ...item.runtime,
+          ...(item.runtime.visuals
+            ? {
+                visuals: item.runtime.visuals.map((visual) =>
+                  "assetBase" in visual && visual.assetBase
+                    ? { ...visual, assetBase: new URL(visual.assetBase, indexUrl).href }
+                    : visual,
+                ),
+              }
+            : {}),
+        }
+      : undefined;
     return {
       ...item,
+      ...(runtime ? { runtime } : {}),
       screenshotUrl: item.screenshotUrl ? new URL(item.screenshotUrl, indexUrl).href : "",
       wasmUrl: new URL(item.wasmUrl, indexUrl).href,
       ...(item.manifestUrl ? { manifestUrl: new URL(item.manifestUrl, indexUrl).href } : {}),

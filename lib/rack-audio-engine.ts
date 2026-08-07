@@ -28,6 +28,12 @@ export type RackAudioStats = {
 
 export type RackPlugSignal = RackAudioPlugSignal;
 export type RackHostControl = RackAudioHostControl;
+export type RackHoveredControl = {
+  moduleId: string;
+  type: "param" | "in" | "out";
+  id: number;
+  modifiers: number;
+};
 
 export type RackRecording = {
   moduleId: string;
@@ -56,6 +62,8 @@ export type RackAudioCallbacks = {
   ) => void;
   onVisualSignals?: (
     cables: Record<string, number>,
+    cableWaves: Record<string, number[]>,
+    blankScopes: Record<string, number[]>,
     scopes: Record<string, number[][]>,
     plugs: Record<string, RackPlugSignal>,
     lights: Record<string, number[]>,
@@ -153,7 +161,7 @@ export class RackAudioEngine {
       latencyHint: activeInstances.length >= 48 ? "balanced" : "interactive",
     });
     this.context = context;
-    await context.audioWorklet.addModule("/audio/rack-graph-processor.js?abi=0.7");
+    await context.audioWorklet.addModule("/audio/rack-graph-processor.js?abi=0.8");
 
     const activeIds = new Set(activeInstances.map((instance) => instance.id));
     const moduleById = new Map(patch.modules.map((module) => [module.id, module]));
@@ -208,8 +216,15 @@ export class RackAudioEngine {
           width: instance.width,
           rackId: Number(instance.rack?.id ?? -1),
           snapParams: definition.params.map((param) => Boolean(param.snap)),
+          paramSpecs: definition.params.map((param) => ({
+            min: param.min,
+            max: param.max,
+            default: param.default,
+            name: param.name,
+          })),
           expander: definition.runtime?.expander,
           hostControl: definition.runtime?.hostControl,
+          hoverBridge: definition.runtime?.hoverBridge,
           visuals: definition.runtime?.visuals ?? [],
           capture: definition.runtime?.capture,
           midiOutput: Boolean(definition.runtime?.midi?.output),
@@ -309,6 +324,7 @@ export class RackAudioEngine {
           }
           case "midi-param":
           case "automation-param":
+          case "hover-param":
             this.callbacks.onMidiParam?.(message.moduleId, message.id, message.value);
             break;
           case "automation-complete":
@@ -326,6 +342,8 @@ export class RackAudioEngine {
           case "visual-signals":
             this.callbacks.onVisualSignals?.(
               message.cables,
+              message.cableWaves,
+              message.blankScopes,
               message.scopes,
               message.plugs,
               message.lights,
@@ -457,6 +475,16 @@ export class RackAudioEngine {
     this.node?.port.postMessage({
       type: "monitor-module",
       moduleId: moduleId ?? "",
+    });
+  }
+
+  setHoveredControl(control: RackHoveredControl | null) {
+    this.node?.port.postMessage({
+      type: "hover-control",
+      moduleId: control?.moduleId ?? "",
+      controlType: control?.type ?? "",
+      id: control?.id ?? -1,
+      modifiers: control?.modifiers ?? 0,
     });
   }
 

@@ -3,6 +3,7 @@ import type { MadzineManualTarget } from "./rack-madzine-manual";
 import { ModulePanel } from "./module-panel";
 import type { ModuleInstance, PatchDocument } from "../../lib/patch-types";
 import type { WebPluginModule } from "../../lib/web-plugin-registry";
+import type { LintBuddyTarget } from "./rack-lint-buddy";
 import { rackModuleIntersectsViewport, type RackViewport } from "../../lib/rack-viewport-transform";
 
 export type RackStudioPortClick = {
@@ -42,6 +43,12 @@ export type RackStudioModuleLayerProps = {
   onParam: (module: ModuleInstance, id: number, value: number) => void;
   onParamReset: (module: ModuleInstance, id: number, value: number) => void;
   onMomentary: (module: ModuleInstance, id: number, active: boolean) => void;
+  onVisualAction: (module: ModuleInstance, id: number, active: boolean) => void;
+  onRackRowAction: (module: ModuleInstance, action: 0 | 1 | 3 | 4) => void;
+  onRackRowDragStart: (
+    module: ModuleInstance,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => void;
   onParamHover: (module: ModuleInstance, id: number | null) => void;
   onPortHover: (module: ModuleInstance, direction: "in" | "out", id: number | null) => void;
   onState: (module: ModuleInstance, updates: Array<[number, number]>) => void;
@@ -94,6 +101,9 @@ function RackStudioModuleLayerView({
   onParam,
   onParamReset,
   onMomentary,
+  onVisualAction,
+  onRackRowAction,
+  onRackRowDragStart,
   onParamHover,
   onPortHover,
   onState,
@@ -129,6 +139,34 @@ function RackStudioModuleLayerView({
     }
     return connected;
   }, [cables]);
+  const inputCableColorsByModule = useMemo(() => {
+    const colors = new Map<string, Record<number, string>>();
+    for (const cable of cables) {
+      let ports = colors.get(cable.toModule);
+      if (!ports) {
+        ports = {};
+        colors.set(cable.toModule, ports);
+      }
+      ports[cable.toPort] = cable.color;
+    }
+    return colors;
+  }, [cables]);
+  const lintBuddyTargetsByModule = useMemo(() => {
+    const modulesById = new Map(modules.map((module) => [module.id, module]));
+    const targets = new Map<string, LintBuddyTarget>();
+    for (const module of modules) {
+      if (module.key !== "BaconMusic/LintBuddy") continue;
+      const outgoing = cables.find(
+        (cable) => cable.fromModule === module.id && cable.fromPort === 0,
+      );
+      const incoming = cables.find((cable) => cable.toModule === module.id && cable.toPort === 0);
+      const targetId = outgoing?.toModule ?? incoming?.fromModule;
+      const target = targetId ? modulesById.get(targetId) : undefined;
+      if (target)
+        targets.set(module.id, { module: target, definition: definitionsByKey.get(target.key) });
+    }
+    return targets;
+  }, [cables, definitionsByKey, modules]);
   const visibleModules = useMemo(
     () =>
       modules.filter(
@@ -140,11 +178,23 @@ function RackStudioModuleLayerView({
       ),
     [modules, pending?.moduleId, recordingIds, selectedIds, viewport, viewportSize],
   );
+  const trackerModules = useMemo(
+    () => modules.filter((module) => module.key === "Biset/Biset-Tracker"),
+    [modules],
+  );
 
   return (
     <div className="pw-module-layer">
       {visibleModules.map((module) => {
         const definition = definitionsByKey.get(module.key);
+        const trackerModule = module.key.startsWith("Biset/Biset-Tracker-")
+          ? trackerModules.reduce<ModuleInstance | undefined>((nearest, candidate) => {
+              if (!nearest) return candidate;
+              const distance = Math.abs(candidate.x - module.x) + Math.abs(candidate.y - module.y),
+                nearestDistance = Math.abs(nearest.x - module.x) + Math.abs(nearest.y - module.y);
+              return distance < nearestDistance ? candidate : nearest;
+            }, undefined)
+          : undefined;
         const inputSignalLevels: Record<number, number> = {};
         for (const port of definition?.inputs ?? []) {
           const level = jackSignalLevels.get(`${module.id}:in:${port.id}`);
@@ -166,8 +216,10 @@ function RackStudioModuleLayerView({
             connectedInputIds={
               connectedInputIdsByModule.get(module.id) ?? EMPTY_CONNECTED_INPUT_IDS
             }
+            inputCableColors={inputCableColorsByModule.get(module.id)}
             outputSignalLevels={outputSignalLevels}
             scopeSamples={visualSignals.scopes[module.id]}
+            relatedScopeSamples={trackerModule ? visualSignals.scopes[trackerModule.id] : undefined}
             lightValues={visualSignals.lights[module.id]}
             audioRunning={audioRunning}
             onSelect={(event) => onSelect(module, event)}
@@ -182,6 +234,9 @@ function RackStudioModuleLayerView({
             onParam={(id, value) => onParam(module, id, value)}
             onParamReset={(id, value) => onParamReset(module, id, value)}
             onMomentary={(id, active) => onMomentary(module, id, active)}
+            onVisualAction={(id, active) => onVisualAction(module, id, active)}
+            onRackRowAction={(action) => onRackRowAction(module, action)}
+            onRackRowDragStart={(event) => onRackRowDragStart(module, event)}
             onParamHover={(id) => {
               if (id === null && hoveredParamRef.current?.moduleId === module.id)
                 hoveredParamRef.current = null;
@@ -190,6 +245,7 @@ function RackStudioModuleLayerView({
             }}
             onPortHover={(direction, id) => onPortHover(module, direction, id)}
             manualHelpTarget={manualHelpTarget}
+            lintBuddyTarget={lintBuddyTargetsByModule.get(module.id)}
             onState={(updates) => onState(module, updates)}
             onData={(data) => onData(module, data)}
             onPolyphony={(channels) => onPolyphony(module, channels)}

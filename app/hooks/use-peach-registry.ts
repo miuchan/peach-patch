@@ -30,7 +30,8 @@ export function usePeachRegistry({ mutatePatch, onStatus }: UsePeachRegistryOpti
 
     async function loadRegistry() {
       try {
-        const nextModules = await loadPeachRegistry(undefined, controller.signal);
+        const configuredIndex = import.meta.env.VITE_PEACH_REGISTRY_URL || undefined,
+          nextModules = await loadPeachRegistry(configuredIndex, controller.signal);
         if (controller.signal.aborted) return;
 
         replaceRegistryModules(nextModules);

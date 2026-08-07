@@ -1,4 +1,6 @@
-function rackWebWasiImports(holder) {
+let rackWebHostClipboard = new Uint8Array(0);
+
+export function rackWebWasiImports(holder) {
   const memory = () => holder.runtime?.memory;
   const view = () => (memory() ? new DataView(memory().buffer) : null);
   const missing = () => -2;
@@ -7,6 +9,53 @@ function rackWebWasiImports(holder) {
     env: {
       emscripten_notify_memory_growth() {
         holder.memoryGrew = true;
+      },
+      rack_web_host_clipboard_size() {
+        return rackWebHostClipboard.length;
+      },
+      rack_web_host_get_clipboard(destination, capacity) {
+        const bytes = memory() ? new Uint8Array(memory().buffer) : null;
+        const length = Math.min(Math.max(0, capacity), rackWebHostClipboard.length);
+        if (bytes && length) bytes.set(rackWebHostClipboard.subarray(0, length), destination);
+        return length;
+      },
+      rack_web_host_set_clipboard(source, length) {
+        const bytes = memory() ? new Uint8Array(memory().buffer) : null;
+        const size = Math.max(0, length);
+        rackWebHostClipboard = bytes ? bytes.slice(source, source + size) : new Uint8Array(0);
+      },
+      rack_web_host_shared_get(index) {
+        return holder.sharedBus && index >= 0 && index < holder.sharedBus.values.length
+          ? holder.sharedBus.values[index]
+          : 0;
+      },
+      rack_web_host_shared_set(index, value) {
+        if (holder.sharedBus && index >= 0 && index < holder.sharedBus.values.length)
+          holder.sharedBus.values[index] = Number.isFinite(value) ? value : 0;
+      },
+      rack_web_host_shared_touch(index) {
+        if (holder.sharedBus && index >= 0 && index < holder.sharedBus.touches.length) {
+          if (holder.sharedBus.touches[index] !== holder.sharedBus.epoch)
+            holder.sharedBus.counts[index] = 0;
+          holder.sharedBus.touches[index] = holder.sharedBus.epoch;
+          holder.sharedBus.counts[index]++;
+        }
+      },
+      rack_web_host_shared_active(index) {
+        return holder.sharedBus &&
+          index >= 0 &&
+          index < holder.sharedBus.touches.length &&
+          holder.sharedBus.epoch - holder.sharedBus.touches[index] <= 1
+          ? 1
+          : 0;
+      },
+      rack_web_host_shared_count(index) {
+        return holder.sharedBus &&
+          index >= 0 &&
+          index < holder.sharedBus.touches.length &&
+          holder.sharedBus.epoch - holder.sharedBus.touches[index] <= 1
+          ? holder.sharedBus.counts[index]
+          : 0;
       },
       _emscripten_system: unsupported,
       getnameinfo: unsupported,
@@ -152,6 +201,8 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.messageOwners = new Map();
     this.messageGroups = new Map();
     this.messageMode = false;
+    this.bisetTrackerGroups = new Map();
+    this.bisetTrackerOwners = new Map();
     this.midiAutomations = new Map();
     this.automationEvents = [];
     this.automationIndex = 0;
@@ -160,11 +211,22 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.automationActive = false;
     this.monitorModuleId = "";
     this.monitorTick = 0;
+    this.hoverControl = null;
+    this.hoverReportTick = 0;
     this.visualTick = 0;
     this.visualInterval = 16;
     this.visualUpdatesEnabled = true;
     this.plugLights = new Map();
+    this.bisetBlankHistories = new Map();
+    this.bisetBlankOwnerId = "";
+    this.bisetBlankCaptureFrame = 0;
     this.processErrorReported = false;
+    this.sharedBus = {
+      values: new Float32Array(512),
+      touches: new Float64Array(16).fill(Number.NEGATIVE_INFINITY),
+      counts: new Uint16Array(16),
+      epoch: 0,
+    };
     this.ready = false;
     this.port.onmessage = ({ data }) => {
       if (data.type === "load-graph")
@@ -246,6 +308,18 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       } else if (data.type === "monitor-module") {
         this.monitorModuleId = String(data.moduleId || "");
         this.monitorTick = 0;
+      } else if (data.type === "hover-control") {
+        const id = Number(data.id),
+          type = data.controlType;
+        this.hoverControl =
+          data.moduleId && Number.isInteger(id) && id >= 0 && ["param", "in", "out"].includes(type)
+            ? {
+                moduleId: String(data.moduleId),
+                type,
+                id,
+                modifiers: Math.max(0, Math.trunc(Number(data.modifiers) || 0)),
+              }
+            : null;
       } else if (data.type === "visual-updates") {
         this.visualUpdatesEnabled = data.enabled !== false;
         this.monitorTick = 0;
@@ -321,6 +395,78 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     rackModule.dirtyParams.add(id);
   }
 
+  applyHoverBridge(rackModule, frame) {
+    const bridge = rackModule.hoverBridge;
+    if (!bridge) return;
+    const enabled = Math.max(
+        0,
+        Math.min(2, Math.round(rackModule.params[bridge.enableParam] || 0)),
+      ),
+      shiftOnly = (this.hoverControl?.modifiers || 0) === 1,
+      active = enabled === 2 || (enabled === 1 && shiftOnly),
+      target = active ? this.hoverControl : null,
+      targetModule = target ? this.modules.get(target.moduleId) : null,
+      targetSpec = target?.type === "param" ? targetModule?.paramSpecs?.[target.id] || null : null;
+    if (!target || !targetModule || targetModule === rackModule) return;
+    let raw,
+      minimum = -10,
+      maximum = 10,
+      defaultValue = 0;
+    const type = target.type === "param" ? 1 : target.type === "in" ? 2 : 3;
+    if (target.type === "param") {
+      if (!targetSpec || target.id >= targetModule.params.length) return;
+      raw = Number(targetModule.params[target.id]) || 0;
+      minimum = Number(targetSpec.min) || 0;
+      maximum = Number(targetSpec.max) || 0;
+      defaultValue = Number(targetSpec.default) || 0;
+    } else {
+      const input = target.type === "in",
+        portCount = input ? targetModule.inputCount : targetModule.outputCount,
+        channels = input ? targetModule.inputChannels : targetModule.currentChannels,
+        buffer = input ? targetModule.inputs : targetModule.outputs;
+      if (target.id >= portCount) return;
+      raw = channels[target.id] ? buffer[target.id * 128 + frame] || 0 : 0;
+    }
+    const range = Math.max(0, Math.min(2, Math.round(rackModule.params[bridge.rangeParam] || 0))),
+      rangeMinimum = [-10, 0, -5][range],
+      rangeMaximum = [10, 10, 5][range];
+    if (bridge.mode === "inspect") {
+      const scaled =
+        maximum === minimum
+          ? rangeMinimum
+          : rangeMinimum + ((raw - minimum) / (maximum - minimum)) * (rangeMaximum - rangeMinimum);
+      this.setModuleParam(rackModule, bridge.rawParam, raw);
+      this.setModuleParam(rackModule, bridge.scaledParam, scaled);
+      rackModule.hoverVisual = [raw, minimum, maximum, defaultValue, type, scaled, 1];
+      return;
+    }
+    if (target.type !== "param") return;
+    if (rackModule.inputChannels[bridge.input])
+      rackModule.hoverInputValue = rackModule.inputs[bridge.input * 128 + frame] || 0;
+    const input = Math.max(rangeMinimum, Math.min(rangeMaximum, rackModule.hoverInputValue || 0)),
+      scaled =
+        rangeMaximum === rangeMinimum
+          ? minimum
+          : minimum +
+            ((input - rangeMinimum) / (rangeMaximum - rangeMinimum)) * (maximum - minimum);
+    this.setModuleParam(targetModule, target.id, scaled);
+    rackModule.hoverVisual = [scaled, minimum, maximum, defaultValue, type, raw, 1];
+    rackModule.hoverParamUpdate = { moduleId: targetModule.id, id: target.id, value: scaled };
+  }
+
+  emitHoverParamUpdates() {
+    if (++this.hoverReportTick < 16) return;
+    this.hoverReportTick = 0;
+    for (const rackModule of this.modules.values()) {
+      const update = rackModule.hoverParamUpdate;
+      if (!update) continue;
+      const signature = `${update.moduleId}:${update.id}:${update.value}`;
+      if (signature === rackModule.hoverReported) continue;
+      rackModule.hoverReported = signature;
+      this.port.postMessage({ type: "hover-param", ...update });
+    }
+  }
+
   syncModuleParams(rackModule) {
     if (!rackModule.dirtyParams.size) return;
     for (const id of rackModule.dirtyParams) {
@@ -372,6 +518,10 @@ class RackGraphProcessor extends AudioWorkletProcessor {
 
   async loadGraph(data) {
     this.ready = false;
+    this.sharedBus.values.fill(0);
+    this.sharedBus.touches.fill(Number.NEGATIVE_INFINITY);
+    this.sharedBus.counts.fill(0);
+    this.sharedBus.epoch = 0;
     this.modules.clear();
     this.order = [];
     this.execution = [];
@@ -388,6 +538,8 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.messageOwners.clear();
     this.messageGroups.clear();
     this.messageMode = false;
+    this.bisetTrackerGroups.clear();
+    this.bisetTrackerOwners.clear();
     this.midiAutomations.clear();
     this.automationEvents = [];
     this.automationIndex = 0;
@@ -395,6 +547,9 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.automationEndFrame = 0;
     this.automationActive = false;
     this.plugLights.clear();
+    this.bisetBlankHistories.clear();
+    this.bisetBlankOwnerId = "";
+    this.bisetBlankCaptureFrame = 0;
     this.processErrorReported = false;
 
     const wasmArtifacts = new Map(
@@ -414,7 +569,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       });
 
     for (const item of data.modules || []) {
-      const wasiHolder = { runtime: null };
+      const wasiHolder = { runtime: null, sharedBus: this.sharedBus };
       const wasm = item.wasmId ? wasmArtifacts.get(item.wasmId) : item.wasm;
       if (!wasm) throw new Error(`Missing WASM artifact for ${item.key || item.id}`);
       const result = await WebAssembly.instantiate(wasm, rackWebWasiImports(wasiHolder));
@@ -476,8 +631,20 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         maxChannels = runtime.rack_web_max_channels(),
         expanderCapacity = runtime.rack_web_expander_capacity?.() || 0,
         captureCapacity = runtime.rack_web_capture_capacity?.() || 0;
+      const visualOutputPorts = new Set(
+          (item.visuals || []).flatMap((visual) =>
+            visual.kind === "native-signal"
+              ? (visual.sources || [])
+                  .filter((source) => source.kind === "output")
+                  .map((source) => source.id)
+              : [],
+          ),
+        ),
+        outputConnections = Array.from({ length: outputCount }, (_, port) =>
+          Boolean(item.outputConnections?.[port] || visualOutputPorts.has(port)),
+        );
       for (let port = 0; port < outputCount; port++)
-        runtime.rack_web_set_output_connected(port, item.outputConnections?.[port] ? 1 : 0);
+        runtime.rack_web_set_output_connected(port, outputConnections[port] ? 1 : 0);
       const params = item.params || [],
         paramCache = new Float64Array(params.length),
         connectedInputChannels = new Int8Array(Math.max(1, inputCount));
@@ -503,10 +670,16 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         snapParams: item.snapParams || [],
         expander: item.expander || null,
         hostControl: item.hostControl || null,
+        hoverBridge: item.hoverBridge || null,
+        hoverVisual: [0, -5, 5, 0, 0, 0, 0],
+        hoverInputValue: 0,
+        hoverParamUpdate: null,
+        hoverReported: "",
+        paramSpecs: item.paramSpecs || [],
         hostControlState: null,
         visuals: item.visuals || [],
         captureFormat: item.capture?.format === "midi" ? "midi" : "wav",
-        outputConnections: item.outputConnections || [],
+        outputConnections,
         expanderCapacity,
         messageCapacity: runtime.rack_web_message_capacity?.() || 0,
         captureCapacity,
@@ -541,11 +714,19 @@ class RackGraphProcessor extends AudioWorkletProcessor {
 
     this.configureExpanderChains();
     this.configureMessageExpanders();
+    this.configureBisetTrackerGroups();
 
     const executionIds = [...this.modules.keys()].filter(
-        (id) => !this.expanderOwners.has(id) && !this.messageOwners.has(id),
+        (id) =>
+          !this.expanderOwners.has(id) &&
+          !this.messageOwners.has(id) &&
+          !this.bisetTrackerOwners.has(id),
       ),
-      owner = (id) => this.expanderOwners.get(id) || this.messageOwners.get(id) || id,
+      owner = (id) =>
+        this.expanderOwners.get(id) ||
+        this.messageOwners.get(id) ||
+        this.bisetTrackerOwners.get(id) ||
+        id,
       adjacency = new Map(executionIds.map((id) => [id, []]));
     for (const cable of data.cables || []) {
       const source = this.modules.get(cable.fromModule),
@@ -603,6 +784,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     this.execution = this.order.map((id) => {
       const rackModule = this.modules.get(id);
       rackModule.messageGroup = this.messageGroups.get(id) || null;
+      rackModule.bisetTrackerGroup = this.bisetTrackerGroups.get(id) || null;
       return rackModule;
     });
     const feedbackSources = new Set();
@@ -666,6 +848,30 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       members.forEach(({ module }, index) =>
         base.runtime.rack_web_set_expander_type(index, module.expander.type),
       );
+    }
+  }
+
+  configureBisetTrackerGroups() {
+    const mains = [...this.modules.values()].filter(
+        (module) => module.key === "Biset/Biset-Tracker",
+      ),
+      auxiliaries = [...this.modules.values()].filter((module) =>
+        [
+          "Biset/Biset-Tracker-Synth",
+          "Biset/Biset-Tracker-Drum",
+          "Biset/Biset-Tracker-State",
+        ].includes(module.key),
+      );
+    if (!mains.length || !auxiliaries.length) return;
+    for (const main of mains) this.bisetTrackerGroups.set(main.id, [main]);
+    for (const auxiliary of auxiliaries) {
+      const main = mains.reduce((nearest, candidate) => {
+        const distance = Math.abs(candidate.x - auxiliary.x) + Math.abs(candidate.y - auxiliary.y),
+          nearestDistance = Math.abs(nearest.x - auxiliary.x) + Math.abs(nearest.y - auxiliary.y);
+        return distance < nearestDistance ? candidate : nearest;
+      }, mains[0]);
+      this.bisetTrackerOwners.set(auxiliary.id, main.id);
+      this.bisetTrackerGroups.get(main.id).push(auxiliary);
     }
   }
 
@@ -1347,6 +1553,154 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     });
   }
 
+  activeBisetBlank() {
+    for (const rackModule of this.modules.values())
+      if (
+        !rackModule.bypassed &&
+        (rackModule.visuals || []).some((visual) => visual.kind === "biset-blank-overlay")
+      )
+        return rackModule;
+    return null;
+  }
+
+  captureBisetBlankSignals(frames) {
+    const blank = this.activeBisetBlank();
+    if (!blank) {
+      this.bisetBlankOwnerId = "";
+      this.bisetBlankHistories.clear();
+      this.bisetBlankCaptureFrame = (this.bisetBlankCaptureFrame + frames) % 32;
+      return;
+    }
+    if (blank.id !== this.bisetBlankOwnerId) {
+      this.bisetBlankOwnerId = blank.id;
+      this.bisetBlankHistories.clear();
+    }
+    const endpoints = new Map();
+    for (const cable of this.cables) {
+      if (!cable.id) continue;
+      endpoints.set(`${cable.fromModule}:out:${cable.fromPort}`, {
+        moduleId: cable.fromModule,
+        port: cable.fromPort,
+      });
+    }
+    if (this.hoverControl?.type === "out")
+      endpoints.set(`${this.hoverControl.moduleId}:out:${this.hoverControl.id}`, {
+        moduleId: this.hoverControl.moduleId,
+        port: this.hoverControl.id,
+      });
+    for (const key of this.bisetBlankHistories.keys())
+      if (!endpoints.has(key)) this.bisetBlankHistories.delete(key);
+    for (const key of endpoints.keys())
+      if (!this.bisetBlankHistories.has(key))
+        this.bisetBlankHistories.set(key, {
+          values: new Float32Array(2048),
+          cursor: 0,
+        });
+
+    const polyMode = Math.max(0, Math.min(2, Math.round(blank.params[4] || 0)));
+    for (let frame = 0; frame < frames; frame++) {
+      if (this.bisetBlankCaptureFrame === 0)
+        for (const [key, endpoint] of endpoints) {
+          const source = this.modules.get(endpoint.moduleId),
+            history = this.bisetBlankHistories.get(key);
+          if (!source || !history || endpoint.port < 0 || endpoint.port >= source.outputCount)
+            continue;
+          const channels = Math.max(1, source.currentChannels[endpoint.port] || 0);
+          let voltage = 0;
+          if (polyMode === 0) voltage = source.outputs[endpoint.port * 128 + frame] || 0;
+          else {
+            for (let channel = 0; channel < channels; channel++)
+              voltage +=
+                source.outputs[(channel * source.outputCount + endpoint.port) * 128 + frame] || 0;
+            if (polyMode === 2) voltage /= channels;
+          }
+          history.values[history.cursor] = Number.isFinite(voltage) ? voltage : 0;
+          history.cursor = (history.cursor + 1) % history.values.length;
+        }
+      this.bisetBlankCaptureFrame = (this.bisetBlankCaptureFrame + 1) % 32;
+    }
+  }
+
+  bisetBlankCircularSamples(history, count, fast) {
+    if (!history) return [];
+    const result = [],
+      size = history.values.length,
+      stride = size / count;
+    let previous = 0;
+    for (let index = 0; index < count; index++) {
+      const firstOffset = Math.floor(index * stride),
+        lastOffset = Math.max(firstOffset + 1, Math.floor((index + 1) * stride));
+      let selected = history.values[(history.cursor - 1 - firstOffset + size) % size] || 0;
+      if (!fast) {
+        let largestDifference = Math.abs(previous - selected);
+        for (let offset = firstOffset + 1; offset < lastOffset; offset++) {
+          const candidate = history.values[(history.cursor - 1 - offset + size) % size] || 0,
+            difference = Math.abs(previous - candidate);
+          if (difference > largestDifference) {
+            largestDifference = difference;
+            selected = candidate;
+          }
+        }
+      }
+      result.push(selected);
+      previous = selected;
+    }
+    return result;
+  }
+
+  bisetBlankLinearSamples(history, count) {
+    if (!history) return [];
+    return Array.from(
+      { length: count },
+      (_, index) => history.values[Math.floor((index * history.values.length) / count)] || 0,
+    );
+  }
+
+  bisetBlankVisualData() {
+    const blank = this.activeBisetBlank(),
+      cableWaves = {},
+      blankScopes = {};
+    if (!blank) return { cableWaves, blankScopes };
+    const fast = (blank.params[5] || 0) >= 0.5;
+    for (const cable of this.cables) {
+      if (!cable.id) continue;
+      const history = this.bisetBlankHistories.get(`${cable.fromModule}:out:${cable.fromPort}`);
+      cableWaves[cable.id] = this.bisetBlankCircularSamples(history, 256, fast);
+    }
+
+    const hovered = this.hoverControl;
+    if (!hovered) return { cableWaves, blankScopes };
+    let scopeKey = "",
+      endpointKey = "";
+    for (let index = this.cables.length - 1; index >= 0; index--) {
+      const cable = this.cables[index];
+      if (
+        (hovered.type === "out" &&
+          cable.fromModule === hovered.moduleId &&
+          cable.fromPort === hovered.id) ||
+        (hovered.type === "in" &&
+          cable.toModule === hovered.moduleId &&
+          cable.toPort === hovered.id)
+      ) {
+        scopeKey = cable.id;
+        endpointKey = `${cable.fromModule}:out:${cable.fromPort}`;
+        break;
+      }
+    }
+    if (!scopeKey && hovered.type === "out") {
+      scopeKey = `port:${hovered.moduleId}:out:${hovered.id}`;
+      endpointKey = `${hovered.moduleId}:out:${hovered.id}`;
+    }
+    if (scopeKey) {
+      const history = this.bisetBlankHistories.get(endpointKey),
+        linear = (blank.params[10] || 0) >= 0.5;
+      blankScopes[scopeKey] = linear
+        ? this.bisetBlankLinearSamples(history, 256)
+        : this.bisetBlankCircularSamples(history, 256, false);
+    }
+    return { cableWaves, blankScopes };
+  }
+
   emitVisualSignals(frames) {
     if (++this.visualTick < this.visualInterval) return;
     this.visualTick = 0;
@@ -1408,11 +1762,16 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         this.plugLights.set(cable.id, rgb);
         plugs[cable.id] = { voltage, rms, channels, rgb };
       }
-    const scopes = {},
+    const { cableWaves, blankScopes } = this.bisetBlankVisualData(),
+      scopes = {},
       lights = {};
     for (const rackModule of this.modules.values())
       for (const visual of rackModule.visuals || []) {
         if (scopes[rackModule.id]) continue;
+        if (visual.kind === "alikins-hover-bridge") {
+          scopes[rackModule.id] = [[...rackModule.hoverVisual]];
+          continue;
+        }
         if (visual.kind === "racknes-screen") {
           rackModule.rackNesVisualTick = (rackModule.rackNesVisualTick || 0) + 1;
           if (rackModule.rackNesVisualTick % 4 !== 1) continue;
@@ -1433,7 +1792,19 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           visual.kind === "wavetable-display" ||
           visual.kind === "four-view-display" ||
           visual.kind === "phrase-seq-display" ||
+          visual.kind === "signal-function-set" ||
           visual.kind === "bouncy-balls" ||
+          visual.kind === "sort-step" ||
+          visual.kind === "jw-grid" ||
+          visual.kind === "jw-d1v1de" ||
+          visual.kind === "jw-thing-thing" ||
+          visual.kind === "jw-tree" ||
+          visual.kind === "biset-tree" ||
+          visual.kind === "biset-regex" ||
+          visual.kind === "biset-tracker" ||
+          visual.kind === "biset-tracker-output" ||
+          visual.kind === "biset-tracker-state" ||
+          visual.kind === "algomorph-display" ||
           visual.kind === "full-scope" ||
           visual.kind === "madzine-scope" ||
           visual.kind === "madzine-waveform" ||
@@ -1443,13 +1814,55 @@ class RackGraphProcessor extends AudioWorkletProcessor {
           visual.kind === "corrupter-display" ||
           visual.kind === "tapestry-display" ||
           visual.kind === "xy-pad" ||
+          visual.kind === "voxglitch-xy" ||
+          visual.kind === "crawl-display" ||
+          visual.kind === "cell-grid" ||
+          visual.kind === "sequencer-grid" ||
+          visual.kind === "phase-distortion-pad" ||
+          visual.kind === "walk2-display" ||
+          visual.kind === "vertical-position" ||
+          visual.kind === "mouse-seq-grid" ||
+          visual.kind === "cyclic-ca" ||
+          visual.kind === "db-matrix" ||
+          visual.kind === "flame-spectrogram" ||
+          visual.kind === "path-trackpad" ||
+          visual.kind === "digital-sequencer" ||
+          visual.kind === "hazumi-sequencer" ||
+          visual.kind === "stoch-sequencer" ||
+          visual.kind === "bidoo-sample" ||
+          visual.kind === "bidoo-limonade" ||
+          visual.kind === "fw-cell-bar-grid" ||
+          visual.kind === "filling-station" ||
+          visual.kind === "qar-rhythm" ||
+          visual.kind === "cellular-auto" ||
+          visual.kind === "saros-envelope" ||
+          visual.kind === "trg-sequencer" ||
+          visual.kind === "polar-cv-display" ||
+          visual.kind === "axioma-display" ||
+          visual.kind === "alias-display" ||
+          visual.kind === "chord-chemist-display" ||
+          visual.kind === "runshow-display" ||
+          visual.kind === "sd-lines-display" ||
+          visual.kind === "note-poly-display" ||
+          visual.kind === "lofi-tv-display" ||
+          visual.kind === "cosmic-clock-display" ||
+          visual.kind === "lua-display" ||
+          visual.kind === "catro-color-display" ||
+          visual.kind === "panel-color" ||
+          visual.kind === "value-label" ||
+          visual.kind === "computerscare-figure" ||
+          visual.kind === "dress-me-up" ||
+          visual.kind === "portaloof" ||
           visual.kind === "wavetable-editor" ||
           visual.kind === "speck-spectrum" ||
           visual.kind === "td-scope" ||
           visual.kind === "undertow-preview" ||
           visual.kind === "octobir-display" ||
           visual.kind === "rkd-dividers" ||
-          visual.kind === "klokspid-dmd"
+          visual.kind === "klokspid-dmd" ||
+          visual.kind === "kilpatrick-stereo-meter" ||
+          visual.kind === "kilpatrick-test-osc" ||
+          visual.kind === "kilpatrick-joystick"
         ) {
           const count = rackModule.runtime.rack_web_visual_count?.() || 0,
             pointer = count ? rackModule.runtime.rack_web_visual_buffer?.() || 0 : 0;
@@ -1503,16 +1916,22 @@ class RackGraphProcessor extends AudioWorkletProcessor {
         if (
           ![
             "scope",
+            "native-signal",
             "spectrum-analyzer",
             "cella-frequency-analyzer",
             "spectrogram",
             "cv-note",
             "bpm-display",
             "elementary-ca",
+            "param-xy-points",
           ].includes(visual.kind)
         )
           continue;
-        scopes[rackModule.id] = (visual.inputs || []).map((port) =>
+        const visualSources =
+          visual.kind === "native-signal"
+            ? visual.sources || []
+            : (visual.inputs || []).map((id) => ({ kind: "input", id }));
+        scopes[rackModule.id] = visualSources.map((source) =>
           Array.from(
             {
               length:
@@ -1525,7 +1944,14 @@ class RackGraphProcessor extends AudioWorkletProcessor {
                     : 128,
             },
             (_, index) => {
-              if (port >= rackModule.inputCount || !rackModule.inputChannels[port])
+              const output = source.kind === "output",
+                port = source.id,
+                channel = Math.max(0, Math.floor(source.channel || 0)),
+                portCount = output ? rackModule.outputCount : rackModule.inputCount,
+                channels = output
+                  ? rackModule.currentChannels[port] || 0
+                  : rackModule.inputChannels[port] || 0;
+              if (port >= portCount || channel >= channels)
                 return visual.kind === "elementary-ca" ? Number.NaN : 0;
               const frame =
                 visual.kind === "cv-note" ||
@@ -1535,7 +1961,11 @@ class RackGraphProcessor extends AudioWorkletProcessor {
                   : visual.kind === "scope"
                     ? Math.min(frames - 1, index * 2)
                     : Math.min(frames - 1, index);
-              return rackModule.inputs[port * 128 + frame] || 0;
+              return (
+                (output ? rackModule.outputs : rackModule.inputs)[
+                  (channel * portCount + port) * 128 + frame
+                ] || 0
+              );
             },
           ),
         );
@@ -1549,6 +1979,8 @@ class RackGraphProcessor extends AudioWorkletProcessor {
       type: "visual-signals",
       cables,
       plugs,
+      cableWaves,
+      blankScopes,
       scopes,
       lights,
       hostControl: this.rackViewHostControl(frames),
@@ -1699,16 +2131,59 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     }
   }
 
+  processBisetTrackerGroup(group, frames, frameOffset = 0) {
+    const requestedSynths = [];
+    for (const rackModule of group) {
+      this.refreshRuntimeViews(rackModule);
+      this.syncModuleParams(rackModule);
+      if (["Biset/Biset-Tracker-Synth", "Biset/Biset-Tracker-Drum"].includes(rackModule.key)) {
+        const synth = Math.max(0, Math.trunc(Number(rackModule.params[0]) || 0));
+        if (!requestedSynths.includes(synth) && requestedSynths.length < 6)
+          requestedSynths.push(synth);
+      }
+    }
+    for (let slot = 0; slot < 6; slot++)
+      this.sharedBus.values[16 + slot] = requestedSynths[slot] ?? -1;
+    for (let localFrame = 0; localFrame < frames; localFrame++) {
+      const frame = frameOffset + localFrame;
+      for (const rackModule of group) this.prepareInputFrame(rackModule, frame);
+      for (const rackModule of group) {
+        const runtime = rackModule.runtime;
+        if (rackModule.bypassed || rackModule.faulted) {
+          rackModule.currentChannels.fill(0);
+          for (let port = 0; port < rackModule.outputCount; port++)
+            for (let channel = 0; channel < rackModule.maxChannels; channel++)
+              rackModule.outputs[(channel * rackModule.outputCount + port) * 128 + frame] = 0;
+          continue;
+        }
+        if (!this.runModuleFrame(rackModule, frame)) {
+          rackModule.currentChannels.fill(0);
+          continue;
+        }
+        for (let port = 0; port < rackModule.outputCount; port++)
+          rackModule.currentChannels[port] = rackModule.outputConnections[port]
+            ? Math.min(rackModule.maxChannels, runtime.rack_web_get_output_channels(port))
+            : 0;
+      }
+    }
+  }
+
   processGraphFrame(frame) {
     for (const rackModule of this.execution) {
       const runtime = rackModule.runtime,
-        messageGroup = rackModule.messageGroup;
+        messageGroup = rackModule.messageGroup,
+        bisetTrackerGroup = rackModule.bisetTrackerGroup;
+      if (bisetTrackerGroup) {
+        this.processBisetTrackerGroup(bisetTrackerGroup, 1, frame);
+        continue;
+      }
       if (messageGroup) {
         this.processMessageGroup(messageGroup, 1, frame);
         continue;
       }
       this.refreshRuntimeViews(rackModule);
       this.prepareInputFrame(rackModule, frame);
+      this.applyHoverBridge(rackModule, frame);
       this.syncExpanderChainFrame(rackModule, frame);
       if (rackModule.bypassed || rackModule.faulted) {
         rackModule.currentChannels.fill(1);
@@ -1785,6 +2260,7 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     left?.fill(0);
     if (right && right !== left) right.fill(0);
     if (!this.ready) return true;
+    this.sharedBus.epoch++;
     const sampleAccurateAutomation = this.automationActive;
     this.stepMidiAutomations(frames);
     if (sampleAccurateAutomation) {
@@ -1823,13 +2299,19 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     } else {
       for (const rackModule of this.execution) {
         const runtime = rackModule.runtime,
-          messageGroup = rackModule.messageGroup;
+          messageGroup = rackModule.messageGroup,
+          bisetTrackerGroup = rackModule.bisetTrackerGroup;
+        if (bisetTrackerGroup) {
+          this.processBisetTrackerGroup(bisetTrackerGroup, frames);
+          continue;
+        }
         if (messageGroup) {
           this.processMessageGroup(messageGroup, frames);
           continue;
         }
         this.refreshRuntimeViews(rackModule);
         this.prepareInputs(rackModule, frames);
+        this.applyHoverBridge(rackModule, Math.max(0, frames - 1));
         this.syncExpanderChain(rackModule, frames);
         if (rackModule.bypassed || rackModule.faulted) {
           rackModule.outputs.fill(0);
@@ -1870,6 +2352,8 @@ class RackGraphProcessor extends AudioWorkletProcessor {
     if (!sampleAccurateAutomation)
       for (let frame = 0; frame < frames; frame++) this.mixDeviceFrame(left, right, frame);
     this.saveFeedbackHistory(frames);
+    this.captureBisetBlankSignals(frames);
+    this.emitHoverParamUpdates();
     this.drainCaptures();
     this.drainMidiOutputs();
     if (this.visualUpdatesEnabled) {

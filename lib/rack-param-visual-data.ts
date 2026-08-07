@@ -701,14 +701,26 @@ export function rackParamWidgetKind(param: ParamSpec) {
   if (/\bOpcToggleButton\b/.test(simple)) return "OpcToggleButton";
   if (/\bOpcDetectModeButton\b/.test(simple)) return "OpcDetectModeButton";
   if (/\bRecButton\b/.test(simple)) return "RecButton";
-  if (/AssignButton|VCVLightButton|VCVLightLatch|VCVLatch|VCVButton|LEDButton/.test(simple))
-    return "VCVButton";
+  if (/VCVLightLatch/.test(simple)) {
+    const color = simple.match(/(Green|Red|White|Yellow|Blue)Light/)?.[1] ?? "Green";
+    return `VCVLightLatch${color}`;
+  }
+  if (/\bVCVLatch\b/.test(simple)) return "VCVLatch";
+  if (/AssignButton|VCVLightButton|VCVButton|LEDButton/.test(simple)) return "VCVButton";
   if (/VCVLightBezel|\bLEDBezel\b/.test(simple)) return "VCVBezel";
   if (/VCVLightSlider|LEDLightSlider/.test(simple)) return "VCVSlider";
   if (/BefacoSlidePot/.test(simple)) return "BefacoSlidePot";
   if (/\bLFMSliderWhite\b/.test(simple)) return "LFMSliderWhite";
   if (/\bTextKnob\b/.test(simple)) return "TextKnob";
-  return WIDGET_ASSET_MATCHERS.find(([, pattern]) => pattern.test(simple))?.[0] ?? "";
+  if (/\bCKSSHoriz\b/.test(simple)) return "CKSSHoriz";
+  if (/\bLinkDotButton\b/.test(simple)) return "LinkDotButton";
+  const known = WIDGET_ASSET_MATCHERS.find(([, pattern]) => pattern.test(simple))?.[0];
+  if (known) return known;
+  // Official-source plugins commonly subclass SvgSlider/SvgSwitch with a
+  // module-specific name. Keep that identity so the browser can infer the
+  // interaction from the extracted widget geometry instead of silently
+  // degrading the control to an immovable screenshot pixel.
+  return simple.match(/\b([A-Za-z_][A-Za-z0-9_]*(?:Slider|Switch))\b/)?.[1] ?? "";
 }
 
 export function rackParamInteraction(param: ParamSpec): RackParamInteraction {
@@ -719,6 +731,11 @@ export function rackParamInteraction(param: ParamSpec): RackParamInteraction {
   if (kind in KNOBS || kind === "TextKnob") return "knob";
   if (kind === "VCVSlider" || kind === "BefacoSlidePot" || kind === "LFMSliderWhite")
     return "slider";
+  if (kind.endsWith("Slider")) return "slider";
+  if (kind === "VCVLatch" || kind === "CKSSHoriz" || kind.startsWith("VCVLightLatch"))
+    return "switch";
+  if (kind === "LinkDotButton") return "switch";
+  if (kind.endsWith("Switch")) return "switch";
   if (kind === "VCVBezel" || kind in SWITCHES) return "switch";
   if (kind === "OpcToggleButton" || kind === "OpcDetectModeButton") return "switch";
   return "unknown";
@@ -735,13 +752,24 @@ export function rackParamControlSize(param: ParamSpec) {
   if (kind === "VCVSlider") return { width: 19.8426, height: 76.5352 };
   if (kind === "BefacoSlidePot") return { width: 15.5913, height: 111 };
   if (kind === "LFMSliderWhite") return { width: 22, height: 76.5 };
+  if (kind === "WanderSlider" || kind === "VowelMorphSlider")
+    return { width: position?.width ?? 97.44, height: position?.height ?? 16.24 };
+  if (kind === "MuseSlider")
+    return { width: position?.width ?? 17, height: position?.height ?? 261 };
+  if (kind === "CKSSHoriz")
+    return { width: position?.width ?? 15, height: position?.height ?? 6.26 };
+  if (kind === "LinkDotButton")
+    return { width: position?.width ?? 12.402, height: position?.height ?? 12.402 };
+  const control = SWITCHES[kind];
+  if (control) return { width: control.size[0], height: control.size[1] };
+  if (kind.endsWith("Slider") || kind.endsWith("Switch"))
+    return { width: position?.width ?? 38, height: position?.height ?? 40 };
+  if (kind === "VCVLatch" || kind.startsWith("VCVLightLatch"))
+    return { width: position?.width ?? 18, height: position?.height ?? 18 };
   if (kind === "VCVBezel") return { width: 21.2603, height: 21.2599 };
   if (kind === "OpcToggleButton" || kind === "OpcDetectModeButton")
     return { width: position?.width ?? 38, height: position?.height ?? 20 };
-  const control = SWITCHES[kind];
-  return control
-    ? { width: control.size[0], height: control.size[1] }
-    : { width: position?.width ?? 38, height: position?.height ?? 40 };
+  return { width: position?.width ?? 38, height: position?.height ?? 40 };
 }
 
 export function rackParamSwitchFrames(param: ParamSpec) {
@@ -749,6 +777,21 @@ export function rackParamSwitchFrames(param: ParamSpec) {
   return kind === "VCVBezel"
     ? 2
     : (SWITCHES[kind]?.frames ?? Math.max(2, Math.round(param.max - param.min) + 1));
+}
+
+export function rackParamDragAxis(param: ParamSpec): "x" | "y" {
+  if (param.position?.control === "selector") return "x";
+  const kind = rackParamWidgetKind(param),
+    size = rackParamControlSize(param);
+  return kind.endsWith("Slider") && size.width > size.height ? "x" : "y";
+}
+
+export function rackParamDragDirection(param: ParamSpec) {
+  const kind = rackParamWidgetKind(param),
+    axis = rackParamDragAxis(param);
+  // Muse deliberately maps tap 0 to the top and tap 39 to the bottom.
+  if (kind === "MuseSlider") return 1;
+  return axis === "x" ? 1 : -1;
 }
 
 export function rackParamTextValue(param: ParamSpec, value: number) {

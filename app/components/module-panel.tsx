@@ -19,6 +19,7 @@ import { RackParamVisual } from "./rack-param-visual";
 import { rackLegacyUi } from "../../lib/rack-module-compatibility";
 import { RackLightVisual } from "./rack-light-visual";
 import type { MadzineManualTarget } from "./rack-madzine-manual";
+import type { LintBuddyTarget } from "./rack-lint-buddy";
 import { audioBoundaryLightValues } from "../../lib/rack-module-panel-data";
 import {
   audioFileFromUrl,
@@ -52,9 +53,13 @@ export function ModulePanel({
   onParam,
   onParamReset,
   onMomentary,
+  onVisualAction,
+  onRackRowAction,
+  onRackRowDragStart,
   onParamHover,
   onPortHover,
   manualHelpTarget,
+  lintBuddyTarget,
   onState,
   onData,
   onPolyphony,
@@ -75,8 +80,10 @@ export function ModulePanel({
   onReplaceDrop,
   inputSignalLevels,
   connectedInputIds,
+  inputCableColors,
   outputSignalLevels,
   scopeSamples,
+  relatedScopeSamples,
   lightValues,
   audioRunning,
 }: {
@@ -92,9 +99,13 @@ export function ModulePanel({
   onParam: (id: number, value: number) => void;
   onParamReset: (id: number, value: number) => void;
   onMomentary: (id: number, active: boolean) => void;
+  onVisualAction: (id: number, active: boolean) => void;
+  onRackRowAction: (action: 0 | 1 | 3 | 4) => void;
+  onRackRowDragStart: (event: PointerEvent<HTMLButtonElement>) => void;
   onParamHover: (id: number | null) => void;
   onPortHover: (direction: "in" | "out", id: number | null) => void;
   manualHelpTarget: MadzineManualTarget | null;
+  lintBuddyTarget?: LintBuddyTarget;
   onState: (updates: Array<[id: number, value: number]>) => void;
   onData: (data: Record<string, unknown>) => void;
   onPolyphony: (channels: number) => void;
@@ -115,8 +126,10 @@ export function ModulePanel({
   onReplaceDrop: (key: string) => void;
   inputSignalLevels: Record<number, number>;
   connectedInputIds: ReadonlySet<number>;
+  inputCableColors?: Record<number, string>;
   outputSignalLevels: Record<number, number>;
   scopeSamples?: number[][];
+  relatedScopeSamples?: number[][];
   lightValues?: number[];
   audioRunning: boolean;
 }) {
@@ -207,12 +220,17 @@ export function ModulePanel({
             inputSignalLevels,
           )
         : []);
-  const hasDeclaredPanelArtwork = Boolean(module.screenshotUrl),
+  const hideDynamicPanel =
+      definition?.key === "computerscare/computerscare-blank" &&
+      (module.state?.[
+        definition.stateKeys?.findIndex((state) => state.key === "hidePanel") ?? -1
+      ] ?? 0) > 0.5,
+    hasDeclaredPanelArtwork = Boolean(module.screenshotUrl),
     panelArtworkFailed = failedPanelArtworkUrl === module.screenshotUrl,
-    expectsPanelArtwork = !compatibilityUi.hidePanelArtwork,
+    expectsPanelArtwork = !compatibilityUi.hidePanelArtwork && !hideDynamicPanel,
     panelArtworkUnavailable =
       expectsPanelArtwork && (!hasDeclaredPanelArtwork || panelArtworkFailed),
-    hasPanelArtwork = hasDeclaredPanelArtwork && !panelArtworkFailed;
+    hasPanelArtwork = hasDeclaredPanelArtwork && !panelArtworkFailed && !hideDynamicPanel;
   const panelStyle = {
     left: 0,
     top: 0,
@@ -426,13 +444,16 @@ export function ModulePanel({
             module={module}
             definition={definition}
             scopeSamples={scopeSamples}
+            relatedScopeSamples={relatedScopeSamples}
             renderedLightValues={renderedLightValues}
             rackData={rackData}
             audioData={audioData}
             audioRunning={audioRunning}
+            inputCableColors={inputCableColors}
             selectedAsset={selectedAsset}
             paramNotice={paramNotice}
             manualHelpTarget={manualHelpTarget}
+            lintBuddyTarget={lintBuddyTarget}
             onLoadAsset={() => assetInputRef.current?.click()}
             onLoadAssetSlot={(slot) => {
               pendingAssetSlotRef.current = slot;
@@ -441,6 +462,9 @@ export function ModulePanel({
             onParam={updateParam}
             onParamReset={onParamReset}
             onMomentary={onMomentary}
+            onVisualAction={onVisualAction}
+            onRackRowAction={onRackRowAction}
+            onRackRowDragStart={onRackRowDragStart}
             onState={onState}
             onData={onData}
           />
@@ -493,6 +517,7 @@ export function ModulePanel({
               onParam={updateParam}
               onParamReset={onParamReset}
               onMomentary={onMomentary}
+              onVisualAction={onVisualAction}
               onParamHover={onParamHover}
               onState={onState}
               onData={onData}
@@ -550,14 +575,16 @@ export function ModulePanel({
                   type="file"
                   accept={
                     definition.runtime.asset.type === "image"
-                      ? "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
+                      ? "image/png,image/jpeg,image/webp,image/gif,image/bmp,.png,.jpg,.jpeg,.webp,.gif,.bmp"
                       : definition.runtime.asset.type === "binary"
                         ? ".nes,application/octet-stream"
                         : definition.runtime.asset.type === "midi"
                           ? "audio/midi,audio/x-midi,.mid,.midi"
                           : definition.runtime.asset.type === "script"
                             ? "text/plain,text/x-lua,.lua,.luna,.lunaire,.anair"
-                            : "audio/*,.wav,.aif,.aiff,.mp3,.m4a,.ogg,.flac"
+                            : definition.runtime.asset.type === "text"
+                              ? "text/plain,.txt,.csv,.spn,.json"
+                              : "audio/*,.wav,.aif,.aiff,.mp3,.m4a,.ogg,.flac"
                   }
                   onChange={(event) => {
                     const file = event.target.files?.[0];
@@ -570,7 +597,7 @@ export function ModulePanel({
                 <b>
                   {selectedAsset
                     ? `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${selectedAsset.name}`
-                    : `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${definition.runtime.asset.type === "image" ? t("asset.loadImage") : definition.runtime.asset.type === "binary" ? t("asset.loadNesRom") : definition.runtime.asset.type === "midi" ? t("asset.loadMidiFile") : definition.runtime.asset.type === "script" ? t("asset.loadLuaScript") : t("asset.loadAudioSample")}`}
+                    : `${assetSlots > 1 ? t("asset.channelPrefix", { channel: assetSlot + 1 }) : ""}${definition.runtime.asset.type === "image" ? t("asset.loadImage") : definition.runtime.asset.type === "binary" ? t("asset.loadNesRom") : definition.runtime.asset.type === "midi" ? t("asset.loadMidiFile") : definition.runtime.asset.type === "script" ? t("asset.loadLuaScript") : definition.runtime.asset.type === "text" ? t("asset.loadTextFile") : t("asset.loadAudioSample")}`}
                 </b>
                 <small>
                   {selectedAsset
@@ -581,7 +608,8 @@ export function ModulePanel({
                         })
                       : definition.runtime.asset.type === "binary" ||
                           definition.runtime.asset.type === "midi" ||
-                          definition.runtime.asset.type === "script"
+                          definition.runtime.asset.type === "script" ||
+                          definition.runtime.asset.type === "text"
                         ? t("asset.bytesStored", { count: selectedAsset.frames })
                         : definition.runtime.asset.maxSeconds > 0
                           ? t("asset.durationDetails", {
@@ -604,13 +632,15 @@ export function ModulePanel({
                           ? t("asset.midiLimit", { count: definition.runtime.asset.maxSamples })
                           : definition.runtime.asset.type === "script"
                             ? t("asset.luaLimit", { count: definition.runtime.asset.maxSamples })
-                            : definition.runtime.asset.maxSeconds > 0
-                              ? t("asset.audioDurationLimit", {
-                                  seconds: definition.runtime.asset.maxSeconds,
-                                })
-                              : t("asset.audioSampleLimit", {
-                                  count: definition.runtime.asset.maxSamples,
-                                })}
+                            : definition.runtime.asset.type === "text"
+                              ? t("asset.textLimit", { count: definition.runtime.asset.maxSamples })
+                              : definition.runtime.asset.maxSeconds > 0
+                                ? t("asset.audioDurationLimit", {
+                                    seconds: definition.runtime.asset.maxSeconds,
+                                  })
+                                : t("asset.audioSampleLimit", {
+                                    count: definition.runtime.asset.maxSamples,
+                                  })}
                 </small>
               </label>
             </>

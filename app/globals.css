@@ -256,6 +256,28 @@ input {
   z-index: 30;
   overflow: hidden;
 }
+.pw-biset-blank-cables,
+.pw-biset-blank-scope {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pw-biset-blank-cables {
+  z-index: 31;
+}
+.pw-biset-blank-scope {
+  z-index: 41;
+}
+.pw-rack-biset-blank-panel {
+  position: absolute;
+  z-index: 0;
+  display: block;
+  object-fit: fill;
+  pointer-events: none;
+}
 .pw-cables path {
   fill: none;
   stroke-width: 5;
@@ -1363,6 +1385,18 @@ input {
   gap: 6px;
   min-height: 22px;
 }
+.pw-module-menu-bitmask {
+  display: grid;
+  gap: 6px;
+}
+.pw-module-menu-bitmask > span {
+  color: #c9cbc8;
+}
+.pw-module-menu-bitmask > div {
+  display: grid;
+  gap: 4px;
+  padding-left: 8px;
+}
 .pw-module-menu-params label > span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1907,6 +1941,7 @@ input {
     fill-opacity 0.04s linear;
 }
 .pw-rack-scope,
+.pw-rack-native-signal,
 .pw-rack-multi-meter,
 .pw-rack-spectrum {
   position: absolute;
@@ -3398,6 +3433,210 @@ input {
 }
 .pw-rack.direct-interaction .pw-plug-light {
   transition: none;
+}
+
+.pw-portaloof-source {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pw-native-interaction-region {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: transparent;
+  box-shadow: none;
+  opacity: 0;
+  pointer-events: auto;
+}
+
+.pw-native-interaction-region:focus-visible {
+  opacity: 1;
+  outline: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.pw-native-interaction-region--display {
+  display: grid;
+  place-items: center;
+  opacity: 1;
+  border-style: solid;
+  border-width: 1px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pw-native-interaction-indicator {
+  display: block;
+  flex: 0 0 auto;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.pw-storage-scope {
+  position: absolute;
+  z-index: 10;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.pw-storage-scope > svg {
+  display: block;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.pw-storage-scope-info {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 12px;
+  color: #29b2ef;
+  pointer-events: none;
+  font:
+    12px/12px RackShareTechMono,
+    ui-monospace,
+    monospace;
+  white-space: nowrap;
+}
+
+.pw-storage-scope-info .right {
+  text-align: right;
+}
+
+.pw-storage-scope-tooltip {
+  position: absolute;
+  z-index: 20;
+  padding: 4px 6px;
+  border: 1px solid #555;
+  background: #171819f5;
+  color: #eee;
+  pointer-events: none;
+  font: 10px/1.25 var(--mono);
+  white-space: pre;
+}
+
+.pw-rack-row-tool {
+  position: absolute;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.pw-rack-row-tool button {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pw-rack-row-tool button:focus-visible,
+.pw-rack-row-tool button.pressed {
+  opacity: 1;
+  outline: 1px solid color-mix(in srgb, var(--accent) 75%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.pw-native-interaction-menu {
+  z-index: 1000;
+  display: grid;
+  min-width: 148px;
+  max-height: min(420px, calc(100vh - 24px));
+  overflow: auto;
+  border: 1px solid #555;
+  background: #171819f7;
+  color: #ddd;
+  box-shadow: 0 12px 30px #000c;
+  pointer-events: auto;
+  font: 9px var(--mono);
+}
+
+.pw-native-interaction-menu header {
+  padding: 5px 8px;
+  border-bottom: 1px solid #444;
+  color: #999;
+}
+
+.pw-native-interaction-menu button {
+  min-height: 23px;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  border: 0;
+  border-bottom: 1px solid #303234;
+  padding: 0 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.pw-native-interaction-menu button:hover,
+.pw-native-interaction-menu button.selected {
+  background: #ffc800;
+  color: #111;
+}
+
+.pw-spellbook-editor-input::selection {
+  background: #270134;
+}
+
+.pw-specific-value-field {
+  position: absolute;
+  z-index: 12;
+  box-sizing: border-box;
+  pointer-events: auto;
+  border: 1px solid #252525;
+  border-radius: 5px;
+  outline: none;
+  padding: 1px 5px 0;
+  color: #161616;
+  background: #919191;
+  font:
+    15px/20px system-ui,
+    sans-serif;
+}
+
+.pw-specific-value-field:focus {
+  border-color: #161616;
+  box-shadow: inset 0 0 0 1px #161616;
+}
+.pw-portaloof-hint {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  padding: 4px 7px;
+  border-radius: 2px;
+  color: #fffbf2;
+  background: #121016e8;
+  font: 10px var(--mono);
+  pointer-events: none;
+}
+.pw-portaloof-hint.active {
+  color: #ff7b2c;
+  box-shadow: inset 3px 0 #ff7b2c;
+}
+.pw-portaloof-source-button {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 6;
+  min-width: 38px;
+  padding: 2px 4px;
+  border: 1px solid #ff7b2c;
+  color: #fffbf2;
+  background: #121016e8;
+  font: 8px var(--mono);
 }
 
 /* Responsive application chrome -------------------------------------------------

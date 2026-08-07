@@ -361,41 +361,140 @@ export function useRackStrokeControls({
     return matched;
   });
 
-  const dispatchHoveredHotkey = useStableEvent((event: KeyboardEvent) => {
-    if (event.repeat) return false;
+  const dispatchHoveredHotkey = useStableEvent((event: KeyboardEvent, active: boolean) => {
     const moduleId = hoveredModuleRef.current;
     const hotkeyModule = moduleId
       ? patch.modules.find((module) => module.id === moduleId)
       : undefined;
     const definition = hotkeyModule ? getWebPlugin(hotkeyModule.key) : undefined;
     const contract = definition?.runtime?.hotkey;
-    if (!hotkeyModule || !contract) return false;
+    const hoverActions = definition?.runtime?.hoverActions ?? [];
+    if (!hotkeyModule || (!contract && !hoverActions.length)) return false;
 
     const keyCode = rackKeyFromKeyboard(event);
     const modifiers = rackModifiersFromKeyboard(event);
     if (keyCode < 0) return false;
-    const recording = (hotkeyModule.params[contract.recordParam] ?? 0) >= 0.5;
-    const storedKey =
-      hotkeyModule.state?.[contract.keyState] ??
-      definition.stateKeys?.[contract.keyState]?.default ??
-      -1;
-    const storedModifiers =
-      hotkeyModule.state?.[contract.modsState] ??
-      definition.stateKeys?.[contract.modsState]?.default ??
-      0;
-    if (!recording && (keyCode !== storedKey || modifiers !== storedModifiers)) return false;
-
-    const action = contract.actionBase | ((modifiers & 0xf) << 16) | (keyCode & 0xffff);
-    audioRef.current?.triggerAction(hotkeyModule.id, action, true);
-    if (recording) {
-      patchActions.setModuleState(hotkeyModule.id, [
-        [contract.keyState, keyCode],
-        [contract.modsState, modifiers],
-      ]);
-      patchActions.setModuleParam(hotkeyModule.id, contract.recordParam, 0);
-      onStatus(message("status.stroke.hotkeyRecorded", { key: event.key }));
+    if (contract && active && !event.repeat) {
+      const recording = (hotkeyModule.params[contract.recordParam] ?? 0) >= 0.5;
+      const storedKey =
+        hotkeyModule.state?.[contract.keyState] ??
+        definition.stateKeys?.[contract.keyState]?.default ??
+        -1;
+      const storedModifiers =
+        hotkeyModule.state?.[contract.modsState] ??
+        definition.stateKeys?.[contract.modsState]?.default ??
+        0;
+      if (recording || (keyCode === storedKey && modifiers === storedModifiers)) {
+        const action = contract.actionBase | ((modifiers & 0xf) << 16) | (keyCode & 0xffff);
+        audioRef.current?.triggerAction(hotkeyModule.id, action, true);
+        if (recording) {
+          patchActions.setModuleState(hotkeyModule.id, [
+            [contract.keyState, keyCode],
+            [contract.modsState, modifiers],
+          ]);
+          patchActions.setModuleParam(hotkeyModule.id, contract.recordParam, 0);
+          onStatus(message("status.stroke.hotkeyRecorded", { key: event.key }));
+        }
+        return true;
+      }
     }
-    return true;
+
+    const key = event.key.toLowerCase();
+    for (const binding of hoverActions) {
+      if (binding.key.toLowerCase() !== key || (binding.modifiers ?? 0) !== modifiers) continue;
+      if (event.repeat && !binding.repeat) continue;
+      const phase = binding.phase ?? "press";
+      if ((phase === "press" && !active) || (phase === "release" && active)) continue;
+      if (binding.param !== undefined) {
+        const current = hotkeyModule.params[binding.param] ?? 0;
+        const operation = binding.operation ?? "toggle";
+        const value =
+          operation === "momentary"
+            ? active
+              ? (binding.value ?? 1)
+              : (binding.alternateValue ?? 0)
+            : operation === "set"
+              ? (binding.value ?? 0)
+              : current === (binding.value ?? 1)
+                ? (binding.alternateValue ?? 0)
+                : (binding.value ?? 1);
+        patchActions.setModuleParam(hotkeyModule.id, binding.param, value);
+      }
+      if (binding.action !== undefined) {
+        if (phase === "both")
+          audioRef.current?.triggerAction(hotkeyModule.id, binding.action, active);
+        else {
+          audioRef.current?.triggerAction(hotkeyModule.id, binding.action, true);
+          audioRef.current?.triggerAction(hotkeyModule.id, binding.action, false);
+        }
+      }
+      if (binding.hostAction === "clock-autopatch") {
+        const clockModules = patch.modules.filter((module) =>
+          ["ImpromptuModular/Clocked", "ImpromptuModular/Clocked-Clkd"].includes(module.key),
+        );
+        const master = clockModules.find((module) => {
+          const masterIndex = getWebPlugin(module.key)?.stateKeys?.findIndex(
+            (state) => state.key === "clockMaster",
+          );
+          return (
+            masterIndex !== undefined && masterIndex >= 0 && Boolean(module.state?.[masterIndex])
+          );
+        });
+        if (master && master.id !== hotkeyModule.id) {
+          patchActions.commitPatch((currentPatch) => {
+            const targetDefinition = getWebPlugin(hotkeyModule.key),
+              masterDefinition = getWebPlugin(master.key),
+              bpmDetectionIndex = targetDefinition?.stateKeys?.findIndex(
+                (state) => state.key === "bpmDetectionMode",
+              ),
+              targetResetHighIndex = targetDefinition?.stateKeys?.findIndex(
+                (state) => state.key === "resetClockOutputsHigh",
+              ),
+              masterResetHighIndex = masterDefinition?.stateKeys?.findIndex(
+                (state) => state.key === "resetClockOutputsHigh",
+              ),
+              additions = [4, 5, 6]
+                .filter(
+                  (port) =>
+                    !currentPatch.cables.some(
+                      (cable) => cable.toModule === hotkeyModule.id && cable.toPort === port,
+                    ),
+                )
+                .map((port, index) => ({
+                  id: `cable-${crypto.randomUUID()}`,
+                  fromModule: master.id,
+                  fromPort: port,
+                  toModule: hotkeyModule.id,
+                  toPort: port,
+                  color:
+                    editor.cableColors[
+                      (currentPatch.cables.length + index) % editor.cableColors.length
+                    ] ?? "#f26a4f",
+                }));
+            return {
+              ...currentPatch,
+              modules: currentPatch.modules.map((module) => {
+                if (module.id !== hotkeyModule.id) return module;
+                const state = [...(module.state ?? [])];
+                if (bpmDetectionIndex !== undefined && bpmDetectionIndex >= 0)
+                  state[bpmDetectionIndex] = 0;
+                if (
+                  targetResetHighIndex !== undefined &&
+                  targetResetHighIndex >= 0 &&
+                  masterResetHighIndex !== undefined &&
+                  masterResetHighIndex >= 0
+                )
+                  state[targetResetHighIndex] = master.state?.[masterResetHighIndex] ?? 0;
+                return { ...module, state };
+              }),
+              cables: [...currentPatch.cables, ...additions],
+            };
+          });
+        }
+      }
+      return true;
+    }
+    return false;
   });
 
   const handleKeyDown = useStableEvent((event: KeyboardEvent) => {
@@ -412,7 +511,7 @@ export function useRackStrokeControls({
     }
     if (isEditableKeyboardTarget(event.target)) return;
 
-    if (dispatchHoveredHotkey(event)) {
+    if (dispatchHoveredHotkey(event, true)) {
       event.preventDefault();
       return;
     }
@@ -509,6 +608,10 @@ export function useRackStrokeControls({
 
   const handleKeyUp = useStableEvent((event: KeyboardEvent) => {
     if (isEditableKeyboardTarget(event.target)) return;
+    if (dispatchHoveredHotkey(event, false)) {
+      event.preventDefault();
+      return;
+    }
     dispatchStroke(event, false);
   });
 

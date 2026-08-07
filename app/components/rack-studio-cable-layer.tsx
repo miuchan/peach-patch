@@ -10,6 +10,7 @@ export type RackStudioCableLayerProps = {
   viewport: RackViewport;
   viewportSize: { width: number; height: number };
   visible: boolean;
+  replacementActive?: boolean;
   opacity: number;
   selectedIds: ReadonlySet<string>;
   signalLevels: Readonly<Record<string, number>>;
@@ -36,6 +37,7 @@ function RackStudioCableLayerView({
   viewport,
   viewportSize,
   visible,
+  replacementActive = false,
   opacity,
   selectedIds,
   signalLevels,
@@ -126,6 +128,7 @@ function RackStudioCableLayerView({
         preserveAspectRatio="none"
         style={{
           opacity,
+          ...(replacementActive ? { opacity: 0 } : {}),
           display: visible ? undefined : "none",
         }}
       >
@@ -147,6 +150,7 @@ function cableLayerPropsEqual(
     previous.viewportSize.width === next.viewportSize.width &&
     previous.viewportSize.height === next.viewportSize.height &&
     previous.visible === next.visible &&
+    previous.replacementActive === next.replacementActive &&
     previous.opacity === next.opacity &&
     previous.selectedIds === next.selectedIds &&
     (next.visualUpdatesPaused ||

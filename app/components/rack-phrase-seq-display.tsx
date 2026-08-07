@@ -4,6 +4,7 @@ export function RackPhraseSeqDisplay({
   values,
   digits = 3,
   label,
+  fontSize,
   x,
   y,
   width,
@@ -13,6 +14,7 @@ export function RackPhraseSeqDisplay({
   values?: number[];
   digits?: number;
   label?: string;
+  fontSize?: number;
   x: number;
   y: number;
   width: number;
@@ -29,7 +31,7 @@ export function RackPhraseSeqDisplay({
   return (
     <div
       className="pw-phrase-seq-display"
-      style={{ left: x * scaleX, top: y, width: width * scaleX, height }}
+      style={{ left: x * scaleX, top: y, width: width * scaleX, height, fontSize }}
       aria-label={t("display.labeledValue", {
         label: label ?? t("display.phraseSequence"),
         value: text.trim() || text,

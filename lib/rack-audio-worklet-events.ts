@@ -53,7 +53,12 @@ export type RackAudioWorkletEvent =
   | { type: "error"; message: string }
   | { type: "state-json"; moduleId: string; state: Record<string, unknown> }
   | { type: "midi-output"; moduleId: string; records: Uint8Array; packets: Uint8Array }
-  | { type: "midi-param" | "automation-param"; moduleId: string; id: number; value: number }
+  | {
+      type: "midi-param" | "automation-param" | "hover-param";
+      moduleId: string;
+      id: number;
+      value: number;
+    }
   | { type: "automation-complete" }
   | {
       type: "port-peaks";
@@ -66,6 +71,8 @@ export type RackAudioWorkletEvent =
   | {
       type: "visual-signals";
       cables: Record<string, number>;
+      cableWaves: Record<string, number[]>;
+      blankScopes: Record<string, number[]>;
       scopes: Record<string, number[][]>;
       plugs: Record<string, RackAudioPlugSignal>;
       lights: Record<string, number[]>;
@@ -125,6 +132,11 @@ function numberMatrix(value: unknown): number[][] {
 function numberRecord(value: unknown): Record<string, number> {
   if (!isRecord(value)) return {};
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, finiteNumber(item)]));
+}
+
+function numberArrayRecord(value: unknown): Record<string, number[]> {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, numberArray(item)]));
 }
 
 function signalRecord(value: unknown): Record<string, RackAudioPlugSignal> {
@@ -249,6 +261,7 @@ function parseKnownEvent(data: Record<string, unknown>): RackAudioWorkletEvent |
       };
     case "midi-param":
     case "automation-param":
+    case "hover-param":
       return {
         type: data.type,
         moduleId: String(data.moduleId || ""),
@@ -271,6 +284,8 @@ function parseKnownEvent(data: Record<string, unknown>): RackAudioWorkletEvent |
       return {
         type: "visual-signals",
         cables: numberRecord(data.cables),
+        cableWaves: numberArrayRecord(data.cableWaves),
+        blankScopes: numberArrayRecord(data.blankScopes),
         scopes: scopeRecord(data.scopes),
         plugs: signalRecord(data.plugs),
         lights: lightRecord(data.lights),

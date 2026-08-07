@@ -91,7 +91,7 @@ npm run build
 npm run start
 ```
 
-The application currently loads the `main` branch index from [miuchan/peach-patch-registry](https://github.com/miuchan/peach-patch-registry). A mirror or fork can pass a different HTTPS index URL through the registry client integration.
+The application currently loads the `main` branch index from [miuchan/peach-patch-registry](https://github.com/miuchan/peach-patch-registry). Set `VITE_PEACH_REGISTRY_URL` to use a different HTTPS index for a mirror, fork, or local integration test; the same schema and artifact integrity checks still apply.
 
 ## Development
 

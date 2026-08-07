@@ -9,10 +9,12 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent,
+  type WheelEvent,
 } from "react";
 import { Maximize2 } from "lucide-react";
 import type { MadzineManualTarget } from "./components/rack-madzine-manual";
 import { RackStudioCableLayer } from "./components/rack-studio-cable-layer";
+import { RackBisetBlankOverlay } from "./components/rack-biset-blank-overlay";
 import {
   RackStudioCablePreviewLayer,
   type RackCablePreviewLayerHandle,
@@ -24,6 +26,7 @@ import { usePatchHistory } from "../lib/use-patch-history";
 import {
   type RackAudioEngine,
   type RackHostControl,
+  type RackHoveredControl,
   type RackPlugSignal,
 } from "../lib/rack-audio-engine";
 import { dataFromState } from "../lib/patch-state";
@@ -73,6 +76,12 @@ import {
   updateModuleState,
 } from "../lib/patch-operations";
 import { type WebPluginModule } from "../lib/web-plugin-registry";
+import {
+  globalPointerMatches,
+  globalPointerMiddleEnabled,
+  rackModifierMask,
+} from "../lib/rack-global-pointer";
+import { rackRowToolAction, rackRowToolDragIds } from "../lib/rack-row-tool";
 import {
   discoverableRegistryModules,
   getWebPlugin,
@@ -132,6 +141,8 @@ type CableDraft = {
 };
 type RackVisualSignals = {
   cables: Record<string, number>;
+  cableWaves: Record<string, number[]>;
+  blankScopes: Record<string, number[]>;
   plugs: Record<string, RackPlugSignal>;
   scopes: Record<string, number[][]>;
   lights: Record<string, number[]>;
@@ -282,10 +293,14 @@ export function RackWebStudio() {
   } | null>(null);
   const [visualSignals, setVisualSignals] = useState<RackVisualSignals>({
     cables: {},
+    cableWaves: {},
+    blankScopes: {},
     plugs: {},
     scopes: {},
     lights: {},
   });
+  const [hoveredRackPort, setHoveredRackPort] = useState<PortClick | null>(null),
+    [rackModifiers, setRackModifiers] = useState(0);
   const [cablesVisible, setCablesVisible] = useState(true),
     [cableOpacity, setCableOpacity] = useState(1),
     [cableTension, setCableTension] = useState(0.5),
@@ -348,7 +363,139 @@ export function RackWebStudio() {
     pinchRef = useRef<RackPinchState | null>(null);
   const hoveredModuleRef = useRef<string | null>(null),
     hoveredParamRef = useRef<{ moduleId: string; paramId: number } | null>(null),
+    hoveredControlRef = useRef<Omit<RackHoveredControl, "modifiers"> | null>(null),
+    hoverModifiersRef = useRef(0),
+    globalPointerScrollTimesRef = useRef(new Map<string, number>()),
+    globalPointerMiddleModulesRef = useRef(new Set<string>()),
     midiLearnTargetRef = useRef<{ moduleId: string; paramId: number } | null>(null);
+
+  const syncHoveredControl = useStableEvent(() => {
+    const target = hoveredControlRef.current;
+    audioRef.current?.setHoveredControl(
+      target ? { ...target, modifiers: hoverModifiersRef.current } : null,
+    );
+  });
+  const setHoveredControl = useStableEvent(
+    (target: Omit<RackHoveredControl, "modifiers"> | null) => {
+      hoveredControlRef.current = target;
+      syncHoveredControl();
+    },
+  );
+  useEffect(() => {
+    const update = (event: KeyboardEvent) => {
+      const modifiers =
+        (event.shiftKey ? 1 : 0) |
+        (event.ctrlKey ? 2 : 0) |
+        (event.altKey ? 4 : 0) |
+        (event.metaKey ? 8 : 0);
+      if (modifiers === hoverModifiersRef.current) return;
+      hoverModifiersRef.current = modifiers;
+      setRackModifiers(modifiers);
+      syncHoveredControl();
+    };
+    const clear = () => {
+      if (!hoverModifiersRef.current) return;
+      hoverModifiersRef.current = 0;
+      setRackModifiers(0);
+      syncHoveredControl();
+    };
+    window.addEventListener("keydown", update);
+    window.addEventListener("keyup", update);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", update);
+      window.removeEventListener("keyup", update);
+      window.removeEventListener("blur", clear);
+    };
+  }, [syncHoveredControl]);
+
+  useEffect(() => {
+    const activeIds = new Set<string>(),
+      now = performance.now();
+    for (const module of patch.modules) {
+      const contract = getWebPlugin(module.key)?.runtime?.globalPointer;
+      if (!contract?.wheel) continue;
+      activeIds.add(module.id);
+      if (!globalPointerScrollTimesRef.current.has(module.id))
+        globalPointerScrollTimesRef.current.set(module.id, now);
+    }
+    for (const moduleId of globalPointerScrollTimesRef.current.keys())
+      if (!activeIds.has(moduleId)) globalPointerScrollTimesRef.current.delete(moduleId);
+  }, [patch.modules, registryState]);
+
+  const handleGlobalPointerWheel = useStableEvent((event: WheelEvent<HTMLElement>) => {
+    const modifiers = rackModifierMask(event),
+      now = performance.now();
+    let consumed = false;
+    for (const module of patch.modules) {
+      const definition = getWebPlugin(module.key),
+        contract = definition?.runtime?.globalPointer;
+      if (!definition || !contract?.wheel) continue;
+      const last = globalPointerScrollTimesRef.current.get(module.id) ?? now;
+      if (
+        !globalPointerMatches(module, definition, contract, modifiers, hoveredControlRef.current) ||
+        now - last <= contract.wheel.lockMs
+      ) {
+        globalPointerScrollTimesRef.current.set(module.id, now);
+        continue;
+      }
+      const action =
+        event.deltaY > 0
+          ? contract.wheel.downAction
+          : event.deltaY < 0
+            ? contract.wheel.upAction
+            : undefined;
+      if (action !== undefined) {
+        audioRef.current?.triggerAction(module.id, action, true);
+        audioRef.current?.triggerAction(module.id, action, false);
+      }
+      consumed = true;
+    }
+    if (!consumed) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const handleGlobalPointerDown = useStableEvent((event: PointerEvent<HTMLElement>) => {
+    if (event.button !== 1) return;
+    const modifiers = rackModifierMask(event);
+    let consumed = false;
+    for (const module of patch.modules) {
+      const definition = getWebPlugin(module.key),
+        contract = definition?.runtime?.globalPointer;
+      if (
+        !definition ||
+        !contract?.middle ||
+        !globalPointerMiddleEnabled(module, definition, contract) ||
+        !globalPointerMatches(module, definition, contract, modifiers, hoveredControlRef.current)
+      )
+        continue;
+      audioRef.current?.triggerAction(module.id, contract.middle.action, true);
+      globalPointerMiddleModulesRef.current.add(module.id);
+      consumed = true;
+    }
+    if (!consumed) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const handleGlobalPointerRelease = useStableEvent((event: PointerEvent<HTMLElement>) => {
+    if (event.button !== 1 && event.type !== "pointercancel") return;
+    const active = globalPointerMiddleModulesRef.current;
+    if (!active.size) return;
+    for (const moduleId of active) {
+      const module = patch.modules.find((item) => item.id === moduleId),
+        action = module
+          ? getWebPlugin(module.key)?.runtime?.globalPointer?.middle?.action
+          : undefined;
+      if (action === undefined) continue;
+      audioRef.current?.triggerAction(moduleId, action, false);
+      window.setTimeout(() => audioRef.current?.snapshotState(moduleId), 20);
+    }
+    active.clear();
+    event.preventDefault();
+    event.stopPropagation();
+  });
 
   const resolveModule = useCallback(async (url: string) => {
     const response = await fetch(`/api/library/resolve?url=${encodeURIComponent(url)}`),
@@ -386,7 +533,17 @@ export function RackWebStudio() {
 
   const setModuleData = useCallback(
     (moduleId: string, data: Record<string, unknown>) => {
-      const next = mergeModuleData(patch, moduleId, data).data;
+      const target = patch.modules.find((module) => module.id === moduleId);
+      const merged = mergeModuleData(patch, moduleId, data).data;
+      const definition = target ? getWebPlugin(target.key) : undefined;
+      const next = target
+        ? (dataFromState(
+            target.key,
+            merged,
+            target.state,
+            target.stateKeys ?? definition?.stateKeys,
+          ) ?? merged)
+        : merged;
       audioRef.current?.setStateJson(moduleId, next);
       commitHistory((current) => mergeModuleData(current, moduleId, data).patch);
     },
@@ -521,6 +678,8 @@ export function RackWebStudio() {
     engine.setMonitoredModule(
       selectedIds.size === 1 ? (selectedIds.values().next().value ?? null) : null,
     );
+    const hovered = hoveredControlRef.current;
+    engine.setHoveredControl(hovered ? { ...hovered, modifiers: hoverModifiersRef.current } : null);
   });
   const isAudioRebuildDeferred = useCallback(() => Boolean(dragRef.current), []);
   const { audioRunning, toggleAudio, toggleCapture } = useRackAudioRuntime({
@@ -743,7 +902,7 @@ export function RackWebStudio() {
     try {
       const loaded = await loadBrowserAsset(file, assetContract);
       const { ref } = loaded;
-      await putSample({ ref, samples: loaded.samples });
+      await putSample({ ref, samples: loaded.samples, source: loaded.source });
       commitHistory((current) => ({
         ...current,
         modules: current.modules.map((item) =>
@@ -1089,6 +1248,20 @@ export function RackWebStudio() {
     () => layoutPatchCables(patch, registry, cableTension),
     [cableTension, patch, registry],
   );
+  const activeBisetBlank = useMemo(() => {
+    for (const module of patch.modules) {
+      if (module.bypassed) continue;
+      const definition = registry.find((candidate) => candidate.key === module.key),
+        visual = definition?.runtime?.visuals?.find(
+          (candidate) => candidate.kind === "biset-blank-overlay",
+        );
+      if (visual?.kind === "biset-blank-overlay") return { module, visual };
+    }
+    return null;
+  }, [patch.modules, registry]);
+  const bisetBlankCableReplacement = Boolean(
+    activeBisetBlank && (activeBisetBlank.module.params[0] ?? 1) >= 0.5 && cablesVisible,
+  );
   const cableDraftPath = useMemo(
     () =>
       cableDraft
@@ -1417,11 +1590,10 @@ export function RackWebStudio() {
     [],
   );
 
-  const startDrag = (module: ModuleInstance, event: PointerEvent<HTMLElement>) => {
+  const startDragIds = (event: PointerEvent<HTMLElement>, ids: string[]) => {
     if (event.button !== 0) return;
     event.stopPropagation();
-    const ids = selectedIds.has(module.id) ? [...selectedIds] : [module.id];
-    if (!selectedIds.has(module.id)) setSelectedIds(new Set(ids));
+    setSelectedIds(new Set(ids));
     const wanted = new Set(ids),
       origins = new Map(
         patch.modules
@@ -1436,6 +1608,10 @@ export function RackWebStudio() {
       before: patch,
     };
     handleDirectInteractionChange(true);
+  };
+  const startDrag = (module: ModuleInstance, event: PointerEvent<HTMLElement>) => {
+    const ids = selectedIds.has(module.id) ? [...selectedIds] : [module.id];
+    startDragIds(event, ids);
   };
 
   const copySelection = useCallback(() => {
@@ -2182,6 +2358,10 @@ export function RackWebStudio() {
           } as CSSProperties
         }
         aria-label={t("rack.label")}
+        onWheelCapture={handleGlobalPointerWheel}
+        onPointerDownCapture={handleGlobalPointerDown}
+        onPointerUpCapture={handleGlobalPointerRelease}
+        onPointerCancelCapture={handleGlobalPointerRelease}
         onPointerMove={(event) => {
           const cableInteraction = cableDrag ?? cableDraft;
           if (cableInteraction && cablePreviewSession) {
@@ -2369,6 +2549,7 @@ export function RackWebStudio() {
             viewport={{ pan, zoom }}
             viewportSize={rackViewportSize}
             visible={cablesVisible}
+            replacementActive={bisetBlankCableReplacement}
             opacity={cableOpacity}
             selectedIds={selectedCableIds}
             signalLevels={visualSignals.cables}
@@ -2429,8 +2610,10 @@ export function RackWebStudio() {
             }}
             onModuleHover={(module, hovered) => {
               if (hovered) setManualHelpHover({ moduleId: module.id, type: "module" });
-              else
+              else {
                 setManualHelpHover((current) => (current?.moduleId === module.id ? null : current));
+                if (hoveredControlRef.current?.moduleId === module.id) setHoveredControl(null);
+              }
             }}
             onFocus={(module) => focusModule(module.id)}
             onParam={(module, id, value) => setModuleParam(module.id, id, value)}
@@ -2441,7 +2624,29 @@ export function RackWebStudio() {
               recordAutomationValue(module.id, id, active ? 1 : 0);
               if (!active) window.setTimeout(() => audioRef.current?.snapshotState(module.id), 20);
             }}
+            onVisualAction={(module, id, active) => {
+              audioRef.current?.triggerAction(module.id, id, active);
+              if (!active) window.setTimeout(() => audioRef.current?.snapshotState(module.id), 20);
+            }}
+            onRackRowAction={(module, action) => {
+              commitHistory((current) => ({
+                ...current,
+                modules: rackRowToolAction(current.modules, module.id, action),
+              }));
+            }}
+            onRackRowDragStart={(module, event) => {
+              const stripMode = (module.state?.[1] ?? 0) > 0.5 || event.ctrlKey || event.metaKey;
+              const ids = rackRowToolDragIds(patch.modules, module.id, stripMode);
+              startDragIds(event, ids.length ? ids : [module.id]);
+            }}
             onParamHover={(module, paramId) => {
+              if (paramId === null) {
+                if (
+                  hoveredControlRef.current?.moduleId === module.id &&
+                  hoveredControlRef.current.type === "param"
+                )
+                  setHoveredControl(null);
+              } else setHoveredControl({ moduleId: module.id, type: "param", id: paramId });
               setManualHelpHover(
                 paramId === null
                   ? { moduleId: module.id, type: "module" }
@@ -2449,6 +2654,21 @@ export function RackWebStudio() {
               );
             }}
             onPortHover={(module, direction, portId) => {
+              if (portId === null) {
+                if (
+                  hoveredControlRef.current?.moduleId === module.id &&
+                  hoveredControlRef.current.type === direction
+                )
+                  setHoveredControl(null);
+                setHoveredRackPort((current) =>
+                  current?.moduleId === module.id && current.direction === direction
+                    ? null
+                    : current,
+                );
+              } else {
+                setHoveredControl({ moduleId: module.id, type: direction, id: portId });
+                setHoveredRackPort({ moduleId: module.id, direction, portId });
+              }
               setManualHelpHover(
                 portId === null
                   ? { moduleId: module.id, type: "module" }
@@ -2543,6 +2763,25 @@ export function RackWebStudio() {
             }}
           />
         </div>
+        {activeBisetBlank && (
+          <RackBisetBlankOverlay
+            module={activeBisetBlank.module}
+            visual={activeBisetBlank.visual}
+            paths={visibleCablePaths}
+            modules={patch.modules}
+            definitions={registry}
+            viewport={{ pan, zoom }}
+            viewportSize={rackViewportSize}
+            tension={cableTension}
+            opacity={cableOpacity}
+            cablesVisible={cablesVisible}
+            signals={visualSignals.plugs}
+            cableWaves={visualSignals.cableWaves}
+            blankScopes={visualSignals.blankScopes}
+            hoveredPort={hoveredRackPort}
+            modifiers={rackModifiers}
+          />
+        )}
         <RackStudioCablePreviewLayer
           ref={cablePreviewLayerRef}
           layout={cablePreviewLayout}
@@ -2554,6 +2793,7 @@ export function RackWebStudio() {
           cableMenu={cableMenu}
           module={contextModule}
           definition={contextDefinition}
+          visualValues={contextModule ? visualSignals.scopes[contextModule.id]?.[0] : undefined}
           cable={contextCable}
           colors={CABLES}
           modulesLocked={modulesLocked}
@@ -2561,6 +2801,12 @@ export function RackWebStudio() {
           onResetParam={resetModuleParam}
           onSetState={setModuleState}
           onSetData={setModuleData}
+          onTriggerAction={(moduleId, actionId) => {
+            audioRef.current?.triggerAction(moduleId, actionId, true);
+            audioRef.current?.triggerAction(moduleId, actionId, false);
+            window.setTimeout(() => audioRef.current?.snapshotState(moduleId), 20);
+            setModuleMenu(null);
+          }}
           onToggleBypass={(module) => {
             const bypassed = !module.bypassed;
             audioRef.current?.setBypassed(module.id, bypassed);

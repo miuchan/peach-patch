@@ -1,14 +1,21 @@
 import type { PatchCable, ModuleInstance } from "../../lib/patch-types";
-import type { WebPluginModule } from "../../lib/web-plugin-registry";
+import { editableTextUpdate, editableTextValue } from "../../lib/rack-editable-text-data";
+import type { RuntimeVisual, WebPluginModule } from "../../lib/web-plugin-registry";
+import { useAlefsbitsPanelPreference } from "../hooks/use-alefsbits-panel-preference";
 import { useI18n } from "../i18n/provider";
 
 type MenuPosition = { left: number; top: number };
+type EditableMenuVisual = Extract<
+  RuntimeVisual,
+  { kind: "scribble-strip" | "vertical-label" | "editable-text" }
+>;
 
 export type RackStudioContextMenusProps = {
   moduleMenu: (MenuPosition & { moduleId: string }) | null;
   cableMenu: (MenuPosition & { cableId: string }) | null;
   module: ModuleInstance | undefined;
   definition: WebPluginModule | undefined;
+  visualValues: number[] | undefined;
   cable: PatchCable | undefined;
   colors: string[];
   modulesLocked: boolean;
@@ -16,6 +23,7 @@ export type RackStudioContextMenusProps = {
   onResetParam: (moduleId: string, paramId: number, value: number) => void;
   onSetState: (moduleId: string, updates: Array<[number, number]>) => void;
   onSetData: (moduleId: string, data: Record<string, unknown>) => void;
+  onTriggerAction: (moduleId: string, actionId: number) => void;
   onToggleBypass: (module: ModuleInstance) => void;
   onDuplicate: () => void;
   onReset: (module: ModuleInstance, definition: WebPluginModule) => void;
@@ -35,6 +43,7 @@ export function RackStudioContextMenus({
   cableMenu,
   module,
   definition,
+  visualValues,
   cable,
   colors,
   modulesLocked,
@@ -42,6 +51,7 @@ export function RackStudioContextMenus({
   onResetParam,
   onSetState,
   onSetData,
+  onTriggerAction,
   onToggleBypass,
   onDuplicate,
   onReset,
@@ -56,6 +66,10 @@ export function RackStudioContextMenus({
   onDeleteCable,
 }: RackStudioContextMenusProps) {
   const { formatNumber, t } = useI18n();
+  const alefsbitsPanel = definition?.runtime?.visuals?.some(
+    (visual) => visual.kind === "alefsbits-panel",
+  );
+  const alefsbitsPreference = useAlefsbitsPanelPreference(module?.key ?? "");
   if (!moduleMenu && !cableMenu) return null;
   return (
     <>
@@ -138,14 +152,106 @@ export function RackStudioContextMenus({
                 })}
             </section>
           )}
+          {alefsbitsPanel && (
+            <section className="pw-module-menu-params" aria-label="Panel contrast">
+              <small>contrast</small>
+              <label>
+                <span>use global contrast</span>
+                <input
+                  type="checkbox"
+                  disabled={modulesLocked}
+                  checked={alefsbitsPreference.useGlobal}
+                  onChange={(event) => alefsbitsPreference.setUseGlobal(event.target.checked)}
+                />
+              </label>
+              <label>
+                <span>contrast</span>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={0.9}
+                  step={0.01}
+                  disabled={modulesLocked || alefsbitsPreference.useGlobal}
+                  value={alefsbitsPreference.moduleContrast}
+                  onChange={(event) =>
+                    alefsbitsPreference.setModuleContrast(Number(event.target.value))
+                  }
+                />
+                <output>{formatNumber(alefsbitsPreference.effectiveContrast)}</output>
+              </label>
+              <label>
+                <span>global contrast</span>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={0.9}
+                  step={0.01}
+                  disabled={modulesLocked}
+                  value={alefsbitsPreference.globalContrast}
+                  onChange={(event) =>
+                    alefsbitsPreference.setGlobalContrast(Number(event.target.value))
+                  }
+                />
+                <output>{formatNumber(alefsbitsPreference.globalContrast)}</output>
+              </label>
+              <button
+                type="button"
+                disabled={modulesLocked}
+                onClick={alefsbitsPreference.setGlobalFromModule}
+              >
+                set global contrast
+              </button>
+            </section>
+          )}
+          {definition?.runtime?.visuals?.some((visual) => visual.kind === "alefsbits-turnt") && (
+            <section className="pw-module-menu-params" aria-label="Turnt scope options">
+              <small>scope</small>
+              <label>
+                <span>scope mode</span>
+                <select
+                  disabled={modulesLocked}
+                  value={Math.round(visualValues?.[3] ?? 0)}
+                  onChange={(event) =>
+                    onTriggerAction(module.id, 1000 + (event.target.value === "0" ? 22 : 23))
+                  }
+                >
+                  <option value={0}>bipolar</option>
+                  <option value={1}>unipolar</option>
+                </select>
+              </label>
+              <label>
+                <span>time scale</span>
+                <select
+                  disabled={modulesLocked}
+                  value={Math.round(visualValues?.[5] ?? 256)}
+                  onChange={(event) => {
+                    const size = Number(event.target.value);
+                    onTriggerAction(module.id, 1000 + (size === 64 ? 19 : size === 256 ? 20 : 21));
+                  }}
+                >
+                  <option value={64}>low</option>
+                  <option value={256}>medium</option>
+                  <option value={2048}>high</option>
+                </select>
+              </label>
+            </section>
+          )}
           {definition?.runtime?.visuals
-            ?.filter((visual) => visual.kind === "scribble-strip")
+            ?.filter(
+              (visual): visual is EditableMenuVisual =>
+                visual.kind === "scribble-strip" ||
+                visual.kind === "vertical-label" ||
+                (visual.kind === "editable-text" && visual.contextOnly === true),
+            )
             .map((visual, index) => {
               const data =
                 module.rack?.data && typeof module.rack.data === "object"
                   ? (module.rack.data as Record<string, unknown>)
                   : {};
-              const value = String(data[visual.dataKey] ?? visual.defaultText);
+              const value =
+                visual.kind === "editable-text"
+                  ? editableTextValue(data, visual, module.state, module.params)
+                  : String(data[visual.dataKey] ?? visual.defaultText ?? "");
               return (
                 <section
                   key={`scribble-editor-${index}`}
@@ -154,17 +260,79 @@ export function RackStudioContextMenus({
                 >
                   <small>{t("moduleMenu.labelHeading")}</small>
                   <label>
-                    <span>{t("moduleMenu.editLabel")}</span>
+                    <span>
+                      {visual.kind === "editable-text" && visual.title
+                        ? visual.title
+                        : t("moduleMenu.editLabel")}
+                    </span>
                     <input
                       aria-label={t("moduleMenu.labelTextAria", { module: module.model })}
                       disabled={modulesLocked}
                       type="text"
-                      value={value}
-                      onChange={(event) =>
-                        onSetData(module.id, { [visual.dataKey]: event.target.value })
+                      maxLength={
+                        visual.kind === "vertical-label" || visual.kind === "editable-text"
+                          ? visual.maximumLength
+                          : undefined
                       }
+                      value={value}
+                      onChange={(event) => {
+                        if (visual.kind !== "editable-text") {
+                          onSetData(module.id, { [visual.dataKey]: event.target.value });
+                          return;
+                        }
+                        const updates = editableTextUpdate(
+                          data,
+                          visual,
+                          event.target.value,
+                          module.state,
+                          module.params,
+                        );
+                        if (updates) onSetData(module.id, updates);
+                      }}
                     />
                     <output>{formatNumber(value.length)}</output>
+                  </label>
+                </section>
+              );
+            })}
+          {definition?.runtime?.visuals
+            ?.filter(
+              (visual): visual is Extract<RuntimeVisual, { kind: "editable-text" }> =>
+                visual.kind === "editable-text" && visual.styleControls !== false,
+            )
+            .map((visual, index) => {
+              const data =
+                module.rack?.data && typeof module.rack.data === "object"
+                  ? (module.rack.data as Record<string, unknown>)
+                  : {};
+              const foreground = String(data[visual.foregroundKey] ?? visual.defaultForeground);
+              const background = String(data[visual.backgroundKey] ?? visual.defaultBackground);
+              return (
+                <section key={`editable-text-color-${index}`} className="pw-module-menu-params">
+                  <small>{t("moduleMenu.textColorsHeading")}</small>
+                  <label>
+                    <span>{t("moduleMenu.foreground")}</span>
+                    <input
+                      type="color"
+                      disabled={modulesLocked}
+                      value={foreground.slice(0, 7)}
+                      onChange={(event) =>
+                        onSetData(module.id, { [visual.foregroundKey]: event.target.value })
+                      }
+                    />
+                    <output>{foreground}</output>
+                  </label>
+                  <label>
+                    <span>{t("moduleMenu.background")}</span>
+                    <input
+                      type="color"
+                      disabled={modulesLocked}
+                      value={background.slice(0, 7)}
+                      onChange={(event) =>
+                        onSetData(module.id, { [visual.backgroundKey]: event.target.value })
+                      }
+                    />
+                    <output>{background}</output>
                   </label>
                 </section>
               );
@@ -182,6 +350,33 @@ export function RackStudioContextMenus({
                   const value = Number(module.state?.[id] ?? state.default ?? 0);
                   const label = state.name ?? state.key;
                   const reset = () => onSetState(module.id, [[id, state.default ?? 0]]);
+                  if (state.bitmask?.length)
+                    return (
+                      <div className="pw-module-menu-bitmask" key={`state-${id}`}>
+                        <span title={label}>{label}</span>
+                        <div>
+                          {state.bitmask.map((option) => (
+                            <label key={`${id}-${option.bit}`}>
+                              <span>{option.name}</span>
+                              <input
+                                disabled={modulesLocked}
+                                type="checkbox"
+                                checked={Boolean(Math.round(value) & option.bit)}
+                                onDoubleClick={reset}
+                                onChange={() =>
+                                  onSetState(module.id, [[id, Math.round(value) ^ option.bit]])
+                                }
+                              />
+                              <output>
+                                {Math.round(value) & option.bit
+                                  ? t("moduleMenu.on")
+                                  : t("moduleMenu.off")}
+                              </output>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
                   return (
                     <label key={`state-${id}`}>
                       <span title={label}>{label}</span>
@@ -235,6 +430,17 @@ export function RackStudioContextMenus({
                 })}
             </section>
           )}
+          {definition?.runtime?.contextActions?.map((action) => (
+            <button
+              key={`context-action-${action.id}`}
+              type="button"
+              role="menuitem"
+              disabled={modulesLocked}
+              onClick={() => onTriggerAction(module.id, action.id)}
+            >
+              {action.name}
+            </button>
+          ))}
           <button type="button" role="menuitem" onClick={() => onToggleBypass(module)}>
             {t(module.bypassed ? "moduleMenu.enable" : "moduleMenu.bypass")}
           </button>

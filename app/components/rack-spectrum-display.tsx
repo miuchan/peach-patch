@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState, type PointerEvent } from "react";
 import { useI18n } from "../i18n/provider";
 
 const SAMPLE_RATE = 48_000,
@@ -104,25 +104,28 @@ function drawAxes(
   low: number,
   high: number,
   magnitudeScale: number,
+  axisColor: string,
+  textColor: string,
+  frequencyExponent = frequencyScale > 0.5 ? 0.5 : 1,
+  exactInsets = false,
 ) {
-  const left = kind === "spectrogram" ? 40 : 35,
-    right = 15,
-    top = 20,
-    bottom = 50,
+  const left = exactInsets ? 14 : kind === "spectrogram" ? 40 : 35,
+    right = exactInsets ? 4 : 15,
+    top = exactInsets ? 15 : 20,
+    bottom = exactInsets ? 11 : 50,
     plotWidth = width - left - right,
     plotHeight = height - top - bottom;
   context.fillStyle = "#000";
   context.fillRect(0, 0, width, height);
-  context.strokeStyle = "#1a1a1a";
+  context.strokeStyle = axisColor;
   context.lineWidth = 1;
   context.font = "8px Arial,sans-serif";
-  context.fillStyle = "#fff";
+  context.fillStyle = textColor;
   context.textAlign = kind === "spectrogram" ? "right" : "center";
   context.textBaseline = kind === "spectrogram" ? "middle" : "top";
   for (let tick = 1; tick < 10; tick++) {
     const normalized = tick / 10,
-      frequency =
-        low + (high - low) * (frequencyScale > 0.5 ? normalized * normalized : normalized);
+      frequency = low + (high - low) * Math.pow(normalized, 1 / frequencyExponent);
     if (kind === "spectrum-analyzer") {
       const x = left + normalized * plotWidth;
       context.beginPath();
@@ -168,6 +171,15 @@ type RackSpectrumDisplayProps = {
   params: number[];
   state?: number[];
   running: boolean;
+  colors?: string[];
+  axisColor?: string;
+  textColor?: string;
+  lineWidth?: number;
+  fillAlpha?: number;
+  freeze?: boolean;
+  profile?: "bogaudio";
+  rangeMode?: "analyzer" | "analyzer-xl";
+  stateKeys?: { frequencyPlot: number; range: number; amplitudePlot: number };
   x: number;
   y: number;
   width: number;
@@ -180,17 +192,36 @@ export const RackSpectrumDisplay = memo(function RackSpectrumDisplay({
   params,
   state,
   running,
+  colors = CHANNEL_COLORS,
+  axisColor = "#1a1a1a",
+  textColor = "#ffffff",
+  lineWidth = 1.5,
+  fillAlpha = 0.35,
+  freeze = false,
+  profile,
+  rangeMode,
+  stateKeys,
   x,
   y,
   width,
   height,
 }: RackSpectrumDisplayProps) {
   const { t } = useI18n();
+  const visualColors = colors.length ? colors : CHANNEL_COLORS;
   const canvasRef = useRef<HTMLCanvasElement>(null),
     historiesRef = useRef<number[][]>([]),
-    columnsRef = useRef<Float32Array[]>([]);
+    columnsRef = useRef<Float32Array[]>([]),
+    latestBinsRef = useRef<Float32Array[]>([]),
+    frozenBinsRef = useRef<Float32Array[] | null>(null),
+    freezeXRef = useRef(0),
+    [interactionFrame, setInteractionFrame] = useState(0);
   useEffect(() => {
-    const channelCount = kind === "spectrum-analyzer" ? 4 : 1;
+    const channelCount =
+      kind === "spectrum-analyzer"
+        ? profile === "bogaudio"
+          ? Math.max(1, Math.min(8, samples?.length ?? 4))
+          : 4
+        : 1;
     while (historiesRef.current.length < channelCount) historiesRef.current.push([]);
     if (running)
       for (let channel = 0; channel < channelCount; channel++) {
@@ -207,27 +238,83 @@ export const RackSpectrumDisplay = memo(function RackSpectrumDisplay({
     const context = canvas.getContext("2d");
     if (!context) return;
     context.setTransform(scale, 0, 0, scale, 0, 0);
-    const frequencyScale = kind === "spectrum-analyzer" ? (params[8] ?? 1) : (params[3] ?? 1),
-      magnitudeScale = kind === "spectrum-analyzer" ? (params[9] ?? 1) : 1,
-      low = Math.max(0, kind === "spectrum-analyzer" ? (params[12] ?? 0) : (params[6] ?? 0)),
+    const frequencyScale =
+        profile === "bogaudio"
+          ? Number(state?.[stateKeys?.frequencyPlot ?? -1] ?? 0) < 0.5
+            ? 1
+            : 0
+          : kind === "spectrum-analyzer"
+            ? (params[8] ?? 1)
+            : (params[3] ?? 1),
+      magnitudeScale =
+        profile === "bogaudio"
+          ? ([1, 2, 0][Math.round(state?.[stateKeys?.amplitudePlot ?? -1] ?? 0)] ?? 1)
+          : kind === "spectrum-analyzer"
+            ? (params[9] ?? 1)
+            : 1,
+      rackRange =
+        rangeMode === "analyzer" ? (params[5] ?? 0) : Number(state?.[stateKeys?.range ?? -1] ?? 0),
+      sourceLow =
+        profile === "bogaudio" && rackRange > 0
+          ? (rangeMode === "analyzer" ? rackRange * rackRange * 0.8 : rackRange) * (SAMPLE_RATE / 2)
+          : 0,
+      sourceHigh =
+        profile === "bogaudio" && rackRange < 0
+          ? (1 + (rangeMode === "analyzer" ? rackRange * 0.9 : rackRange)) * (SAMPLE_RATE / 2)
+          : SAMPLE_RATE / 2,
+      low = Math.max(
+        0,
+        profile === "bogaudio"
+          ? sourceLow
+          : kind === "spectrum-analyzer"
+            ? (params[12] ?? 0)
+            : (params[6] ?? 0),
+      ),
       high = Math.max(
         low + 1,
         Math.min(
           SAMPLE_RATE / 2,
-          kind === "spectrum-analyzer"
-            ? (params[13] ?? SAMPLE_RATE / 2)
-            : (params[7] ?? SAMPLE_RATE / 2),
+          profile === "bogaudio"
+            ? sourceHigh
+            : kind === "spectrum-analyzer"
+              ? (params[13] ?? SAMPLE_RATE / 2)
+              : (params[7] ?? SAMPLE_RATE / 2),
         ),
       ),
+      frequencyExponent =
+        profile === "bogaudio"
+          ? frequencyScale < 0.5
+            ? 1
+            : 1 - ((high - low) / high) * (1 - 1 / 3.321)
+          : frequencyScale > 0.5
+            ? 0.5
+            : 1,
       slope = kind === "spectrum-analyzer" ? (params[14] ?? 0) : (params[8] ?? 0),
-      axes = drawAxes(context, width, height, kind, frequencyScale, low, high, magnitudeScale);
+      axes = drawAxes(
+        context,
+        width,
+        height,
+        kind,
+        frequencyScale,
+        low,
+        high,
+        magnitudeScale,
+        axisColor,
+        textColor,
+        frequencyExponent,
+        profile === "bogaudio",
+      );
     context.save();
     context.beginPath();
     context.rect(axes.left, axes.top, axes.plotWidth, axes.plotHeight);
     context.clip();
     if (kind === "spectrum-analyzer") {
-      historiesRef.current.slice(0, 4).forEach((history, channel) => {
-        const bins = spectrum(history, params[channel] ?? 1);
+      const liveBins = historiesRef.current
+        .slice(0, channelCount)
+        .map((history, channel) => spectrum(history, params[channel] ?? 1));
+      latestBinsRef.current = liveBins;
+      const displayedBins = frozenBinsRef.current ?? liveBins;
+      displayedBins.forEach((bins, channel) => {
         if (!bins.some(Boolean)) return;
         context.beginPath();
         let started = false;
@@ -235,8 +322,7 @@ export const RackSpectrumDisplay = memo(function RackSpectrumDisplay({
           const frequency = (bin * SAMPLE_RATE) / FFT_SIZE;
           if (frequency < low || frequency > high) continue;
           const normalizedFrequency = (frequency - low) / (high - low),
-            normalizedX =
-              frequencyScale > 0.5 ? Math.sqrt(normalizedFrequency) : normalizedFrequency,
+            normalizedX = Math.pow(normalizedFrequency, frequencyExponent),
             compensated = bins[bin] * Math.pow(Math.max(frequency, 1) / 1000, slope / 20),
             px = axes.left + normalizedX * axes.plotWidth,
             py = axes.top + magnitudeY(compensated, magnitudeScale, axes.plotHeight);
@@ -247,15 +333,49 @@ export const RackSpectrumDisplay = memo(function RackSpectrumDisplay({
           }
         }
         if (!started) return;
-        context.lineTo(axes.left + axes.plotWidth, axes.top + axes.plotHeight);
-        context.lineTo(axes.left, axes.top + axes.plotHeight);
-        context.closePath();
-        context.fillStyle = `${CHANNEL_COLORS[channel]}59`;
-        context.fill();
-        context.strokeStyle = CHANNEL_COLORS[channel];
-        context.lineWidth = 1.5;
+        if (fillAlpha > 0) {
+          context.lineTo(axes.left + axes.plotWidth, axes.top + axes.plotHeight);
+          context.lineTo(axes.left, axes.top + axes.plotHeight);
+          context.closePath();
+          context.save();
+          context.globalAlpha = Math.max(0, Math.min(1, fillAlpha));
+          context.fillStyle = visualColors[channel % visualColors.length] ?? "#ffffff";
+          context.fill();
+          context.restore();
+        }
+        context.strokeStyle = visualColors[channel % visualColors.length] ?? "#ffffff";
+        context.lineWidth = lineWidth;
         context.stroke();
       });
+      if (frozenBinsRef.current) {
+        const normalized = Math.max(0, Math.min(1, freezeXRef.current));
+        const frequency = low + (high - low) * Math.pow(normalized, 1 / frequencyExponent);
+        const bin = Math.max(
+          1,
+          Math.min(FFT_SIZE / 2 - 1, Math.round((frequency * FFT_SIZE) / SAMPLE_RATE)),
+        );
+        const px = axes.left + normalized * axes.plotWidth;
+        context.strokeStyle = textColor;
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(px, axes.top);
+        context.lineTo(px, axes.top + axes.plotHeight);
+        context.stroke();
+        context.font = "10px Arial,sans-serif";
+        context.textAlign = px > width * 0.65 ? "right" : "left";
+        context.textBaseline = "top";
+        const amplitudes = frozenBinsRef.current
+          .map((bins) => bins[bin] ?? 0)
+          .map((value) => `${(20 * Math.log10(Math.max(1e-8, value))).toFixed(1)} dB`)
+          .join("  ");
+        context.fillStyle = "#000000cc";
+        const label = `${frequencyLabel(frequency)} Hz  ${amplitudes}`;
+        const labelWidth = context.measureText(label).width + 8;
+        const labelX = px > width * 0.65 ? px - labelWidth : px;
+        context.fillRect(labelX, axes.top, labelWidth, 16);
+        context.fillStyle = textColor;
+        context.fillText(label, px > width * 0.65 ? px - 4 : px + 4, axes.top + 3);
+      }
     } else {
       const bins = spectrum(historiesRef.current[0], params[0] ?? 1);
       if (running && bins.some(Boolean)) {
@@ -269,8 +389,7 @@ export const RackSpectrumDisplay = memo(function RackSpectrumDisplay({
           nextX = axes.left + ((column + 1) / Math.max(1, columns.length)) * axes.plotWidth;
         for (let row = 0; row < Math.ceil(axes.plotHeight); row++) {
           const normalized = 1 - row / axes.plotHeight,
-            frequency =
-              low + (high - low) * (frequencyScale > 0.5 ? normalized * normalized : normalized),
+            frequency = low + (high - low) * Math.pow(normalized, 1 / frequencyExponent),
             bin = Math.max(
               1,
               Math.min(
@@ -290,15 +409,79 @@ export const RackSpectrumDisplay = memo(function RackSpectrumDisplay({
       }
     }
     context.restore();
-  }, [height, kind, params, running, samples, state, width]);
+  }, [
+    axisColor,
+    fillAlpha,
+    height,
+    interactionFrame,
+    kind,
+    lineWidth,
+    params,
+    profile,
+    rangeMode,
+    running,
+    samples,
+    state,
+    stateKeys,
+    textColor,
+    width,
+    visualColors,
+  ]);
+  const updateFreezeX = (event: PointerEvent<HTMLCanvasElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const leftInset = profile === "bogaudio" ? 14 : 35;
+    const rightInset = profile === "bogaudio" ? 4 : 15;
+    freezeXRef.current = Math.max(
+      0,
+      Math.min(
+        1,
+        (event.clientX - bounds.left - leftInset) / (bounds.width - leftInset - rightInset),
+      ),
+    );
+    setInteractionFrame((frame) => frame + 1);
+  };
   return (
     <canvas
       ref={canvasRef}
       className="pw-rack-spectrum"
-      style={{ left: x, top: y, width, height }}
+      style={{ left: x, top: y, width, height, touchAction: freeze ? "none" : undefined }}
       aria-label={t(
         kind === "spectrogram" ? "display.rackSpectrogram" : "display.rackSpectrumAnalyzer",
       )}
+      tabIndex={freeze && kind === "spectrum-analyzer" ? 0 : undefined}
+      onPointerDown={(event) => {
+        if (!freeze || kind !== "spectrum-analyzer" || event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        frozenBinsRef.current = latestBinsRef.current.map((bins) => bins.slice());
+        updateFreezeX(event);
+        event.currentTarget.focus();
+      }}
+      onPointerMove={(event) => {
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        updateFreezeX(event);
+      }}
+      onPointerUp={(event) => {
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        event.currentTarget.releasePointerCapture(event.pointerId);
+        frozenBinsRef.current = null;
+        setInteractionFrame((frame) => frame + 1);
+      }}
+      onPointerCancel={() => {
+        frozenBinsRef.current = null;
+        setInteractionFrame((frame) => frame + 1);
+      }}
+      onKeyDown={(event) => {
+        if (!frozenBinsRef.current || (event.key !== "ArrowLeft" && event.key !== "ArrowRight"))
+          return;
+        event.preventDefault();
+        freezeXRef.current = Math.max(
+          0,
+          Math.min(1, freezeXRef.current + (event.key === "ArrowLeft" ? -1 : 1) / (FFT_SIZE / 2)),
+        );
+        setInteractionFrame((frame) => frame + 1);
+      }}
     />
   );
 });

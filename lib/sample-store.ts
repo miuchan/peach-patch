@@ -1,7 +1,7 @@
 import type { SampleAssetRef } from "./patch-types";
 import { isFiniteNumber, isRecord } from "./runtime-type-guards.ts";
 
-export type StoredSample = { ref: SampleAssetRef; samples: Float32Array };
+export type StoredSample = { ref: SampleAssetRef; samples: Float32Array; source?: Blob };
 const DATABASE = "patchwork-web-assets",
   STORE = "samples";
 
@@ -21,9 +21,14 @@ export async function putSample(sample: StoredSample): Promise<void> {
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STORE, "readwrite");
-      transaction
-        .objectStore(STORE)
-        .put({ ref: sample.ref, samples: sample.samples }, sample.ref.storageKey);
+      transaction.objectStore(STORE).put(
+        {
+          ref: sample.ref,
+          samples: sample.samples,
+          ...(sample.source ? { source: sample.source } : {}),
+        },
+        sample.ref.storageKey,
+      );
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error ?? new Error("Could not save sample"));
       transaction.onabort = () => reject(transaction.error ?? new Error("Could not save sample"));
@@ -36,6 +41,7 @@ export async function putSample(sample: StoredSample): Promise<void> {
 function isStoredSample(value: unknown): value is StoredSample {
   if (!isRecord(value) || !isRecord(value.ref) || !(value.samples instanceof Float32Array))
     return false;
+  if (value.source !== undefined && !(value.source instanceof Blob)) return false;
   return (
     typeof value.ref.storageKey === "string" &&
     typeof value.ref.name === "string" &&

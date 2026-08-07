@@ -57,6 +57,8 @@ export type RackAudioControllerContext = {
   setVisualSignals: (
     updater: (previous: {
       cables: Record<string, number>;
+      cableWaves: Record<string, number[]>;
+      blankScopes: Record<string, number[]>;
       scopes: Record<string, number[][]>;
       plugs: Record<
         string,
@@ -65,6 +67,8 @@ export type RackAudioControllerContext = {
       lights: Record<string, number[]>;
     }) => {
       cables: Record<string, number>;
+      cableWaves: Record<string, number[]>;
+      blankScopes: Record<string, number[]>;
       scopes: Record<string, number[][]>;
       plugs: Record<
         string,
@@ -180,9 +184,11 @@ export function createRackAudioEngine(context: RackAudioControllerContext) {
     },
     onPortPeaks: (moduleId, inputs, outputs, inputScopes, outputScopes) =>
       context.setPortPeaks({ moduleId, inputs, outputs, inputScopes, outputScopes }),
-    onVisualSignals: (cables, scopes, plugs, lights) =>
+    onVisualSignals: (cables, cableWaves, blankScopes, scopes, plugs, lights) =>
       context.setVisualSignals((previous) => ({
         cables,
+        cableWaves,
+        blankScopes,
         scopes: { ...previous.scopes, ...scopes },
         plugs,
         lights,

@@ -74,6 +74,8 @@ test("worklet state and telemetry are normalized before engine callbacks", () =>
   const telemetry = parseRackAudioWorkletEvent({
     type: "visual-signals",
     cables: { cable: "2.5", invalid: Number.POSITIVE_INFINITY },
+    cableWaves: { cable: new Float32Array([1, Number.NaN, -2]) },
+    blankScopes: { cable: [3, "4.5", Number.POSITIVE_INFINITY] },
     scopes: { osc: [new Float32Array([1, Number.NaN])] },
     plugs: {
       cable: {
@@ -96,6 +98,8 @@ test("worklet state and telemetry are normalized before engine callbacks", () =>
   assert.deepEqual(telemetry, {
     type: "visual-signals",
     cables: { cable: 2.5, invalid: 0 },
+    cableWaves: { cable: [1, 0, -2] },
+    blankScopes: { cable: [3, 4.5, 0] },
     scopes: { osc: [[1, 0]] },
     plugs: {
       cable: { voltage: 4.5, rms: 0, channels: 0, rgb: [0, 0.25, 1] },

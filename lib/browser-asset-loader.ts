@@ -1,7 +1,7 @@
 import type { SampleAssetRef } from "./patch-types.ts";
 
 export type BrowserAssetContract = {
-  type: "audio" | "image" | "binary" | "midi" | "script";
+  type: "audio" | "image" | "binary" | "midi" | "script" | "text";
   maxSamples: number;
   maxSeconds: number;
   channels: 1 | 2 | 4;
@@ -11,6 +11,8 @@ export type BrowserAssetContract = {
 export type LoadedBrowserAsset = {
   ref: SampleAssetRef;
   samples: Float32Array;
+  /** Original browser-decodable image bytes. Kept so animated GIF/WebP assets retain animation. */
+  source?: Blob;
   detail:
     | { kind: "image"; width: number; height: number }
     | { kind: "bytes"; bytes: number }
@@ -53,6 +55,7 @@ async function loadImage(file: File, contract: BrowserAssetContract): Promise<Lo
     return {
       ref: assetRef(file, width, 4, width * height),
       samples,
+      source: file.slice(0, file.size, file.type),
       detail: { kind: "image", width, height },
     };
   } finally {
@@ -79,17 +82,26 @@ function validateBinary(bytes: Uint8Array, contract: BrowserAssetContract) {
       bytes[3] !== 0x64)
   )
     throw new Error("The selected file is not a Standard MIDI File");
-  if (contract.type === "script") {
-    if (!bytes.length) throw new Error("The selected Lua script is empty");
+  if (contract.type === "script" || contract.type === "text") {
+    if (!bytes.length)
+      throw new Error(
+        contract.type === "script"
+          ? "The selected Lua script is empty"
+          : "The selected text file is empty",
+      );
     try {
       new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     } catch {
-      throw new Error("The selected Lua script is not valid UTF-8 text");
+      throw new Error(
+        contract.type === "script"
+          ? "The selected Lua script is not valid UTF-8 text"
+          : "The selected file is not valid UTF-8 text",
+      );
     }
   }
   if (bytes.length > contract.maxSamples)
     throw new Error(
-      `${contract.type === "midi" ? "MIDI file" : contract.type === "script" ? "Lua script" : "ROM"} is larger than the ${contract.maxSamples.toLocaleString()} byte module limit`,
+      `${contract.type === "midi" ? "MIDI file" : contract.type === "script" ? "Lua script" : contract.type === "text" ? "Text file" : "ROM"} is larger than the ${contract.maxSamples.toLocaleString()} byte module limit`,
     );
 }
 
@@ -136,7 +148,12 @@ export async function loadBrowserAsset(
   if (file.size > MAX_FILE_BYTES)
     throw new Error("Sample is larger than the 100 MB browser decode limit");
   if (contract.type === "image") return loadImage(file, contract);
-  if (contract.type === "binary" || contract.type === "midi" || contract.type === "script")
+  if (
+    contract.type === "binary" ||
+    contract.type === "midi" ||
+    contract.type === "script" ||
+    contract.type === "text"
+  )
     return loadBinary(file, contract);
   return loadAudio(file, contract);
 }

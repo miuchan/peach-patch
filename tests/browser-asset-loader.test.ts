@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadBrowserAsset } from "../lib/browser-asset-loader.ts";
 
-const binaryContract = (type: "binary" | "midi" | "script", maxSamples = 64) => ({
+const binaryContract = (type: "binary" | "midi" | "script" | "text", maxSamples = 64) => ({
   type,
   maxSamples,
   maxSeconds: 0,
@@ -40,9 +40,20 @@ test("browser text assets reject empty, invalid UTF-8, and over-limit payloads",
   );
   assert.deepEqual(script.detail, { kind: "bytes", bytes: 9 });
 
+  const sequence = await loadBrowserAsset(
+    new File(["0,1,-2.5\n3,4"], "sequence.txt"),
+    binaryContract("text"),
+  );
+  assert.deepEqual(sequence.detail, { kind: "bytes", bytes: 12 });
+  assert.equal(new TextDecoder().decode(Uint8Array.from(sequence.samples)), "0,1,-2.5\n3,4");
+
   await assert.rejects(
     loadBrowserAsset(new File([], "empty.lua"), binaryContract("script")),
     /script is empty/,
+  );
+  await assert.rejects(
+    loadBrowserAsset(new File([], "empty.txt"), binaryContract("text")),
+    /text file is empty/,
   );
   await assert.rejects(
     loadBrowserAsset(new File([Uint8Array.from([0xff])], "invalid.lua"), binaryContract("script")),

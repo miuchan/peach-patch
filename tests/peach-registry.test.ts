@@ -17,7 +17,7 @@ test("the website default is the GitHub registry", () => {
   );
 });
 
-test("the website has no bundled catalog or local compiler plugin fallback", () => {
+test("the website has no bundled catalog or compiler plugin fallback", () => {
   const studio = searchableSource(
       fs.readFileSync(new URL("../app/rack-web-studio.tsx", import.meta.url), "utf8"),
     ),
@@ -33,7 +33,10 @@ test("the website has no bundled catalog or local compiler plugin fallback", () 
       "utf8",
     ),
     packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  assert.match(registryHook, /loadPeachRegistry\(undefined,controller\.signal\)/);
+  assert.match(
+    registryHook,
+    /import\.meta\.env\.VITE_PEACH_REGISTRY_URL\|\|undefined.*loadPeachRegistry\(configuredIndex,controller\.signal\)/,
+  );
   assert.doesNotMatch(
     studio,
     /\/dynamic-plugins\/catalog|LOCAL_PLUGIN_BUILDER|127\.0\.0\.1:4179|\/compile\b/,
@@ -77,6 +80,33 @@ test("registry index resolves immutable artifact URLs", () => {
   assert.equal(
     module.manifestUrl,
     "https://raw.example/registry/packages/Test/Osc/1.0.0/manifest.json",
+  );
+});
+
+test("registry index resolves every source visual asset base", () => {
+  const [module] = modulesFromRegistryIndex(
+    {
+      schemaVersion: 1,
+      abiVersion: "0.3",
+      packages: [
+        {
+          ...moduleRecord,
+          runtime: {
+            visuals: [
+              {
+                kind: "algomorph-display",
+                assetBase: "packages/Test/Osc/1.0.0/resources/",
+              },
+            ],
+          },
+        },
+      ],
+    },
+    "https://raw.example/registry/index.json",
+  );
+  assert.equal(
+    (module.runtime?.visuals?.[0] as { assetBase?: string }).assetBase,
+    "https://raw.example/registry/packages/Test/Osc/1.0.0/resources/",
   );
 });
 

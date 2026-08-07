@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   rackParamAssetUrl,
   rackParamControlSize,
+  rackParamDragAxis,
+  rackParamDragDirection,
   rackParamInteraction,
   rackParamKnobAsset,
   rackParamKnobRotation,
@@ -41,7 +43,14 @@ test("Rack widget parsing recognizes namespaces, aliases, and name boundaries", 
     "Rogan2PWhite",
   );
   assert.equal(rackParamWidgetKind(widgetParam("componentlibrary::VioM2Switch")), "VioM2Switch");
-  assert.equal(rackParamWidgetKind(widgetParam("VCVLightLatch")), "VCVButton");
+  assert.equal(rackParamWidgetKind(widgetParam("VCVLightLatch")), "VCVLightLatchGreen");
+  assert.equal(
+    rackParamWidgetKind(widgetParam("VCVLightLatch<MediumSimpleLight<RedLight>>")),
+    "VCVLightLatchRed",
+  );
+  assert.equal(rackParamWidgetKind(widgetParam("WanderSlider")), "WanderSlider");
+  assert.equal(rackParamWidgetKind(widgetParam("CKSSHoriz")), "CKSSHoriz");
+  assert.equal(rackParamWidgetKind(widgetParam("LinkDotButton")), "LinkDotButton");
   assert.equal(rackParamWidgetKind(widgetParam("NotRogan2PWhiteExtra")), "");
 });
 
@@ -49,6 +58,11 @@ test("Rack parameter interaction and control geometry follow catalog metadata", 
   assert.equal(rackParamInteraction(rackParam({ button: true, position: undefined })), "button");
   assert.equal(rackParamInteraction(widgetParam("Rogan2PWhite")), "knob");
   assert.equal(rackParamInteraction(widgetParam("VCVLightSlider")), "slider");
+  assert.equal(rackParamInteraction(widgetParam("WanderSlider")), "slider");
+  assert.equal(rackParamInteraction(widgetParam("MuseSlider")), "slider");
+  assert.equal(rackParamInteraction(widgetParam("VCVLightLatch<GreenLight>")), "switch");
+  assert.equal(rackParamInteraction(widgetParam("CKSSHoriz")), "switch");
+  assert.equal(rackParamInteraction(widgetParam("LinkDotButton")), "switch");
   assert.equal(rackParamInteraction(widgetParam("VioM2Switch")), "switch");
   assert.equal(
     rackParamInteraction(
@@ -64,6 +78,22 @@ test("Rack parameter interaction and control geometry follow catalog metadata", 
     width: 14,
     height: 20.641106,
   });
+  assert.deepEqual(rackParamControlSize(widgetParam("WanderSlider")), {
+    width: 97.44,
+    height: 16.24,
+  });
+  assert.deepEqual(rackParamControlSize(widgetParam("MuseSlider")), {
+    width: 17,
+    height: 261,
+  });
+  assert.deepEqual(rackParamControlSize(widgetParam("LinkDotButton")), {
+    width: 12.402,
+    height: 12.402,
+  });
+  assert.equal(rackParamDragAxis(widgetParam("WanderSlider")), "x");
+  assert.equal(rackParamDragAxis(widgetParam("MuseSlider")), "y");
+  assert.equal(rackParamDragDirection(widgetParam("WanderSlider")), 1);
+  assert.equal(rackParamDragDirection(widgetParam("MuseSlider")), 1);
 });
 
 test("Rack switch frames preserve catalog and numeric fallback semantics", () => {

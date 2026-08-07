@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ModuleInstance } from "../../lib/patch-types";
 import {
   rackParamResetValue,
@@ -7,6 +7,8 @@ import {
 } from "../../lib/rack-param-interaction";
 import {
   rackParamControlSize,
+  rackParamDragAxis,
+  rackParamDragDirection,
   rackParamInteraction,
   rackParamPlacementStyle,
   rackParamSwitchFrames,
@@ -30,6 +32,7 @@ type ModulePanelControlsProps = {
   onParam: (id: number, value: number) => void;
   onParamReset: (id: number, value: number) => void;
   onMomentary: (id: number, active: boolean) => void;
+  onVisualAction: (id: number, active: boolean) => void;
   onParamHover: (id: number | null) => void;
   onState: (updates: Array<[id: number, value: number]>) => void;
   onData: (data: Record<string, unknown>) => void;
@@ -47,6 +50,7 @@ export function ModulePanelControls({
   onParam: updateParam,
   onParamReset,
   onMomentary,
+  onVisualAction,
   onParamHover,
   onState,
   onData,
@@ -68,6 +72,11 @@ export function ModulePanelControls({
   const lastParamPressRef = useRef<RackParamPress | null>(null);
   const assetPickerTimerRef = useRef<number | null>(null);
   const suppressAssetPickerRef = useRef(false);
+  const [paramMenu, setParamMenu] = useState<{
+    param: ParamSpec;
+    x: number;
+    y: number;
+  } | null>(null);
 
   useEffect(
     () => () => {
@@ -75,6 +84,16 @@ export function ModulePanelControls({
     },
     [],
   );
+  useEffect(() => {
+    if (!paramMenu) return;
+    const close = () => setParamMenu(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [paramMenu]);
 
   const rackData =
       module.rack?.data && typeof module.rack.data === "object"
@@ -167,6 +186,10 @@ export function ModulePanelControls({
               window.requestAnimationFrame(() =>
                 onParamReset(param.id, rackParamResetValue(param, module.params)),
               ),
+            setMomentary = (active: boolean) => {
+              onMomentary(param.id, active);
+              if (param.actionId !== undefined) onVisualAction(param.actionId, active);
+            },
             opensAssetPicker = Boolean(
               definition?.runtime?.asset && param.position?.widget === "LoadButton",
             ),
@@ -188,6 +211,15 @@ export function ModulePanelControls({
                 value: formattedValue,
               })}
               style={hasParamSourceLayout ? rackWidgetStyle(param) : undefined}
+              onContextMenu={
+                param.contextActions?.length
+                  ? (event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setParamMenu({ param, x: event.clientX, y: event.clientY });
+                    }
+                  : undefined
+              }
             >
               <span>{param.name}</span>
               {interaction === "button" ? (
@@ -212,36 +244,36 @@ export function ModulePanelControls({
                         assetPickerTimerRef.current = null;
                       }
                       suppressAssetPickerRef.current = true;
-                      onMomentary(param.id, false);
+                      setMomentary(false);
                       resetParam();
                       return;
                     }
                     suppressAssetPickerRef.current = false;
                     event.currentTarget.setPointerCapture(event.pointerId);
                     onParamHover(param.id);
-                    onMomentary(param.id, true);
+                    setMomentary(true);
                   }}
                   onPointerUp={(event) => {
                     if (event.currentTarget.hasPointerCapture(event.pointerId))
                       event.currentTarget.releasePointerCapture(event.pointerId);
-                    onMomentary(param.id, false);
+                    setMomentary(false);
                     queueAssetPicker();
                     suppressAssetPickerRef.current = false;
                   }}
                   onPointerCancel={() => {
                     suppressAssetPickerRef.current = false;
-                    onMomentary(param.id, false);
+                    setMomentary(false);
                   }}
                   onKeyDown={(event) => {
                     if ((event.key === " " || event.key === "Enter") && !event.repeat) {
                       event.preventDefault();
-                      onMomentary(param.id, true);
+                      setMomentary(true);
                     }
                   }}
                   onKeyUp={(event) => {
                     if (event.key === " " || event.key === "Enter") {
                       event.preventDefault();
-                      onMomentary(param.id, false);
+                      setMomentary(false);
                       if (opensAssetPicker) onOpenAssetPicker();
                     }
                   }}
@@ -253,12 +285,12 @@ export function ModulePanelControls({
                       assetPickerTimerRef.current = null;
                     }
                     suppressAssetPickerRef.current = true;
-                    onMomentary(param.id, false);
+                    setMomentary(false);
                     resetParam();
                   }}
                   onBlur={() => {
                     onParamHover(null);
-                    onMomentary(param.id, false);
+                    setMomentary(false);
                   }}
                 >
                   {param.name}
@@ -333,7 +365,7 @@ export function ModulePanelControls({
                       resetParam();
                       return;
                     }
-                    const axis = interaction === "selector" ? "x" : "y",
+                    const axis = rackParamDragAxis(param),
                       startCoordinate = axis === "x" ? event.clientX : event.clientY;
                     paramDragRef.current = {
                       pointerId: event.pointerId,
@@ -346,6 +378,7 @@ export function ModulePanelControls({
                       unbounded: Boolean(param.unbounded),
                       axis,
                     };
+                    if (param.dragActionId !== undefined) onVisualAction(param.dragActionId, true);
                     event.currentTarget.setPointerCapture(event.pointerId);
                     onParamHover(param.id);
                   }}
@@ -376,7 +409,7 @@ export function ModulePanelControls({
                       return;
                     event.preventDefault();
                     const coordinate = drag.axis === "x" ? event.clientX : event.clientY,
-                      direction = drag.axis === "x" ? 1 : -1,
+                      direction = rackParamDragDirection(param),
                       sensitivity = event.shiftKey ? 600 : 140,
                       raw =
                         drag.startValue +
@@ -396,16 +429,21 @@ export function ModulePanelControls({
                     if (!drag || drag.pointerId !== event.pointerId || drag.paramId !== param.id)
                       return;
                     paramDragRef.current = null;
+                    if (param.dragActionId !== undefined) onVisualAction(param.dragActionId, false);
                     if (event.currentTarget.hasPointerCapture(event.pointerId))
                       event.currentTarget.releasePointerCapture(event.pointerId);
                   }}
                   onPointerCancel={() => {
                     paramDragRef.current = null;
+                    if (param.dragActionId !== undefined) onVisualAction(param.dragActionId, false);
                   }}
                   onPointerEnter={() => onParamHover(param.id)}
                   onPointerLeave={() => onParamHover(null)}
                   onFocus={() => onParamHover(param.id)}
-                  onBlur={() => onParamHover(null)}
+                  onBlur={() => {
+                    if (param.dragActionId !== undefined) onVisualAction(param.dragActionId, false);
+                    onParamHover(null);
+                  }}
                   onDoubleClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -583,6 +621,31 @@ export function ModulePanelControls({
           {!midiOptions.length && <small>{t("midi.startAudioToEnumerate")}</small>}
         </label>
       )}
+      {paramMenu ? (
+        <div
+          className="pw-native-interaction-menu"
+          role="menu"
+          aria-label={paramMenu.param.name}
+          style={{ left: paramMenu.x, top: paramMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <small>{paramMenu.param.name}</small>
+          {paramMenu.param.contextActions?.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onVisualAction(action.id, true);
+                onVisualAction(action.id, false);
+                setParamMenu(null);
+              }}
+            >
+              {action.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
